@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from './context/StoreContext.tsx';
 import Landing from './pages/Landing.tsx';
 import Login from './pages/Login.tsx';
@@ -16,11 +17,47 @@ import AllTrades from './pages/AllTrades.tsx';
 import Profile from './pages/Profile.tsx';
 import Help from './pages/Help.tsx';
 import AdminPanel from './pages/AdminPanel.tsx';
+import Verification from './pages/Verification.tsx';
 import DashboardLayout from './components/DashboardLayout.tsx';
+import AlertModal from './components/AlertModal.tsx';
+
+function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
+  const { user } = useStore();
+  
+  if (!user) return <Navigate to="/login" />;
+  
+  const isAdmin = user.role === 'admin';
+  
+  if (adminOnly && !isAdmin) return <Navigate to="/dashboard" />;
+  
+  return <>{children}</>;
+}
 
 export default function App() {
   const { user } = useStore();
   const isAdmin = user?.role === 'admin';
+  const [alertConfig, setAlertConfig] = React.useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'success' as 'success' | 'error' | 'info' | 'warning'
+  });
+
+  useEffect(() => {
+    const handleVerificationSuccess = () => {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Account Verified!',
+        message: 'Your account has been successfully verified. You now have full access to all features.',
+        type: 'success'
+      });
+      // Optional: Force a small refresh of the user state if needed, 
+      // but useStore already updates the user state.
+    };
+
+    window.addEventListener('verification-success', handleVerificationSuccess);
+    return () => window.removeEventListener('verification-success', handleVerificationSuccess);
+  }, []);
 
   return (
     <Router>
@@ -28,17 +65,26 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={!user ? <Login /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
+        <Route path="/verify" element={user ? <Verification /> : <Navigate to="/login" />} />
         
         {/* Protected Routes */}
-        <Route path="/dashboard" element={user ? (isAdmin ? <Navigate to="/admin" /> : <DashboardLayout><Dashboard /></DashboardLayout>) : <Navigate to="/login" />} />
-        <Route path="/trade" element={user ? <DashboardLayout><Trade /></DashboardLayout> : <Navigate to="/login" />} />
-        <Route path="/bots" element={user ? <DashboardLayout><Bots /></DashboardLayout> : <Navigate to="/login" />} />
-        <Route path="/transactions" element={user ? <DashboardLayout><Transactions /></DashboardLayout> : <Navigate to="/login" />} />
-        <Route path="/trades" element={user ? <DashboardLayout><AllTrades /></DashboardLayout> : <Navigate to="/login" />} />
-        <Route path="/profile" element={user ? <DashboardLayout><Profile /></DashboardLayout> : <Navigate to="/login" />} />
-        <Route path="/help" element={user ? <DashboardLayout><Help /></DashboardLayout> : <Navigate to="/login" />} />
-        <Route path="/admin" element={user && isAdmin ? <DashboardLayout><AdminPanel /></DashboardLayout> : <Navigate to="/dashboard" />} />
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout><Dashboard /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/trade" element={<ProtectedRoute><DashboardLayout><Trade /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/bots" element={<ProtectedRoute><DashboardLayout><Bots /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/transactions" element={<ProtectedRoute><DashboardLayout><Transactions /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/trades" element={<ProtectedRoute><DashboardLayout><AllTrades /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><DashboardLayout><Profile /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/help" element={<ProtectedRoute><DashboardLayout><Help /></DashboardLayout></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute adminOnly><DashboardLayout><AdminPanel /></DashboardLayout></ProtectedRoute>} />
       </Routes>
+      
+      <AlertModal
+        isOpen={alertConfig.isOpen}
+        onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+      />
     </Router>
   );
 }

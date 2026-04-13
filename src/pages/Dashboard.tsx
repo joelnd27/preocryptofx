@@ -388,10 +388,10 @@ export default function Dashboard() {
                   )}></div>
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                      {notif.type} {notif.status}
+                      {notif.type} {notif.status === 'pending' ? 'PENDING' : 'SUCCESSFUL'}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5">
-                      Your {notif.type.toLowerCase()} of {formatCurrency(notif.amount)} was {notif.status}.
+                      Your {notif.type.toLowerCase()} of {formatCurrency(notif.amount)} {notif.status === 'pending' ? 'is currently pending' : 'has been completed successfully'}.
                     </p>
                   </div>
                 </div>

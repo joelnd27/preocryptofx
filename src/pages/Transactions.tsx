@@ -99,7 +99,7 @@ export default function Transactions() {
         setAlertConfig({
           isOpen: true,
           title: 'Verification Required',
-          message: 'Please verify your account before making a deposit.',
+          message: 'Please verify your account in the Profile section before making a deposit.',
           type: 'warning'
         });
         return;
@@ -160,7 +160,7 @@ export default function Transactions() {
         setAlertConfig({
           isOpen: true,
           title: 'Verification Required',
-          message: 'Please verify your account before making a withdrawal.',
+          message: 'Please verify your account in the Profile section before making a withdrawal.',
           type: 'warning'
         });
         return;
@@ -239,10 +239,10 @@ export default function Transactions() {
           <div className="relative group flex-1 sm:flex-none">
             <button
               onClick={() => { setModalType('DEPOSIT'); setIsModalOpen(true); }}
-              disabled={user?.activeAccount === 'DEMO' || user?.verificationStatus !== 'verified'}
+              disabled={user?.activeAccount === 'DEMO'}
               className={cn(
                 "w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all shadow-sm",
-                (user?.activeAccount === 'DEMO' || user?.verificationStatus !== 'verified')
+                (user?.activeAccount === 'DEMO')
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed" 
                   : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10"
               )}
@@ -252,11 +252,6 @@ export default function Transactions() {
             {user?.activeAccount === 'DEMO' && (
               <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
                 Deposits disabled for Demo
-              </div>
-            )}
-            {user?.activeAccount !== 'DEMO' && user?.verificationStatus !== 'verified' && (
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
-                Verify account to deposit
               </div>
             )}
           </div>
@@ -506,8 +501,8 @@ export default function Transactions() {
                   <CreditCard size={16} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold">Bank Transfer</p>
-                  <p className="text-[10px] text-slate-500">Processing time: 1-3 business days.</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">Bank Transfer</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Processing time: 1-3 business days.</p>
                 </div>
               </div>
             </div>
@@ -547,7 +542,7 @@ export default function Transactions() {
                 {paymentStatus === 'IDLE' ? (
                   <>
                     <div className="mb-6">
-                      <h3 className="text-xl sm:text-2xl font-bold tracking-tight">{modalType === 'DEPOSIT' ? 'Deposit Funds' : 'Withdraw Funds'}</h3>
+                      <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{modalType === 'DEPOSIT' ? 'Deposit Funds' : 'Withdraw Funds'}</h3>
                     </div>
  
                     <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
@@ -627,7 +622,7 @@ export default function Transactions() {
                       </div>
  
                       <div className="space-y-2">
-                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Amount (USD)</label>
+                        <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Amount (USD)</label>
                         <div className="relative">
                           <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                           <input
@@ -654,7 +649,7 @@ export default function Transactions() {
                       </div>
  
                       <div className="space-y-2">
-                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                        <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                           {modalType === 'DEPOSIT' ? 'M-Pesa Number' : 'Registered Phone'}
                         </label>
                         <div className="relative">

@@ -26,26 +26,26 @@ const ai = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 app.post('/api/ai/chat', async (req, res) => {
   const { message } = req.body;
 
+  // If AI is not configured, fallback to agent message as requested
   if (!ai) {
-    return res.status(500).json({ error: 'Gemini API Key is missing on server.' });
+    return res.json({ text: 'Connecting to an agent, please wait...' });
   }
 
   try {
     const model = ai.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      systemInstruction: "You are the PreoCryptoFX AI assistant. Answer user questions about the platform. If asked about balance not reflecting, tell them to wait a few minutes or refresh their account. If they ask for an agent, tell them to type 'agent'. Be helpful, professional, and concise. Do not use markdown formatting like bold or headers, just plain text. For simple questions like 'how many minutes' or 'how many hours', provide a direct answer. For complex questions about withdrawals or deposits, or if the user explicitly asks to speak to an agent, respond EXACTLY with: 'Connecting to an agent, please wait...'"
+      systemInstruction: "You are the PreoCryptoFX AI assistant. Answer user questions about the platform. If asked about balance not reflecting, tell them to wait a few minutes or refresh their account. If they ask for an agent, tell them to type 'agent'. Be helpful, professional, and concise. Do not use markdown formatting like bold or headers, just plain text. For simple questions like 'how many minutes' or 'how many hours', provide a direct answer. You should engage in general conversation about crypto, trading, and the platform. ONLY if the user asks a very specific, complex technical question about their personal financial transactions (like 'why was my specific withdrawal rejected' or 'how do I change my bank details') or if they explicitly ask for a human agent, you should respond EXACTLY with: 'Connecting to an agent, please wait...'"
     });
 
-    // Check for complex keywords or agent requests
+    // Check for explicit agent requests
     const lowerMsg = message.toLowerCase();
-    const complexKeywords = ['withdraw', 'deposit', 'money', 'transaction', 'payment', 'transfer', 'verification', 'verify'];
-    const isAgentRequest = lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('speak to');
+    const isAgentRequest = lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('speak to') || lowerMsg.includes('support');
     
-    // Simple questions like "how many minutes" should be allowed to go to AI
-    const isSimpleQuestion = (lowerMsg.includes('how many') || lowerMsg.includes('how long')) && 
-                             (lowerMsg.includes('minute') || lowerMsg.includes('hour') || lowerMsg.includes('day'));
+    // Only escalate if it's an explicit agent request or a very specific "hard quiz"
+    const hardQuizKeywords = ['rejected', 'failed transaction', 'change bank', 'stolen', 'hacked', 'scam'];
+    const isHardQuiz = hardQuizKeywords.some(k => lowerMsg.includes(k));
 
-    if ((complexKeywords.some(k => lowerMsg.includes(k)) && !isSimpleQuestion) || isAgentRequest) {
+    if (isAgentRequest || isHardQuiz) {
       return res.json({ text: 'Connecting to an agent, please wait...' });
     }
 
@@ -53,10 +53,11 @@ app.post('/api/ai/chat', async (req, res) => {
     const response = await result.response;
     const text = response.text();
 
-    res.json({ text });
+    res.json({ text: text || "I'm sorry, I couldn't process that. Please type 'agent' for help." });
   } catch (error: any) {
     console.error('AI Chat error:', error);
-    res.status(500).json({ error: 'Failed to get AI response', details: error.message });
+    // Fallback to agent message on error to avoid "unavailable" experience
+    res.json({ text: 'Connecting to an agent, please wait...' });
   }
 });
 

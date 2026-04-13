@@ -101,9 +101,10 @@ export default function Chatbot() {
       }
     } catch (error) {
       console.error('Chatbot error:', error);
+      setIsEscalated(true);
       const errorMsg: Message = {
         id: Date.now().toString(),
-        text: "I'm having trouble connecting. Please try again later.",
+        text: "Connecting to an agent, please wait...",
         sender: 'bot',
         timestamp: Date.now()
       };

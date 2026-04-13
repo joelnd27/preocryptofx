@@ -370,7 +370,7 @@ export default function Trade() {
             {selectedCoin.symbol[0]}
           </div>
           <div>
-            <p className="text-sm font-bold">{selectedCoin.symbol}/USDT</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">{selectedCoin.symbol}/USDT</p>
             <div className="flex items-center gap-2">
               <p className="text-[10px] text-green-500 font-bold">${prices[selectedCoin.symbol]?.toLocaleString()}</p>
               <span className="text-[8px] text-slate-400 font-mono">{currentTime.toLocaleTimeString([], { hour12: false })}</span>
@@ -404,7 +404,7 @@ export default function Trade() {
               className="fixed inset-x-0 bottom-0 bg-white dark:bg-[#161a1e] rounded-t-[32px] z-[101] lg:hidden max-h-[80vh] flex flex-col overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <h3 className="text-lg font-black">Select Asset</h3>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">Select Asset</h3>
                 <button 
                   onClick={() => setIsAssetSelectorOpen(false)}
                   className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
@@ -444,12 +444,12 @@ export default function Trade() {
                         {coin.symbol[0]}
                       </div>
                       <div className="text-left">
-                        <p className="text-sm font-black">{coin.symbol}/USDT</p>
+                        <p className="text-sm font-black text-slate-900 dark:text-white">{coin.symbol}/USDT</p>
                         <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{coin.name}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-black">${prices[coin.symbol]?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                      <p className="text-sm font-black text-slate-900 dark:text-white">${prices[coin.symbol]?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                       <p className="text-[10px] text-green-500 font-bold">+2.45%</p>
                     </div>
                   </button>
@@ -629,10 +629,10 @@ export default function Trade() {
                       {coin.symbol[0]}
                     </div>
                     <div className="text-left">
-                      <p className="text-[10px] font-black">{coin.symbol}/USDT</p>
+                      <p className="text-[10px] font-black text-slate-900 dark:text-white">{coin.symbol}/USDT</p>
                     </div>
                   </div>
-                  <p className="text-[10px] font-black">${prices[coin.symbol]?.toLocaleString()}</p>
+                  <p className="text-[10px] font-black text-slate-900 dark:text-white">${prices[coin.symbol]?.toLocaleString()}</p>
                 </button>
               ))}
             </div>
@@ -642,7 +642,7 @@ export default function Trade() {
         {/* Active Trades Section */}
         <div id="active-trades" className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-black uppercase tracking-widest">Active Trades</h3>
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Trades</h3>
             <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">
               {activeTrades.length}
             </span>
@@ -726,11 +726,11 @@ export default function Trade() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-xl flex items-center justify-center font-black text-sm shadow-sm">
+                    <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-xl flex items-center justify-center font-black text-sm shadow-sm text-slate-900 dark:text-white">
                       {aiSignal.coin[0]}
                     </div>
                     <div>
-                      <p className="text-lg font-black">{aiSignal.coin}/USDT</p>
+                      <p className="text-lg font-black text-slate-900 dark:text-white">{aiSignal.coin}/USDT</p>
                       <div className="flex items-center gap-1">
                         {aiSignal.type === 'BUY' ? (
                           <TrendingUp size={14} className="text-green-500" />

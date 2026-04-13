@@ -43,30 +43,34 @@ export function useStore() {
   useEffect(() => {
     if (!user || user.verificationStatus !== 'pending' || !user.verificationSubmittedAt) return;
 
-    const checkVerification = () => {
+    const checkVerification = async () => {
       const now = Date.now();
       const ageInMs = now - user.verificationSubmittedAt!;
       const fiveMinutesInMs = 5 * 60 * 1000;
       const tenMinutesInMs = 10 * 60 * 1000;
+      const thirtyMinutesInMs = 30 * 60 * 1000;
 
       // Deterministic threshold between 5-10 mins per user
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const randomThreshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
-      if (ageInMs >= randomThreshold) {
+      // 1. Check for Auto-Verify
+      if (ageInMs >= randomThreshold && user.verificationStatus === 'pending') {
         console.log('[Auto-Verify] Verifying account...');
         const updatedUser = { ...user, verificationStatus: 'verified' as const };
         setUser(updatedUser);
         if (isSupabaseConfigured()) {
-          supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
+          await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
         }
+        // Trigger notification event
+        window.dispatchEvent(new CustomEvent('verification-success'));
       }
     };
 
     const interval = setInterval(checkVerification, 30000);
     checkVerification();
     return () => clearInterval(interval);
-  }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt]);
+  }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt, user?.verificationDocuments]);
 
   // Daily Profit Reset Logic
   useEffect(() => {
@@ -714,16 +718,16 @@ export function useStore() {
       return updatedUser;
     });
 
-    // Marketer Auto-Process for Withdrawals (Seconds)
+    // Marketer Auto-Process for Withdrawals (7 Seconds)
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
-      const delay = 5000 + Math.random() * 5000; // 5-10 seconds delay
-      console.log(`[Withdrawal] Marketer detected. Auto-completing in ${Math.round(delay/1000)}s`);
+      const txId = newTransaction.id;
+      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 7 seconds.`);
       
       setTimeout(async () => {
-        if (isSupabaseConfigured()) {
+        if (isSupabaseConfigured() && txId) {
           await supabase.from('transactions')
             .update({ status: 'completed' })
-            .eq('id', newTransaction.id);
+            .eq('id', txId);
         }
 
         setUser(prev => {
@@ -731,11 +735,11 @@ export function useStore() {
           return {
             ...prev,
             transactions: prev.transactions.map(t => 
-              t.id === newTransaction.id ? { ...t, status: 'completed' } : t
+              t.id === txId ? { ...t, status: 'completed' } : t
             )
           };
         });
-      }, delay);
+      }, 7000);
     }
   };
 
