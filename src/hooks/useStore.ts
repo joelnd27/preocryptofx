@@ -105,6 +105,36 @@ export function useStore() {
     return () => clearInterval(interval);
   }, [user?.id, user?.lastProfitResetDate]);
 
+  // Marketer Auto-Process for existing pending withdrawals
+  useEffect(() => {
+    if (!user || user.role !== 'marketer') return;
+
+    const processPending = async () => {
+      const pendingWithdrawals = user.transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'pending');
+      
+      for (const tx of pendingWithdrawals) {
+        // Wait 7 seconds from transaction timestamp if it's very recent, or process immediately if older
+        const age = Date.now() - tx.timestamp;
+        const waitTime = Math.max(0, 7000 - age);
+        
+        setTimeout(async () => {
+          if (isSupabaseConfigured()) {
+            await supabase.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
+          }
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              transactions: prev.transactions.map(t => t.id === tx.id ? { ...t, status: 'completed' } : t)
+            };
+          });
+        }, waitTime);
+      }
+    };
+
+    processPending();
+  }, [user?.id, user?.role, user?.transactions?.length]);
+
   // Sync with Supabase if configured
   useEffect(() => {
     const syncWithSupabase = async () => {
