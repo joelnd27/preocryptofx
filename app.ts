@@ -222,27 +222,20 @@ router.get('/health', (req, res) => {
 });
 
 // Mount the router with multiple possible prefixes to ensure compatibility
-app.use('/api', router);
-app.use('/.netlify/functions/api', router);
-app.use('/', router);
+app.use(['/api', '/.netlify/functions/api', '/'], router);
 
-// Catch-all for any other /api/* routes that might have been missed
-app.all('/api/*', (req, res, next) => {
-  // Try to strip /api and see if it matches a route in the router
-  req.url = req.url.replace(/^\/api/, '');
-  router(req, res, next);
-});
-
-// 404 Handler for API
+// 404 Handler for API with detailed debugging
 app.use((req, res) => {
-  console.log(`404 Not Found: ${req.method} ${req.originalUrl}`);
+  console.log(`404 Not Found: ${req.method} ${req.url}`);
   res.status(404).json({ 
     error: 'Not Found', 
-    message: `The requested endpoint ${req.method} ${req.originalUrl} was not found on this server.`,
+    message: `The requested endpoint ${req.method} ${req.url} was not found on this server.`,
     debug: {
-      path: req.path,
+      url: req.url,
       originalUrl: req.originalUrl,
-      baseUrl: req.baseUrl
+      method: req.method,
+      baseUrl: req.baseUrl,
+      path: req.path
     }
   });
 });
