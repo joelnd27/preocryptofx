@@ -226,6 +226,13 @@ app.use('/api', router);
 app.use('/.netlify/functions/api', router);
 app.use('/', router);
 
+// Catch-all for any other /api/* routes that might have been missed
+app.all('/api/*', (req, res, next) => {
+  // Try to strip /api and see if it matches a route in the router
+  req.url = req.url.replace(/^\/api/, '');
+  router(req, res, next);
+});
+
 // 404 Handler for API
 app.use((req, res) => {
   console.log(`404 Not Found: ${req.method} ${req.originalUrl}`);
