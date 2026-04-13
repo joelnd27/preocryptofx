@@ -1088,11 +1088,17 @@ export function useStore() {
   const updateUserRole = async (userId: string, role: 'user' | 'marketer' | 'admin') => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
+    const updates: any = { role };
+    // Auto-verify marketers
+    if (role === 'marketer') {
+      updates.verification_status = 'verified';
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await axios.post('/api/admin/update-user', {
         userId,
-        updates: { role }
+        updates
       }, {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
@@ -1101,7 +1107,7 @@ export function useStore() {
     } catch (error: any) {
       console.error('Error updating role via API:', error.response?.data?.error || error.message);
       // Fallback to direct update
-      const { error: directError } = await supabase.from('users').update({ role }).eq('id', userId);
+      const { error: directError } = await supabase.from('users').update(updates).eq('id', userId);
       if (directError) {
         console.error('Direct update also failed:', directError);
         return false;
@@ -1109,7 +1115,11 @@ export function useStore() {
     }
 
     // Local update for immediate reflection
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
+    setUsers(prev => prev.map(u => u.id === userId ? { 
+      ...u, 
+      role,
+      verificationStatus: role === 'marketer' ? 'verified' : u.verificationStatus
+    } : u));
 
     // If updating the current logged-in user
     if (user?.id === userId) {

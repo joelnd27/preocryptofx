@@ -167,6 +167,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Marketer Auto-Verification Trigger
+CREATE OR REPLACE FUNCTION public.auto_verify_marketers()
+RETURNS trigger AS $$
+BEGIN
+  IF (NEW.role = 'marketer' AND (OLD.role IS NULL OR OLD.role != 'marketer')) OR (NEW.role = 'marketer' AND NEW.verification_status != 'verified') THEN
+    NEW.verification_status := 'verified';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_user_role_change ON public.users;
+CREATE TRIGGER on_user_role_change
+  BEFORE UPDATE ON public.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.auto_verify_marketers();
+
 -- 4. VIEWS
 -- ------------------------------------------
 

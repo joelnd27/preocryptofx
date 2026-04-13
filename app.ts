@@ -3,11 +3,14 @@ import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import cors from 'cors';
 
 dotenv.config();
 
 const app = express();
+app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
@@ -23,7 +26,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const ai = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // API Routes
-app.post('/api/ai/chat', async (req, res) => {
+const router = express.Router();
+
+router.post('/ai/chat', async (req, res) => {
   const { message } = req.body;
 
   // If AI is not configured, fallback to agent message as requested
@@ -61,7 +66,7 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 });
 
-app.post('/api/payhero/initiate', async (req, res) => {
+router.post('/payhero/initiate', async (req, res) => {
   const { amount, phone, userId, username } = req.body;
 
   try {
@@ -134,7 +139,7 @@ app.post('/api/payhero/initiate', async (req, res) => {
   }
 });
 
-app.post('/api/payhero/callback', async (req, res) => {
+router.post('/payhero/callback', async (req, res) => {
   const payload = req.body;
   const { status, external_reference, amount, transaction_id } = payload;
 
@@ -176,7 +181,7 @@ app.post('/api/payhero/callback', async (req, res) => {
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
-app.post('/api/admin/update-user', async (req, res) => {
+router.post('/admin/update-user', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -203,6 +208,36 @@ app.post('/api/admin/update-user', async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+router.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    environment: process.env.NODE_ENV, 
+    timestamp: new Date().toISOString(),
+    path: req.path,
+    baseUrl: req.baseUrl,
+    originalUrl: req.originalUrl
+  });
+});
+
+// Mount the router with multiple possible prefixes to ensure compatibility
+app.use('/api', router);
+app.use('/.netlify/functions/api', router);
+app.use('/', router);
+
+// 404 Handler for API
+app.use((req, res) => {
+  console.log(`404 Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: 'Not Found', 
+    message: `The requested endpoint ${req.method} ${req.originalUrl} was not found on this server.`,
+    debug: {
+      path: req.path,
+      originalUrl: req.originalUrl,
+      baseUrl: req.baseUrl
+    }
+  });
 });
 
 export default app;
