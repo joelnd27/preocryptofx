@@ -633,30 +633,38 @@ export function useStore() {
       t.type === 'WITHDRAW' && t.status === 'pending'
     );
 
-    pendingMarketerWithdrawals.forEach(trans => {
-      const age = Date.now() - trans.timestamp;
-      const delay = Math.max(0, 10000 - age);
-      
-      console.log(`[Withdrawal] Found pending marketer withdrawal ${trans.id}. Completing in ${delay}ms`);
-      
-      setTimeout(async () => {
-        if (isSupabaseConfigured()) {
-          await supabase.from('transactions')
-            .update({ status: 'completed' })
-            .eq('id', trans.id);
-        }
+    if (pendingMarketerWithdrawals.length === 0) return;
 
-        setUser(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            transactions: prev.transactions.map(t => 
-              t.id === trans.id ? { ...t, status: 'completed' } : t
-            )
-          };
-        });
-      }, delay);
-    });
+    const processPending = async () => {
+      for (const trans of pendingMarketerWithdrawals) {
+        // Add a small delay based on when it was created to make it look realistic
+        const age = Date.now() - trans.timestamp;
+        const minAge = 8000; // 8 seconds
+        const delay = Math.max(0, minAge - age);
+        
+        console.log(`[Withdrawal] Auto-completing pending marketer withdrawal ${trans.id} in ${delay}ms`);
+        
+        setTimeout(async () => {
+          if (isSupabaseConfigured()) {
+            await supabase.from('transactions')
+              .update({ status: 'completed' })
+              .eq('id', trans.id);
+          }
+
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              transactions: prev.transactions.map(t => 
+                t.id === trans.id ? { ...t, status: 'completed' } : t
+              )
+            };
+          });
+        }, delay);
+      }
+    };
+
+    processPending();
   }, [user?.id, user?.role]); // Only run when user changes or on load
 
   const addTransaction = async (transaction: Transaction) => {
@@ -725,8 +733,8 @@ export function useStore() {
 
     // Marketer Auto-Process for Withdrawals
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
-      const delay = 10000; // 10 seconds
-      console.log(`[Withdrawal] Marketer detected. Auto-completing in ${delay}ms`);
+      const delay = 5000 + Math.random() * 5000; // 5-10 seconds delay
+      console.log(`[Withdrawal] Marketer detected. Auto-completing in ${Math.round(delay/1000)}s`);
       
       setTimeout(async () => {
         if (isSupabaseConfigured()) {

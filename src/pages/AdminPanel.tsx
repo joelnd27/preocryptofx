@@ -400,7 +400,7 @@ export default function AdminPanel() {
                         )}>
                           {t.status === 'completed' ? <CheckCircle2 size={10} /> : 
                            t.status === 'pending' ? <Clock size={10} /> : <XCircle size={10} />}
-                          {t.status}
+                          {t.status === 'pending' ? 'is pending' : t.status}
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right">

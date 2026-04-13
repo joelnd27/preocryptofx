@@ -200,7 +200,7 @@ export default function Transactions() {
       setAlertConfig({
         isOpen: true,
         title: 'Request Submitted',
-        message: 'Your withdrawal request has been submitted successfully and is currently being processed.',
+        message: 'Your withdrawal request has been submitted successfully and is pending.',
         type: 'success'
       });
       setIsModalOpen(false);
@@ -354,7 +354,7 @@ export default function Transactions() {
                           <span className={cn(
                             "text-[10px] font-bold uppercase tracking-tighter",
                             tx.status === 'completed' ? "text-green-500" : tx.status === 'failed' ? "text-red-500" : "text-yellow-500"
-                          )}>{tx.status}</span>
+                          )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -419,7 +419,7 @@ export default function Transactions() {
                       <span className={cn(
                         "text-[10px] font-medium capitalize",
                         tx.status === 'completed' ? "text-green-500" : "text-yellow-500"
-                      )}>{tx.status}</span>
+                      )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                     </div>
                   </div>
                 </div>
