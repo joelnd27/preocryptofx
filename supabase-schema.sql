@@ -107,6 +107,21 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- 8. Auto-process pending items (Verification ONLY)
+-- This function can be called via RPC or scheduled with pg_cron
+CREATE OR REPLACE FUNCTION public.auto_process_pending()
+RETURNS void AS $$
+BEGIN
+  -- Auto-verify users pending for more than 5-10 minutes (average 7.5 mins = 450000ms)
+  -- Note: verification_submitted_at is BIGINT (ms)
+  UPDATE public.users
+  SET verification_status = 'verified'
+  WHERE verification_status = 'pending'
+    AND verification_submitted_at IS NOT NULL
+    AND (EXTRACT(EPOCH FROM NOW()) * 1000) - verification_submitted_at > 450000;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;

