@@ -84,10 +84,15 @@ export default function Chatbot() {
       } else {
         // Use backend for AI response
         const response = await axios.post('/api/ai/chat', { message: userText });
+        const botText = response.data.text;
+
+        if (botText === 'Connecting to an agent, please wait...') {
+          setIsEscalated(true);
+        }
 
         const botMsg: Message = {
           id: (Date.now() + 1).toString(),
-          text: response.data.text || "I'm sorry, I couldn't process that. Please try again or type 'agent' for help.",
+          text: botText || "I'm sorry, I couldn't process that. Please try again or type 'agent' for help.",
           sender: 'bot',
           timestamp: Date.now()
         };

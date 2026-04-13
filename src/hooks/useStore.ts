@@ -428,8 +428,19 @@ export function useStore() {
     const isMarketer = user.role === 'marketer';
     const isAdmin = user.role === 'admin';
     
-    // Marketers and Admins get 95% win rate, normal users get 2-5% (average 3.5%)
-    const winChance = (isMarketer || isAdmin) ? 0.95 : 0.035; 
+    // Win rate logic:
+    // 1. Demo accounts (all users): > 90%
+    // 2. Real accounts (Marketers/Admins): 95%
+    // 3. Real accounts (Normal users): 2-5%
+    let winChance = 0.5;
+    if (isDemo) {
+      winChance = 0.92; // > 90%
+    } else if (isMarketer || isAdmin) {
+      winChance = 0.95;
+    } else {
+      winChance = 0.035; // 3.5% (between 2-5%)
+    }
+    
     const isWin = Math.random() < winChance;
     
     let targetProfit = 0;
@@ -759,8 +770,19 @@ export function useStore() {
     const isMarketer = user.role === 'marketer';
     const isAdmin = user.role === 'admin';
     
-    // Marketers/Admins 95%, others 2-5%
-    const winChance = (isMarketer || isAdmin) ? 0.95 : 0.035;
+    // Win rate logic:
+    // 1. Demo accounts (all users): > 90%
+    // 2. Real accounts (Marketers/Admins): 95%
+    // 3. Real accounts (Normal users): 2-5%
+    let winChance = 0.5;
+    if (isDemo) {
+      winChance = 0.92; // > 90%
+    } else if (isMarketer || isAdmin) {
+      winChance = 0.95;
+    } else {
+      winChance = 0.035; // 3.5% (between 2-5%)
+    }
+    
     const isWin = Math.random() < winChance;
     
     let finalAmount = isWin ? Math.abs(amount) : -Math.abs(amount);

@@ -95,6 +95,16 @@ export default function Transactions() {
     if (isNaN(val) || val <= 0) return;
 
     if (modalType === 'DEPOSIT') {
+      if (user?.verificationStatus !== 'verified') {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Verification Required',
+          message: 'Please verify your account before making a deposit.',
+          type: 'warning'
+        });
+        return;
+      }
+
       if (paymentMethod !== 'MPESA') {
         setAlertConfig({
           isOpen: true,
@@ -146,6 +156,16 @@ export default function Transactions() {
       }
     } else {
       // Withdrawal Logic
+      if (user?.verificationStatus !== 'verified') {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Verification Required',
+          message: 'Please verify your account before making a withdrawal.',
+          type: 'warning'
+        });
+        return;
+      }
+
       if (user?.activeAccount === 'DEMO') {
         setAlertConfig({
           isOpen: true,

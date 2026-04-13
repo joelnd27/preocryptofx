@@ -33,8 +33,21 @@ app.post('/api/ai/chat', async (req, res) => {
   try {
     const model = ai.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      systemInstruction: "You are the PreoCryptoFX AI assistant. Answer user questions about the platform. If asked about balance not reflecting, tell them to wait a few minutes or refresh their account. If they ask for an agent, tell them to type 'agent'. Be helpful, professional, and concise. Do not use markdown formatting like bold or headers, just plain text."
+      systemInstruction: "You are the PreoCryptoFX AI assistant. Answer user questions about the platform. If asked about balance not reflecting, tell them to wait a few minutes or refresh their account. If they ask for an agent, tell them to type 'agent'. Be helpful, professional, and concise. Do not use markdown formatting like bold or headers, just plain text. For simple questions like 'how many minutes' or 'how many hours', provide a direct answer. For complex questions about withdrawals or deposits, or if the user explicitly asks to speak to an agent, respond EXACTLY with: 'Connecting to an agent, please wait...'"
     });
+
+    // Check for complex keywords or agent requests
+    const lowerMsg = message.toLowerCase();
+    const complexKeywords = ['withdraw', 'deposit', 'money', 'transaction', 'payment', 'transfer', 'verification', 'verify'];
+    const isAgentRequest = lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('speak to');
+    
+    // Simple questions like "how many minutes" should be allowed to go to AI
+    const isSimpleQuestion = (lowerMsg.includes('how many') || lowerMsg.includes('how long')) && 
+                             (lowerMsg.includes('minute') || lowerMsg.includes('hour') || lowerMsg.includes('day'));
+
+    if ((complexKeywords.some(k => lowerMsg.includes(k)) && !isSimpleQuestion) || isAgentRequest) {
+      return res.json({ text: 'Connecting to an agent, please wait...' });
+    }
 
     const result = await model.generateContent(message);
     const response = await result.response;
