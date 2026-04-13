@@ -221,8 +221,13 @@ router.get('/health', (req, res) => {
   });
 });
 
-// Mount the router with multiple possible prefixes to ensure compatibility
-app.use(['/api', '/.netlify/functions/api', '/'], router);
+// Mount the router at the root level for maximum compatibility with serverless environments
+app.use('/', router);
+app.use('/api', router);
+app.use('/.netlify/functions/api', router);
+
+// Final fallback health check at the app level
+app.get('/ping', (req, res) => res.send('pong'));
 
 // 404 Handler for API with detailed debugging
 app.use((req, res) => {
