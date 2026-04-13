@@ -90,12 +90,14 @@ export default function AdminPanel() {
     u.email?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredTransactions = transactions.filter(t => {
-    const matchesSearch = t.users?.email?.toLowerCase().includes(search.toLowerCase()) || 
-                         t.users?.username?.toLowerCase().includes(search.toLowerCase());
-    
-    return matchesSearch;
-  });
+  const filteredTransactions = transactions
+    .filter(t => {
+      const matchesSearch = t.users?.email?.toLowerCase().includes(search.toLowerCase()) || 
+                           t.users?.username?.toLowerCase().includes(search.toLowerCase());
+      
+      return matchesSearch;
+    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   if (user?.role !== 'admin') {
     return (

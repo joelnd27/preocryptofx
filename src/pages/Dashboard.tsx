@@ -261,7 +261,10 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {user?.trades?.slice(0, 5).map((trade) => (
+                  {(user?.trades || [])
+                    .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
+                    .slice(0, 5)
+                    .map((trade) => (
                     <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -380,7 +383,10 @@ export default function Dashboard() {
           <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
             <h3 className="font-bold text-slate-900 dark:text-white mb-6">Recent Alerts</h3>
             <div className="space-y-4">
-              {user?.transactions?.slice(0, 3).map((notif, i) => (
+              {(user?.transactions || [])
+                .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
+                .slice(0, 3)
+                .map((notif, i) => (
                 <div key={i} className="flex gap-3">
                   <div className={cn(
                     "w-1 h-1 mt-2 rounded-full shrink-0",

@@ -80,12 +80,14 @@ export default function Transactions() {
     return date.toLocaleString();
   };
 
-  const filteredTransactions = user?.transactions.filter(tx => {
-    const matchesSearch = tx.id.toLowerCase().includes(search.toLowerCase()) || 
-                         tx.type.toLowerCase().includes(search.toLowerCase());
-    const matchesFilter = filter === 'ALL' || tx.type === filter;
-    return matchesSearch && matchesFilter;
-  }) || [];
+  const filteredTransactions = (user?.transactions || [])
+    .filter(tx => {
+      const matchesSearch = tx.id.toLowerCase().includes(search.toLowerCase()) || 
+                           tx.type.toLowerCase().includes(search.toLowerCase());
+      const matchesFilter = filter === 'ALL' || tx.type === filter;
+      return matchesSearch && matchesFilter;
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
 
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
