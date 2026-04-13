@@ -17,6 +17,10 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Admin API Routes (Bypasses RLS using Service Role Key)
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
+
 // Payhero API Config
 const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.VITE_PAYHERO_API_KEY;
 const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PAYHERO_CHANNEL_ID;
@@ -31,38 +35,48 @@ const router = express.Router();
 router.post('/ai/chat', async (req, res) => {
   const { message } = req.body;
 
-  // If AI is not configured, fallback to agent message as requested
-  if (!ai) {
-    return res.json({ text: 'Connecting to an agent, please wait...' });
+  if (!GEMINI_API_KEY) {
+    return res.json({ text: "I'm currently in maintenance mode. Please try again later or contact support if you have an urgent request." });
   }
 
   try {
-    const model = ai.getGenerativeModel({ 
+    const model = ai!.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      systemInstruction: "You are the PreoCryptoFX AI assistant. Answer user questions about the platform. If asked about balance not reflecting, tell them to wait a few minutes or refresh their account. If they ask for an agent, tell them to type 'agent'. Be helpful, professional, and concise. Do not use markdown formatting like bold or headers, just plain text. For simple questions like 'how many minutes' or 'how many hours', provide a direct answer. You should engage in general conversation about crypto, trading, and the platform. ONLY if the user asks a very specific, complex technical question about their personal financial transactions (like 'why was my specific withdrawal rejected' or 'how do I change my bank details') or if they explicitly ask for a human agent, you should respond EXACTLY with: 'Connecting to an agent, please wait...'"
+      systemInstruction: `You are the PreoCryptoFX AI assistant, a friendly and expert crypto trading guide. 
+      Your goal is to provide a smooth, natural conversation. 
+      Answer questions about crypto, trading, and the PreoCryptoFX platform clearly and helpfully.
+      
+      RULES:
+      1. Be professional yet warm. 
+      2. Use plain text only (no markdown, no bold, no headers).
+      3. If a user asks about their balance not reflecting, advise them to wait a few minutes or refresh.
+      4. NEVER mention "speaking to an agent" or "contacting support" unless the user explicitly asks for a human or an agent first.
+      5. If and ONLY IF the user explicitly asks to "talk to a person", "speak to an agent", or "human support", respond exactly with: "Connecting to an agent, please wait..."
+      6. Do not offer agent support proactively. Focus on solving the user's query yourself.`
     });
-
-    // Check for explicit agent requests
-    const lowerMsg = message.toLowerCase();
-    const isAgentRequest = lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('speak to') || lowerMsg.includes('support');
-    
-    // Only escalate if it's an explicit agent request or a very specific "hard quiz"
-    const hardQuizKeywords = ['rejected', 'failed transaction', 'change bank', 'stolen', 'hacked', 'scam'];
-    const isHardQuiz = hardQuizKeywords.some(k => lowerMsg.includes(k));
-
-    if (isAgentRequest || isHardQuiz) {
-      return res.json({ text: 'Connecting to an agent, please wait...' });
-    }
 
     const result = await model.generateContent(message);
     const response = await result.response;
     const text = response.text();
 
-    res.json({ text: text || "I'm sorry, I couldn't process that. Please type 'agent' for help." });
+    // Only return the escalation message if the AI explicitly decided it was necessary 
+    // OR if the user message is a very clear direct request for a human.
+    const lowerMsg = message.toLowerCase().trim();
+    const isExplicitAgentRequest = 
+      lowerMsg === 'agent' || 
+      lowerMsg === 'human' || 
+      lowerMsg === 'support' ||
+      ((lowerMsg.includes('speak to') || lowerMsg.includes('talk to') || lowerMsg.includes('chat with')) && 
+       (lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('person') || lowerMsg.includes('someone')));
+    
+    if (isExplicitAgentRequest || text.includes('Connecting to an agent')) {
+      return res.json({ text: 'Connecting to an agent, please wait...' });
+    }
+
+    res.json({ text: text || "I'm here to help! What would you like to know about trading today?" });
   } catch (error: any) {
     console.error('AI Chat error:', error);
-    // Fallback to agent message on error to avoid "unavailable" experience
-    res.json({ text: 'Connecting to an agent, please wait...' });
+    res.json({ text: "I'm having a bit of trouble connecting right now. Could you try rephrasing your question?" });
   }
 });
 
@@ -150,7 +164,10 @@ router.post('/payhero/callback', async (req, res) => {
     const amountUsd = Number((amountKes / USD_TO_KES).toFixed(2));
 
     try {
-      const { data: user } = await supabase
+      // Use Admin client to bypass RLS for background balance updates
+      const client = supabaseAdmin || supabase;
+      
+      const { data: user } = await client
         .from('users')
         .select('real_balance')
         .eq('id', userId)
@@ -158,9 +175,9 @@ router.post('/payhero/callback', async (req, res) => {
 
       if (user) {
         const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
-        await supabase.from('users').update({ real_balance: newBalance }).eq('id', userId);
+        await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
         
-        await supabase.from('transactions').update({
+        await client.from('transactions').update({
           status: 'completed',
           external_id: transaction_id || payload.CheckoutRequestID || external_reference,
           amount: amountUsd
@@ -171,16 +188,14 @@ router.post('/payhero/callback', async (req, res) => {
     }
   } else if (external_reference) {
     const userId = external_reference.split('-')[0];
-    await supabase.from('transactions').update({ status: 'failed' }).eq('user_id', userId).eq('external_id', external_reference);
+    const client = supabaseAdmin || supabase;
+    await client.from('transactions').update({ status: 'failed' }).eq('user_id', userId).eq('external_id', external_reference);
   }
 
   res.json({ status: 'received' });
 });
 
 // Admin API Routes (Bypasses RLS using Service Role Key)
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
-
 router.post('/admin/update-user', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });

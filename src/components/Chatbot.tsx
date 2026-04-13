@@ -49,62 +49,27 @@ export default function Chatbot() {
     setIsLoading(true);
 
     try {
-      if (userText.toLowerCase().includes('agent') || userText.toLowerCase().includes('human')) {
+      // Use backend for AI response
+      const response = await axios.post('/api/ai/chat', { message: userText });
+      const botText = response.data.text;
+
+      if (botText === 'Connecting to an agent, please wait...') {
         setIsEscalated(true);
-        const agentMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          text: 'Please wait for a human agent...',
-          sender: 'bot',
-          timestamp: Date.now()
-        };
-        setMessages(prev => [...prev, agentMsg]);
-        
-        setTimeout(() => {
-          const waitMsg: Message = {
-            id: (Date.now() + 2).toString(),
-            text: 'Please wait',
-            sender: 'bot',
-            timestamp: Date.now()
-          };
-          setMessages(prev => [...prev, waitMsg]);
-          setIsLoading(false);
-        }, 2000);
-      } else if (isEscalated) {
-        // If already escalated, just say please wait
-        setTimeout(() => {
-          const waitMsg: Message = {
-            id: Date.now().toString(),
-            text: 'Please wait',
-            sender: 'bot',
-            timestamp: Date.now()
-          };
-          setMessages(prev => [...prev, waitMsg]);
-          setIsLoading(false);
-        }, 1000);
-      } else {
-        // Use backend for AI response
-        const response = await axios.post('/api/ai/chat', { message: userText });
-        const botText = response.data.text;
-
-        if (botText === 'Connecting to an agent, please wait...') {
-          setIsEscalated(true);
-        }
-
-        const botMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          text: botText || "I'm sorry, I couldn't process that. Please try again or type 'agent' for help.",
-          sender: 'bot',
-          timestamp: Date.now()
-        };
-        setMessages(prev => [...prev, botMsg]);
-        setIsLoading(false);
       }
+
+      const botMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        text: botText || "I'm here to help! What would you like to know about trading today?",
+        sender: 'bot',
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setIsLoading(false);
     } catch (error) {
       console.error('Chatbot error:', error);
-      setIsEscalated(true);
       const errorMsg: Message = {
         id: Date.now().toString(),
-        text: "Connecting to an agent, please wait...",
+        text: "I'm having a bit of trouble connecting to my brain right now. Please try again in a moment!",
         sender: 'bot',
         timestamp: Date.now()
       };
