@@ -268,11 +268,15 @@ app.use('/.netlify/functions/api', router);
 // Background task to mark stale pending transactions as failed (Timeout Handling)
 // Runs every 5 minutes
 setInterval(async () => {
+  if (!supabaseAdmin) {
+    console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY is not configured.');
+    return;
+  }
+
   try {
-    const client = supabaseAdmin || supabase;
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from('transactions')
       .update({ status: 'failed' })
       .eq('status', 'pending')
@@ -280,8 +284,11 @@ setInterval(async () => {
       .lt('created_at', fifteenMinutesAgo)
       .select();
     
-    if (error) console.error('Error cleaning up stale transactions:', error);
-    else if (data && data.length > 0) console.log(`Cleaned up ${data.length} stale transactions.`);
+    if (error) {
+      console.error('Error cleaning up stale transactions:', JSON.stringify(error, null, 2));
+    } else if (data && data.length > 0) {
+      console.log(`Cleaned up ${data.length} stale transactions.`);
+    }
   } catch (err) {
     console.error('Stale transaction cleanup exception:', err);
   }
