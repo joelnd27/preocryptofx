@@ -12,17 +12,21 @@ interface Message {
 }
 
 // Initialize Gemini AI directly on the frontend as per skill guidelines
-const GEMINI_API_KEY = (process.env as any).GEMINI_API_KEY;
-const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+// We use a getter to ensure we check the environment variable at runtime
+const getAI = () => {
+  const key = (process.env as any).GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+};
 
-const SYSTEM_INSTRUCTION = `You are the PreoCryptoFX AI assistant. You are a real human-like expert in crypto trading and the PreoCryptoFX platform. 
+const SYSTEM_INSTRUCTION = `You are the PreoCryptoFX AI assistant. You are a real human-like expert in crypto trading, blockchain technology, and the PreoCryptoFX platform. 
 
 CONVERSATION STYLE:
 - Speak like a helpful human, not a robot. Be warm, engaging, and professional.
 - Use natural transitions and follow-up questions to keep the conversation flowing.
-- Answer questions about crypto, trading, and platform features (deposits, withdrawals, bots) with deep expertise.
+- Deep Expertise: You have extensive knowledge of Bitcoin, Ethereum, DeFi, technical analysis, and global financial markets.
 - Your goal is to solve the user's problem yourself through conversation.
-- If the user asks general questions or quizzes you, answer them accurately while maintaining your persona.
+- Answer any general knowledge questions, quizzes, or trivia about crypto and finance accurately while maintaining your helpful persona.
 
 STRICT RULES:
 1. NEVER mention "agents", "human support", "speaking to a person", or "contacting support" proactively. 
@@ -68,6 +72,7 @@ export default function Chatbot() {
     setInput('');
     setIsLoading(true);
 
+    const ai = getAI();
     if (!ai) {
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
