@@ -2,7 +2,6 @@ import express from 'express';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import cors from 'cors';
 
 dotenv.config();
@@ -25,83 +24,8 @@ const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey)
 const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.VITE_PAYHERO_API_KEY;
 const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PAYHERO_CHANNEL_ID;
 
-// Gemini AI Setup
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const ai = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
-
 // API Routes
 const router = express.Router();
-
-router.post('/ai/chat', async (req, res) => {
-  const { message, history } = req.body;
-
-  if (!GEMINI_API_KEY) {
-    return res.json({ text: "I'm currently in maintenance mode. Please try again later or contact support if you have an urgent request." });
-  }
-
-  try {
-    const model = ai!.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      systemInstruction: `You are the PreoCryptoFX AI assistant. You are a real human-like expert in crypto trading and the PreoCryptoFX platform. 
-      
-      CONVERSATION STYLE:
-      - Speak like a helpful human, not a robot. Be warm, engaging, and professional.
-      - Use natural transitions and follow-up questions to keep the conversation flowing.
-      - Answer questions about crypto, trading, and platform features (deposits, withdrawals, bots) with deep expertise.
-      - Your goal is to solve the user's problem yourself through conversation.
-      - If the user asks general questions or quizzes you, answer them accurately while maintaining your persona.
-      
-      STRICT RULES:
-      1. NEVER mention "agents", "human support", "speaking to a person", or "contacting support" proactively. 
-      2. NEVER suggest that the user should talk to an agent. You are the expert.
-      3. If the user asks about a balance not reflecting, explain that it usually takes a few minutes for the blockchain or payment provider to confirm, and suggest they refresh in a moment.
-      4. If and ONLY IF the user explicitly insists on talking to a human or an agent (e.g., "I want to talk to a person", "give me an agent", "human support please"), respond exactly with: "Connecting to an agent, please wait..."
-      5. Use plain text only. No markdown, no bold, no headers.`
-    });
-
-    // Use chat history if available for better context
-    let text = "";
-    if (history && Array.isArray(history) && history.length > 0) {
-      const chat = model.startChat({
-        history: history.map((h: any) => ({
-          role: h.role === 'user' ? 'user' : 'model',
-          parts: [{ text: h.text }]
-        })),
-      });
-      const result = await chat.sendMessage(message);
-      const response = await result.response;
-      text = response.text();
-    } else {
-      const result = await model.generateContent(message);
-      const response = await result.response;
-      text = response.text();
-    }
-
-    const lowerMsg = (message || '').toLowerCase().trim();
-    const isExplicitAgentRequest = 
-      lowerMsg === 'agent' || 
-      lowerMsg === 'human' || 
-      ((lowerMsg.includes('speak to') || lowerMsg.includes('talk to') || lowerMsg.includes('chat with')) && 
-       (lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('person') || lowerMsg.includes('someone')));
-    
-    if (isExplicitAgentRequest || text.includes('Connecting to an agent')) {
-      return res.json({ text: 'Connecting to an agent, please wait...' });
-    }
-
-    res.json({ text: text || "I'm here to help! What's on your mind regarding trading today?" });
-  } catch (error: any) {
-    console.error('AI Chat error:', error);
-    // Try a simpler fallback if the complex one fails
-    try {
-      const model = ai!.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const result = await model.generateContent(`The user asked: "${message}". Answer them as a helpful crypto trading assistant.`);
-      const response = await result.response;
-      res.json({ text: response.text() });
-    } catch (fallbackError) {
-      res.json({ text: "I'm processing your request. Could you please rephrase that or ask something else about our trading platform?" });
-    }
-  }
-});
 
 router.post('/payhero/initiate', async (req, res) => {
   const { amount, phone, userId, username } = req.body;

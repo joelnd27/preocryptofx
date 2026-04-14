@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, User, Bot, Headset } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import axios from 'axios';
+import { GoogleGenAI } from "@google/genai";
 
 interface Message {
   id: string;
@@ -10,6 +10,26 @@ interface Message {
   sender: 'user' | 'bot' | 'agent';
   timestamp: number;
 }
+
+// Initialize Gemini AI directly on the frontend as per skill guidelines
+const GEMINI_API_KEY = (process.env as any).GEMINI_API_KEY;
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+const SYSTEM_INSTRUCTION = `You are the PreoCryptoFX AI assistant. You are a real human-like expert in crypto trading and the PreoCryptoFX platform. 
+
+CONVERSATION STYLE:
+- Speak like a helpful human, not a robot. Be warm, engaging, and professional.
+- Use natural transitions and follow-up questions to keep the conversation flowing.
+- Answer questions about crypto, trading, and platform features (deposits, withdrawals, bots) with deep expertise.
+- Your goal is to solve the user's problem yourself through conversation.
+- If the user asks general questions or quizzes you, answer them accurately while maintaining your persona.
+
+STRICT RULES:
+1. NEVER mention "agents", "human support", "speaking to a person", or "contacting support" proactively. 
+2. NEVER suggest that the user should talk to an agent. You are the expert.
+3. If the user asks about a balance not reflecting, explain that it usually takes a few minutes for the blockchain or payment provider to confirm, and suggest they refresh in a moment.
+4. If and ONLY IF the user explicitly insists on talking to a human or an agent (e.g., "I want to talk to a person", "give me an agent", "human support please"), respond exactly with: "Connecting to an agent, please wait..."
+5. Use plain text only. No markdown, no bold, no headers.`;
 
 export default function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
@@ -48,26 +68,43 @@ export default function Chatbot() {
     setInput('');
     setIsLoading(true);
 
+    if (!ai) {
+      const botMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "I'm currently in maintenance mode. Please try again later or contact support if you have an urgent request.",
+        sender: 'bot',
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      // Use backend for AI response with history
+      // Use direct Gemini API call from frontend
       const history = messages.map(m => ({
         role: m.sender === 'user' ? 'user' : 'model',
-        text: m.text
+        parts: [{ text: m.text }]
       }));
 
-      const response = await axios.post('/api/ai/chat', { 
-        message: userText,
-        history: history.slice(-6) // Send last 6 messages for context
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [...history.slice(-6), { role: 'user', parts: [{ text: userText }] }],
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          temperature: 0.7,
+        }
       });
-      const botText = response.data.text;
 
-      if (botText === 'Connecting to an agent, please wait...') {
+      const botText = response.text || "I'm here to help! What would you like to know about trading today?";
+
+      if (botText.includes('Connecting to an agent, please wait...')) {
         setIsEscalated(true);
       }
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: botText || "I'm here to help! What would you like to know about trading today?",
+        text: botText,
         sender: 'bot',
         timestamp: Date.now()
       };
@@ -75,13 +112,30 @@ export default function Chatbot() {
       setIsLoading(false);
     } catch (error) {
       console.error('Chatbot error:', error);
-      const errorMsg: Message = {
-        id: Date.now().toString(),
-        text: "I'm having a bit of trouble connecting to my brain right now. Please try again in a moment!",
-        sender: 'bot',
-        timestamp: Date.now()
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      
+      // Fallback for simple questions if complex one fails
+      try {
+        const fallbackResponse = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `The user asked: "${userText}". Answer them as a helpful crypto trading assistant.`
+        });
+        
+        const botMsg: Message = {
+          id: Date.now().toString(),
+          text: fallbackResponse.text || "I'm here and listening! Could you tell me a bit more about what you're looking for?",
+          sender: 'bot',
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, botMsg]);
+      } catch (fallbackError) {
+        const errorMsg: Message = {
+          id: Date.now().toString(),
+          text: "I'm having a bit of trouble connecting to my brain right now. Please try again in a moment!",
+          sender: 'bot',
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
       setIsLoading(false);
     }
   };
