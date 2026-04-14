@@ -281,6 +281,16 @@ export default function Trade() {
       return;
     }
 
+    if ((currentBalance || 0) - tradeAmount < MIN_BALANCE_AFTER_LOSS) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Risk Limit Reached',
+        message: `Your account balance must remain at least $${MIN_BALANCE_AFTER_LOSS} after placing a trade to maintain account health.`,
+        type: 'warning'
+      });
+      return;
+    }
+
     const newTrade: TradeType = {
       id: Math.random().toString(36).substr(2, 9),
       coin: selectedCoin.symbol,

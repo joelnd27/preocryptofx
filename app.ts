@@ -42,30 +42,30 @@ router.post('/ai/chat', async (req, res) => {
   try {
     const model = ai!.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      systemInstruction: `You are the PreoCryptoFX AI assistant, a friendly and expert crypto trading guide. 
-      Your goal is to provide a smooth, natural conversation. 
-      Answer questions about crypto, trading, and the PreoCryptoFX platform clearly and helpfully.
+      systemInstruction: `You are the PreoCryptoFX AI assistant. You are a real human-like expert in crypto trading and the PreoCryptoFX platform. 
       
-      RULES:
-      1. Be professional yet warm. 
-      2. Use plain text only (no markdown, no bold, no headers).
-      3. If a user asks about their balance not reflecting, advise them to wait a few minutes or refresh.
-      4. NEVER mention "speaking to an agent" or "contacting support" unless the user explicitly asks for a human or an agent first.
-      5. If and ONLY IF the user explicitly asks to "talk to a person", "speak to an agent", or "human support", respond exactly with: "Connecting to an agent, please wait..."
-      6. Do not offer agent support proactively. Focus on solving the user's query yourself.`
+      CONVERSATION STYLE:
+      - Speak like a helpful human, not a robot. Be warm, engaging, and professional.
+      - Use natural transitions and follow-up questions to keep the conversation flowing.
+      - Answer questions about crypto, trading, and platform features (deposits, withdrawals, bots) with deep expertise.
+      - Your goal is to solve the user's problem yourself through conversation.
+      
+      STRICT RULES:
+      1. NEVER mention "agents", "human support", "speaking to a person", or "contacting support" proactively. 
+      2. NEVER suggest that the user should talk to an agent. You are the expert.
+      3. If the user asks about a balance not reflecting, explain that it usually takes a few minutes for the blockchain or payment provider to confirm, and suggest they refresh in a moment.
+      4. If and ONLY IF the user explicitly insists on talking to a human or an agent (e.g., "I want to talk to a person", "give me an agent", "human support please"), respond exactly with: "Connecting to an agent, please wait..."
+      5. Use plain text only. No markdown, no bold, no headers.`
     });
 
     const result = await model.generateContent(message);
     const response = await result.response;
     const text = response.text();
 
-    // Only return the escalation message if the AI explicitly decided it was necessary 
-    // OR if the user message is a very clear direct request for a human.
     const lowerMsg = message.toLowerCase().trim();
     const isExplicitAgentRequest = 
       lowerMsg === 'agent' || 
       lowerMsg === 'human' || 
-      lowerMsg === 'support' ||
       ((lowerMsg.includes('speak to') || lowerMsg.includes('talk to') || lowerMsg.includes('chat with')) && 
        (lowerMsg.includes('agent') || lowerMsg.includes('human') || lowerMsg.includes('person') || lowerMsg.includes('someone')));
     
@@ -73,10 +73,10 @@ router.post('/ai/chat', async (req, res) => {
       return res.json({ text: 'Connecting to an agent, please wait...' });
     }
 
-    res.json({ text: text || "I'm here to help! What would you like to know about trading today?" });
+    res.json({ text: text || "I'm here to help! What's on your mind regarding trading today?" });
   } catch (error: any) {
     console.error('AI Chat error:', error);
-    res.json({ text: "I'm having a bit of trouble connecting right now. Could you try rephrasing your question?" });
+    res.json({ text: "I'm here and listening! Could you tell me a bit more about what you're looking for?" });
   }
 });
 
@@ -146,6 +146,30 @@ router.post('/payhero/initiate', async (req, res) => {
 
     res.json(response.data);
   } catch (error: any) {
+    console.error('Initiate payment error:', error);
+    
+    // Attempt to mark the transaction as failed if we can identify it
+    try {
+      const client = supabaseAdmin || supabase;
+      // We don't have the exact externalReference here easily if it failed before payload creation,
+      // but we can try to find the most recent pending deposit for this user
+      const { data: latestPending } = await client
+        .from('transactions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('type', 'DEPOSIT')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestPending) {
+        await client.from('transactions').update({ status: 'failed' }).eq('id', latestPending.id);
+      }
+    } catch (dbError) {
+      console.error('Error updating failed transaction status:', dbError);
+    }
+    
     res.status(500).json({ 
       error: 'Failed to initiate payment', 
       details: error.response?.data || error.message 
@@ -240,6 +264,28 @@ router.get('/health', (req, res) => {
 app.use('/', router);
 app.use('/api', router);
 app.use('/.netlify/functions/api', router);
+
+// Background task to mark stale pending transactions as failed (Timeout Handling)
+// Runs every 5 minutes
+setInterval(async () => {
+  try {
+    const client = supabaseAdmin || supabase;
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    
+    const { data, error } = await client
+      .from('transactions')
+      .update({ status: 'failed' })
+      .eq('status', 'pending')
+      .eq('type', 'DEPOSIT')
+      .lt('created_at', fifteenMinutesAgo)
+      .select();
+    
+    if (error) console.error('Error cleaning up stale transactions:', error);
+    else if (data && data.length > 0) console.log(`Cleaned up ${data.length} stale transactions.`);
+  } catch (err) {
+    console.error('Stale transaction cleanup exception:', err);
+  }
+}, 5 * 60 * 1000);
 
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));

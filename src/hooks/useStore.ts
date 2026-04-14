@@ -135,6 +135,36 @@ export function useStore() {
     processPending();
   }, [user?.id, user?.role, user?.transactions?.length]);
 
+  // Deposit Timeout Auto-Process (15 Minutes)
+  useEffect(() => {
+    if (!user) return;
+
+    const checkTimeouts = async () => {
+      const pendingDeposits = user.transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'pending');
+      const now = Date.now();
+      const TIMEOUT_MS = 15 * 60 * 1000;
+
+      for (const tx of pendingDeposits) {
+        if (now - tx.timestamp > TIMEOUT_MS) {
+          if (isSupabaseConfigured()) {
+            await supabase.from('transactions').update({ status: 'failed' }).eq('id', tx.id);
+          }
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              transactions: prev.transactions.map(t => t.id === tx.id ? { ...t, status: 'failed' } : t)
+            };
+          });
+        }
+      }
+    };
+
+    const interval = setInterval(checkTimeouts, 60000); // Check every minute
+    checkTimeouts();
+    return () => clearInterval(interval);
+  }, [user?.id, user?.transactions?.length]);
+
   // Sync with Supabase if configured
   useEffect(() => {
     const syncWithSupabase = async () => {
@@ -479,8 +509,8 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 70% to 90% profit on win
-      const profitMultiplier = 0.7 + Math.random() * 0.2;
+      // 30% to 80% profit on win (Realistic range)
+      const profitMultiplier = 0.3 + Math.random() * 0.5;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
       // Loss is always the full stake
@@ -800,6 +830,43 @@ export function useStore() {
   const addBotProfit = async (amount: number, botId?: string, log?: string) => {
     if (!user) return;
     
+    const isReal = user.activeAccount === 'REAL';
+    const balanceKey = isReal ? 'realBalance' : 'demoBalance';
+    const currentBalance = user[balanceKey];
+
+    // Auto-stop bot if balance is below minimum stake or required threshold
+    if (currentBalance < MIN_STAKE_USD || currentBalance < MIN_BALANCE_AFTER_LOSS) {
+      console.log(`[Bot] Auto-stopping due to low balance: ${currentBalance}`);
+      
+      // Automatically turn off all bots if balance is too low
+      const updatedBots = {
+        scalping: false,
+        trend: false,
+        ai: false
+      };
+
+      if (isSupabaseConfigured()) {
+        await supabase.from('bot_settings').upsert({
+          user_id: user.id,
+          scalping_active: false,
+          trend_active: false,
+          ai_active: false
+        });
+      }
+
+      setUser(prev => prev ? { ...prev, bots: updatedBots } : null);
+      
+      const event = new CustomEvent('trade-closed', {
+        detail: {
+          title: 'Bots Deactivated',
+          message: 'Trading bots stopped automatically due to insufficient balance.',
+          type: 'info'
+        }
+      });
+      window.dispatchEvent(event);
+      return;
+    }
+    
     const isDemo = user.activeAccount === 'DEMO';
     const isMarketer = user.role === 'marketer';
     const isAdmin = user.role === 'admin';
@@ -821,8 +888,6 @@ export function useStore() {
     
     let finalAmount = isWin ? Math.abs(amount) : -Math.abs(amount);
     
-    const isReal = user.activeAccount === 'REAL';
-    const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     const newBalance = Math.max(MIN_BALANCE_AFTER_LOSS, Number((user[balanceKey] + finalAmount).toFixed(2)));
     
     // Get a realistic price for the bot trade
