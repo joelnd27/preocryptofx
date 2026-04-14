@@ -33,7 +33,7 @@ const ai = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 const router = express.Router();
 
 router.post('/ai/chat', async (req, res) => {
-  const { message } = req.body;
+  const { message, history } = req.body;
 
   if (!GEMINI_API_KEY) {
     return res.json({ text: "I'm currently in maintenance mode. Please try again later or contact support if you have an urgent request." });
@@ -49,6 +49,7 @@ router.post('/ai/chat', async (req, res) => {
       - Use natural transitions and follow-up questions to keep the conversation flowing.
       - Answer questions about crypto, trading, and platform features (deposits, withdrawals, bots) with deep expertise.
       - Your goal is to solve the user's problem yourself through conversation.
+      - If the user asks general questions or quizzes you, answer them accurately while maintaining your persona.
       
       STRICT RULES:
       1. NEVER mention "agents", "human support", "speaking to a person", or "contacting support" proactively. 
@@ -58,11 +59,25 @@ router.post('/ai/chat', async (req, res) => {
       5. Use plain text only. No markdown, no bold, no headers.`
     });
 
-    const result = await model.generateContent(message);
-    const response = await result.response;
-    const text = response.text();
+    // Use chat history if available for better context
+    let text = "";
+    if (history && Array.isArray(history) && history.length > 0) {
+      const chat = model.startChat({
+        history: history.map((h: any) => ({
+          role: h.role === 'user' ? 'user' : 'model',
+          parts: [{ text: h.text }]
+        })),
+      });
+      const result = await chat.sendMessage(message);
+      const response = await result.response;
+      text = response.text();
+    } else {
+      const result = await model.generateContent(message);
+      const response = await result.response;
+      text = response.text();
+    }
 
-    const lowerMsg = message.toLowerCase().trim();
+    const lowerMsg = (message || '').toLowerCase().trim();
     const isExplicitAgentRequest = 
       lowerMsg === 'agent' || 
       lowerMsg === 'human' || 
@@ -76,7 +91,15 @@ router.post('/ai/chat', async (req, res) => {
     res.json({ text: text || "I'm here to help! What's on your mind regarding trading today?" });
   } catch (error: any) {
     console.error('AI Chat error:', error);
-    res.json({ text: "I'm here and listening! Could you tell me a bit more about what you're looking for?" });
+    // Try a simpler fallback if the complex one fails
+    try {
+      const model = ai!.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(`The user asked: "${message}". Answer them as a helpful crypto trading assistant.`);
+      const response = await result.response;
+      res.json({ text: response.text() });
+    } catch (fallbackError) {
+      res.json({ text: "I'm processing your request. Could you please rephrase that or ask something else about our trading platform?" });
+    }
   }
 });
 
@@ -268,8 +291,8 @@ app.use('/.netlify/functions/api', router);
 // Background task to mark stale pending transactions as failed (Timeout Handling)
 // Runs every 5 minutes
 setInterval(async () => {
-  if (!supabaseAdmin) {
-    console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY is not configured.');
+  if (!supabaseAdmin || !supabaseUrl) {
+    console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL is not configured.');
     return;
   }
 
@@ -285,7 +308,12 @@ setInterval(async () => {
       .select();
     
     if (error) {
-      console.error('Error cleaning up stale transactions:', JSON.stringify(error, null, 2));
+      console.error('Error cleaning up stale transactions:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
     } else if (data && data.length > 0) {
       console.log(`Cleaned up ${data.length} stale transactions.`);
     }

@@ -50,7 +50,7 @@ export interface Transaction {
   id: string;
   type: 'DEPOSIT' | 'WITHDRAW';
   amount: number;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'completed' | 'failed' | 'rejected';
   timestamp: number;
   accountType: AccountType;
   method?: string;

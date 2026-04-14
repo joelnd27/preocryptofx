@@ -49,8 +49,16 @@ export default function Chatbot() {
     setIsLoading(true);
 
     try {
-      // Use backend for AI response
-      const response = await axios.post('/api/ai/chat', { message: userText });
+      // Use backend for AI response with history
+      const history = messages.map(m => ({
+        role: m.sender === 'user' ? 'user' : 'model',
+        text: m.text
+      }));
+
+      const response = await axios.post('/api/ai/chat', { 
+        message: userText,
+        history: history.slice(-6) // Send last 6 messages for context
+      });
       const botText = response.data.text;
 
       if (botText === 'Connecting to an agent, please wait...') {
