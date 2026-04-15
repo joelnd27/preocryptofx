@@ -23,7 +23,7 @@ import { USD_TO_KES, MIN_DEPOSIT_USD, MIN_WITHDRAWAL_USD, WITHDRAWAL_EXCHANGE_RA
 import AlertModal from '../components/AlertModal';
 
 export default function Transactions() {
-  const { user, addTransaction, processPayheroDeposit } = useStore();
+  const { user, addTransaction, processPayheroDeposit, failLatestDeposit } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
   const [amount, setAmount] = useState('');
@@ -79,6 +79,7 @@ export default function Transactions() {
             clearInterval(timer);
             setPaymentStatus('FAILED');
             setErrorMessage('Transaction timed out. Please try again.');
+            failLatestDeposit(); // Record the failure in DB
             return 0;
           }
           return prev - 1;
@@ -741,7 +742,10 @@ export default function Transactions() {
                             Done
                           </button>
                           <button 
-                            onClick={() => setPaymentStatus('IDLE')}
+                            onClick={() => {
+                              setPaymentStatus('IDLE');
+                              failLatestDeposit(); // Record as failed/cancelled
+                            }}
                             className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
                           >
                             Cancel and go back

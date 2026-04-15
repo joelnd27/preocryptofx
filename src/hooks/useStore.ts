@@ -1269,6 +1269,33 @@ export function useStore() {
     }
   };
 
+  const failLatestDeposit = async () => {
+    if (!user) return;
+    
+    // Find the most recent pending deposit
+    const latestPending = [...(user.transactions || [])]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .find(t => t.type === 'DEPOSIT' && t.status === 'pending');
+      
+    if (!latestPending) return;
+
+    if (isSupabaseConfigured()) {
+      await supabase.from('transactions')
+        .update({ status: 'failed' })
+        .eq('id', latestPending.id);
+    }
+
+    setUser(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        transactions: prev.transactions.map(t => 
+          t.id === latestPending.id ? { ...t, status: 'failed' } : t
+        )
+      };
+    });
+  };
+
   const submitVerification = async (docs: User['verificationDocuments']) => {
     if (!user) return;
     
@@ -1314,6 +1341,7 @@ export function useStore() {
     toggleBot,
     addBotProfit,
     processPayheroDeposit,
+    failLatestDeposit,
     submitVerification,
     getAllUsers,
     getGlobalStats,
