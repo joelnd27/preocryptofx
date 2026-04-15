@@ -336,8 +336,8 @@ router.post('/payhero/callback', async (req, res) => {
       resultCode === '0' ||
       payload.Success === true;
 
-    // 2. Extract identifiers (Check root, nested 'data', and 'Body.stkCallback')
-    const data = payload.data || (payload.Body && payload.Body.stkCallback) || payload;
+    // 2. Extract identifiers (Check root, nested 'data', 'response', and 'Body.stkCallback')
+    const data = payload.response || payload.data || (payload.Body && payload.Body.stkCallback) || payload;
     
     // Standard Safaricom Metadata extraction if available
     let metadataAmount = 0;
@@ -351,9 +351,9 @@ router.post('/payhero/callback', async (req, res) => {
     }
 
     const ref = data.external_reference || data.ExternalReference || data.BillRefNumber || data.Reference || data.reference || payload.external_reference || payload.ExternalReference || payload.BillRefNumber || payload.Reference;
-    const checkoutId = data.CheckoutRequestID || data.checkout_request_id || data.CheckoutID || payload.CheckoutRequestID || payload.checkout_request_id || payload.CheckoutID;
-    const transactionId = data.transaction_id || data.TransactionID || data.mpesa_code || data.MpesaReceiptNumber || payload.transaction_id || payload.MpesaReceiptNumber || metadataReceipt;
-    const amountKes = Number(data.amount || data.Amount || payload.amount || metadataAmount || 0);
+    const checkoutId = data.CheckoutRequestID || data.checkout_request_id || data.CheckoutID || data.MerchantRequestID || payload.CheckoutRequestID || payload.checkout_request_id || payload.CheckoutID;
+    const transactionId = data.transaction_id || data.TransactionID || data.mpesa_code || data.MpesaReceiptNumber || data.TransID || payload.transaction_id || payload.MpesaReceiptNumber || metadataReceipt;
+    const amountKes = Number(data.amount || data.Amount || data.TransAmount || payload.amount || metadataAmount || 0);
 
     console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}`);
 
