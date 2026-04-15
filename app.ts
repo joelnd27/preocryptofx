@@ -47,6 +47,9 @@ router.post('/payhero/initiate', async (req, res) => {
 
     const host = req.get('host');
     const protocol = (host?.includes('localhost') || host?.includes('127.0.0.1')) ? 'http' : 'https';
+    
+    // On Netlify, the actual API is at /.netlify/functions/api
+    // But with our redirects, /api/payhero/callback works too.
     let callbackUrl: string | undefined = `${protocol}://${host}/api/payhero/callback`;
     
     const envCallback = process.env.PAYHERO_CALLBACK_URL || process.env.VITE_PAYHERO_CALLBACK_URL;
@@ -55,6 +58,8 @@ router.post('/payhero/initiate', async (req, res) => {
     } else if (envCallback) {
       callbackUrl = envCallback;
     }
+
+    console.log(`Using Callback URL: ${callbackUrl}`);
 
     const externalReference = `${userId}-${Date.now()}`;
     
@@ -103,6 +108,13 @@ router.post('/payhero/initiate', async (req, res) => {
 
     console.log('Payhero Response:', JSON.stringify(response.data));
 
+    // If we got a CheckoutRequestID, update the transaction record so we can track it better
+    if (response.data.CheckoutRequestID) {
+      await client.from('transactions')
+        .update({ method: `Payhero (${response.data.CheckoutRequestID})` })
+        .eq('external_id', externalReference);
+    }
+
     res.json({
       ...response.data,
       external_reference: externalReference
@@ -141,6 +153,7 @@ router.post('/payhero/initiate', async (req, res) => {
 
 router.get('/payhero/status/:external_reference', async (req, res) => {
   const { external_reference } = req.params;
+  console.log(`Checking status for: ${external_reference}`);
   
   try {
     if (!PAYHERO_API_KEY) {
@@ -151,45 +164,87 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
       ? PAYHERO_API_KEY 
       : `Bearer ${PAYHERO_API_KEY}`;
 
-    // Note: Payhero status check endpoint might vary. 
-    // This is a common pattern for their API.
-    const response = await axios.get(`https://backend.payhero.co.ke/api/v2/payments?external_reference=${external_reference}`, {
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
+    // First, try to find the CheckoutRequestID from our DB if external_reference is our ref
+    const client = supabaseAdmin || supabase;
+    const { data: tx } = await client
+      .from('transactions')
+      .select('method, external_id, amount')
+      .or(`external_id.eq."${external_reference}",id.eq."${external_reference}"`)
+      .maybeSingle();
 
-    // If Payhero returns the transaction, we can update our DB if it's successful
+    let queryId = external_reference;
+    let isCheckoutId = false;
+    if (tx?.method && tx.method.includes('Payhero (')) {
+      const match = tx.method.match(/Payhero \(([^)]+)\)/);
+      if (match) {
+        queryId = match[1];
+        isCheckoutId = true;
+      }
+    }
+
+    console.log(`Querying Payhero with ID: ${queryId} (isCheckoutId: ${isCheckoutId})`);
+
+    let response;
+    if (isCheckoutId) {
+      // If we have a CheckoutRequestID, we query the specific payment
+      response = await axios.get(`https://backend.payhero.co.ke/api/v2/payments/${queryId}`, {
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+    } else {
+      // Fallback to querying by external_reference
+      response = await axios.get(`https://backend.payhero.co.ke/api/v2/payments?external_reference=${external_reference}`, {
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+    }
+    
+    console.log('Payhero Status Response:', JSON.stringify(response.data));
+
     const payment = response.data.data?.[0] || response.data;
-    if (payment && (payment.status === 'Success' || payment.status === 'Successful')) {
-      const userId = external_reference.split('-')[0];
-      const client = supabaseAdmin || supabase;
+    const isSuccess = 
+      payment && (
+        payment.status?.toLowerCase() === 'success' || 
+        payment.status?.toLowerCase() === 'successful' ||
+        payment.ResultCode === 0 || 
+        payment.ResultCode === '0'
+      );
+
+    if (isSuccess) {
+      const ref = tx?.external_id || external_reference;
+      const userId = ref.split('-')[0];
       
       // Check if already completed to avoid double crediting
-      const { data: existingTx } = await client
+      const { data: currentTx } = await client
         .from('transactions')
         .select('status, amount')
-        .eq('external_id', external_reference)
-        .single();
+        .eq('external_id', ref)
+        .maybeSingle();
 
-      if (existingTx && existingTx.status !== 'completed') {
-        const amountUsd = existingTx.amount;
+      if (currentTx && currentTx.status !== 'completed') {
+        const amountUsd = currentTx.amount;
         const { data: user } = await client.from('users').select('real_balance').eq('id', userId).single();
         
         if (user) {
           const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
+          console.log(`Manual status check success. Updating balance for ${userId}: ${newBalance}`);
+          
           await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
-          await client.from('transactions').update({ status: 'completed' }).eq('external_id', external_reference);
+          await client.from('transactions').update({ status: 'completed' }).eq('external_id', ref).eq('status', 'pending');
         }
       }
     }
-
+    
     res.json(response.data);
   } catch (error: any) {
-    console.error('Status check error:', error.message);
-    res.status(500).json({ error: 'Failed to check payment status' });
+    console.error('Status check error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json(error.response?.data || { error: 'Failed to check payment status' });
   }
 });
 
@@ -233,13 +288,15 @@ router.post('/payhero/callback', async (req, res) => {
         if (balanceError) console.error('Balance update error:', balanceError);
         
         // 2. Update transaction status
-        // We try to match by external_id (which was our externalReference) or CheckoutRequestID
+        // IMPORTANT: We keep the external_id as the 'ref' because the frontend uses it for tracking.
+        // We can store the Payhero transaction_id in the 'method' field or just log it.
         const { error: txError } = await client.from('transactions').update({
           status: 'completed',
-          external_id: transaction_id || CheckoutRequestID || ref,
-          amount: amountUsd
+          amount: amountUsd,
+          method: `Payhero (${transaction_id || CheckoutRequestID || 'N/A'})`
         })
         .eq('user_id', userId)
+        .eq('status', 'pending')
         .or(`external_id.eq."${ref}",external_id.eq."${CheckoutRequestID}"`);
         
         if (txError) console.error('Transaction update error:', txError);
