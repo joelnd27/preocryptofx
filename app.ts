@@ -184,12 +184,19 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
     // Build a very robust query to find the transaction
     let query = client.from('transactions').select('method, external_id, amount, id, user_id, status');
     
+    // Helper to check if a string is a valid UUID
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
     // We search by external_id, id, OR if the external_reference IS a CheckoutRequestID, we check the method field
     const orConditions = [
       `external_id.eq."${external_reference}"`,
-      `id.eq."${external_reference}"`,
       `method.ilike."%${external_reference}%"`
     ];
+
+    // Only add ID check if it's a valid UUID to avoid Postgres syntax errors
+    if (isUUID(external_reference)) {
+      orConditions.push(`id.eq."${external_reference}"`);
+    }
     
     const { data: tx, error: txError } = await query.or(orConditions.join(',')).maybeSingle();
 
@@ -347,9 +354,13 @@ router.post('/payhero/callback', async (req, res) => {
       // We search by external_id (our ref), id, or checkoutId (Payhero's ref)
       let query = client.from('transactions').select('user_id, amount, status, id, external_id');
       const orConditions = [];
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
       if (ref) {
         orConditions.push(`external_id.eq."${ref}"`);
-        orConditions.push(`id.eq."${ref}"`);
+        if (isUUID(ref)) {
+          orConditions.push(`id.eq."${ref}"`);
+        }
       }
       if (checkoutId) {
         orConditions.push(`external_id.eq."${checkoutId}"`);
