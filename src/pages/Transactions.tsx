@@ -57,8 +57,8 @@ export default function Transactions() {
   });
 
   useEffect(() => {
-    // Slightly randomize withdrawal rate between 128 and 130
-    const rate = 128 + (Math.random() * 2);
+    // Slightly randomize withdrawal rate between 125 and 128
+    const rate = 125 + (Math.random() * 3);
     setCurrentWithdrawalRate(Number(rate.toFixed(2)));
   }, [isModalOpen]);
 

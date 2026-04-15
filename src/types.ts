@@ -65,9 +65,9 @@ export interface CryptoPrice {
 
 export const INITIAL_DEMO_BALANCE = 10000;
 export const INITIAL_REAL_BALANCE = 0;
-export const USD_TO_KES = 130;
-export const WITHDRAWAL_EXCHANGE_RATE = 130;
-export const MIN_DEPOSIT_USD = 17;
+export const USD_TO_KES = 1;
+export const WITHDRAWAL_EXCHANGE_RATE = 1;
+export const MIN_DEPOSIT_USD = 1;
 export const MIN_WITHDRAWAL_USD = 34;
 export const MIN_STAKE_USD = 3;
 export const MIN_BALANCE_AFTER_LOSS = 3;
