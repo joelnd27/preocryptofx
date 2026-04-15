@@ -55,13 +55,22 @@ router.post('/payhero/initiate', async (req, res) => {
     
     // On Netlify, the actual API is at /.netlify/functions/api
     // But with our redirects, /api/payhero/callback works too.
-    let callbackUrl: string | undefined = `${protocol}://${host}/api/payhero/callback`;
+    let callbackUrl: string | undefined;
     
     const envCallback = process.env.PAYHERO_CALLBACK_URL || process.env.VITE_PAYHERO_CALLBACK_URL;
+    
     if (envCallback === 'none') {
       callbackUrl = undefined;
     } else if (envCallback) {
       callbackUrl = envCallback;
+    } else {
+      // Auto-detect based on host
+      callbackUrl = `${protocol}://${host}/api/payhero/callback`;
+      
+      // If we are on Netlify and have a site name, we can be even more specific
+      if (process.env.SITE_NAME && !host.includes('localhost')) {
+        callbackUrl = `https://${process.env.SITE_NAME}.netlify.app/api/payhero/callback`;
+      }
     }
 
     console.log(`Using Callback URL: ${callbackUrl}`);
@@ -292,6 +301,10 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
     console.error('Status check error:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json(error.response?.data || { error: 'Failed to check payment status' });
   }
+});
+
+router.get('/payhero/callback', (req, res) => {
+  res.send('PayHero Webhook Endpoint is ACTIVE. Use POST for actual callbacks.');
 });
 
 router.post('/payhero/callback', async (req, res) => {
