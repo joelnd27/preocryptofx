@@ -325,19 +325,23 @@ router.post('/payhero/callback', async (req, res) => {
   }
   
   try {
-    // 1. Extract success indicators
-    const status = payload.status || payload.Status;
-    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : payload.ResponseCode;
-    const resultDesc = payload.ResultDesc || payload.ResultDescription || payload.status_reason;
+    // 1. Extract success indicators (Check root and nested data)
+    const data = payload.response || payload.data || (payload.Body && payload.Body.stkCallback) || payload;
+    
+    const status = payload.status !== undefined ? payload.status : (data.status || data.Status || payload.Status);
+    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : (data.ResultCode || data.ResponseCode || payload.ResponseCode);
+    const resultDesc = data.ResultDesc || data.ResultDescription || data.status_reason || payload.ResultDesc || payload.ResultDescription || payload.status_reason;
     
     const isSuccess = 
+      status === true ||
+      status === 'true' ||
       (typeof status === 'string' && (status.toLowerCase() === 'success' || status.toLowerCase() === 'successful')) || 
       resultCode === 0 || 
       resultCode === '0' ||
-      payload.Success === true;
+      payload.Success === true ||
+      data.Success === true;
 
     // 2. Extract identifiers (Check root, nested 'data', 'response', and 'Body.stkCallback')
-    const data = payload.response || payload.data || (payload.Body && payload.Body.stkCallback) || payload;
     
     // Standard Safaricom Metadata extraction if available
     let metadataAmount = 0;
