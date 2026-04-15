@@ -437,62 +437,64 @@ export default function Transactions() {
                             )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                           </div>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
-                            <button
-                              onClick={async () => {
-                                setIsChecking(true);
-                                try {
-                                  const result = await checkPaymentStatus(tx.externalId || tx.id);
-                                  if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
-                                    setAlertConfig({
-                                      isOpen: true,
-                                      title: 'Payment Confirmed',
-                                      message: 'Your payment has been verified and your balance updated.',
-                                      type: 'success'
-                                    });
-                                  }
-                                  await refreshData();
-                                } finally {
-                                  setIsChecking(false);
-                                }
-                              }}
-                              disabled={isChecking}
-                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-blue-500 transition-colors disabled:opacity-50"
-                              title="Check Status"
-                            >
-                              <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
-                            </button>
-                            {user?.role === 'admin' && tx.status === 'pending' && (
+                            <div className="flex items-center gap-1">
                               <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance and mark as completed?`)) {
-                                    setIsChecking(true);
-                                    const success = await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
-                                    if (success) {
+                                onClick={async () => {
+                                  setIsChecking(true);
+                                  try {
+                                    const result = await checkPaymentStatus(tx.externalId || tx.id);
+                                    if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
                                       setAlertConfig({
                                         isOpen: true,
-                                        title: 'Admin Force Credit',
-                                        message: 'Balance has been manually credited successfully.',
+                                        title: 'Payment Confirmed',
+                                        message: 'Your payment has been verified and your balance updated.',
                                         type: 'success'
                                       });
-                                    } else {
-                                      setAlertConfig({
-                                        isOpen: true,
-                                        title: 'Error',
-                                        message: 'Failed to perform manual credit.',
-                                        type: 'error'
-                                      });
                                     }
+                                    await refreshData();
+                                  } finally {
                                     setIsChecking(false);
                                   }
                                 }}
                                 disabled={isChecking}
-                                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors ml-1"
-                                title="Force Credit (Admin Only)"
+                                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-blue-500 transition-colors disabled:opacity-50"
+                                title="Check Status"
                               >
-                                <ShieldCheck size={10} />
+                                <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
                               </button>
-                            )}
+                              {user?.role === 'admin' && tx.status === 'pending' && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance and mark as completed?`)) {
+                                      setIsChecking(true);
+                                      const success = await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
+                                      if (success) {
+                                        setAlertConfig({
+                                          isOpen: true,
+                                          title: 'Admin Force Credit',
+                                          message: 'Balance has been manually credited successfully.',
+                                          type: 'success'
+                                        });
+                                      } else {
+                                        setAlertConfig({
+                                          isOpen: true,
+                                          title: 'Error',
+                                          message: 'Failed to perform manual credit.',
+                                          type: 'error'
+                                        });
+                                      }
+                                      setIsChecking(false);
+                                    }
+                                  }}
+                                  disabled={isChecking}
+                                  className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors ml-1"
+                                  title="Force Credit (Admin Only)"
+                                >
+                                  <ShieldCheck size={10} />
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>
