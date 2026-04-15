@@ -166,104 +166,104 @@ export function useStore() {
   }, [user?.id, user?.transactions?.length]);
 
   // Sync with Supabase if configured
-  useEffect(() => {
-    const syncWithSupabase = async () => {
-      if (!isSupabaseConfigured()) return;
+  const syncWithSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured()) return;
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: userData, error } = await supabase
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('*, transactions(*), trades(*), bot_settings(*)')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (userData) {
+        // Sort and limit locally just in case, though DB cleanup should handle it
+        const sortedTrades = (userData.trades || [])
+          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 50);
+        
+        const sortedTransactions = (userData.transactions || [])
+          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 50);
+
+        const formattedUser: User = {
+          id: userData.id,
+          username: userData.username,
+          email: userData.email,
+          phone: userData.phone,
+          role: userData.role,
+          demoBalance: Number(userData.demo_balance || 0),
+          realBalance: Number(userData.real_balance || 0),
+          activeAccount: userData.active_account || 'DEMO',
+          verificationStatus: userData.verification_status || 'not_verified',
+          verificationSubmittedAt: userData.verification_submitted_at ? Number(userData.verification_submitted_at) : undefined,
+          verificationDocuments: userData.verification_documents || {},
+          profit: userData.active_account === 'REAL' 
+            ? Number(userData.total_profit_real || 0) 
+            : Number(userData.total_profit_demo || 0),
+          dailyProfit: userData.active_account === 'REAL'
+            ? Number(userData.daily_profit_real || 0)
+            : Number(userData.daily_profit_demo || 0),
+          lastProfitResetDate: userData.last_profit_reset_date,
+          trades: sortedTrades.map((t: any) => ({
+            id: t.id,
+            coin: t.coin,
+            amount: Number(t.amount),
+            type: t.type,
+            price: Number(t.price),
+            status: 'CLOSED', // Force CLOSED on load to prevent auto-resumption
+            profit: Number(t.profit || 0),
+            timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
+            accountType: t.account_type,
+            duration: t.duration
+          })),
+          transactions: sortedTransactions.map((t: any) => ({
+            id: t.id,
+            type: t.type,
+            amount: Number(t.amount),
+            status: t.status,
+            timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
+            accountType: t.account_type,
+            method: t.method,
+            externalId: t.external_id
+          })),
+          bots: {
+            scalping: userData.bot_settings?.scalping_active || false,
+            trend: userData.bot_settings?.trend_active || false,
+            ai: userData.bot_settings?.ai_active || false,
+          },
+          createdAt: new Date(userData.created_at).getTime()
+        };
+        setUser(formattedUser);
+      } else if (!error) {
+        // User exists in Auth but not in public.users table
+        // Create the profile record now
+        const { data: newUser, error: createError } = await supabase
           .from('users')
-          .select('*, transactions(*), trades(*), bot_settings(*)')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (userData) {
-          // Sort and limit locally just in case, though DB cleanup should handle it
-          const sortedTrades = (userData.trades || [])
-            .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-            .slice(0, 50);
-          
-          const sortedTransactions = (userData.transactions || [])
-            .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-            .slice(0, 50);
-
-          const formattedUser: User = {
-            id: userData.id,
-            username: userData.username,
-            email: userData.email,
-            phone: userData.phone,
-            role: userData.role,
-            demoBalance: Number(userData.demo_balance || 0),
-            realBalance: Number(userData.real_balance || 0),
-            activeAccount: userData.active_account || 'DEMO',
-            verificationStatus: userData.verification_status || 'not_verified',
-            verificationSubmittedAt: userData.verification_submitted_at ? Number(userData.verification_submitted_at) : undefined,
-            verificationDocuments: userData.verification_documents || {},
-            profit: userData.active_account === 'REAL' 
-              ? Number(userData.total_profit_real || 0) 
-              : Number(userData.total_profit_demo || 0),
-            dailyProfit: userData.active_account === 'REAL'
-              ? Number(userData.daily_profit_real || 0)
-              : Number(userData.daily_profit_demo || 0),
-            lastProfitResetDate: userData.last_profit_reset_date,
-            trades: sortedTrades.map((t: any) => ({
-              id: t.id,
-              coin: t.coin,
-              amount: Number(t.amount),
-              type: t.type,
-              price: Number(t.price),
-              status: 'CLOSED', // Force CLOSED on load to prevent auto-resumption
-              profit: Number(t.profit || 0),
-              timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
-              accountType: t.account_type,
-              duration: t.duration
-            })),
-            transactions: sortedTransactions.map((t: any) => ({
-              id: t.id,
-              type: t.type,
-              amount: Number(t.amount),
-              status: t.status,
-              timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
-              accountType: t.account_type,
-              method: t.method,
-              externalId: t.external_id
-            })),
-            bots: {
-              scalping: userData.bot_settings?.scalping_active || false,
-              trend: userData.bot_settings?.trend_active || false,
-              ai: userData.bot_settings?.ai_active || false,
-            },
-            createdAt: new Date(userData.created_at).getTime()
-          };
-          setUser(formattedUser);
-        } else if (!error) {
-          // User exists in Auth but not in public.users table
-          // Create the profile record now
-          const { data: newUser, error: createError } = await supabase
-            .from('users')
-            .insert({
-              id: session.user.id,
-              username: session.user.user_metadata.username || session.user.email?.split('@')[0],
-              email: session.user.email,
-              phone: session.user.user_metadata.phone,
-              role: session.user.user_metadata.role || 'user',
-              demo_balance: 10000,
-              real_balance: 0,
-              active_account: 'DEMO'
-            })
-            .select()
-            .single();
-          
-          if (newUser && !createError) {
-            syncWithSupabase(); // Retry sync
-          }
-        } else if (error) {
-          console.error('Supabase fetch error:', error);
+          .insert({
+            id: session.user.id,
+            username: session.user.user_metadata.username || session.user.email?.split('@')[0],
+            email: session.user.email,
+            phone: session.user.user_metadata.phone,
+            role: session.user.user_metadata.role || 'user',
+            demo_balance: 10000,
+            real_balance: 0,
+            active_account: 'DEMO'
+          })
+          .select()
+          .single();
+        
+        if (newUser && !createError) {
+          syncWithSupabase(); // Retry sync
         }
+      } else if (error) {
+        console.error('Supabase fetch error:', error);
       }
-    };
+    }
+  }, [setUser]);
 
+  useEffect(() => {
     // Call auto-process RPC on load to sync DB
     if (isSupabaseConfigured()) {
       supabase.rpc('auto_process_pending').then(({ error }) => {
@@ -344,7 +344,7 @@ export function useStore() {
       subscription.unsubscribe();
       supabase.removeAllChannels();
     };
-  }, []);
+  }, [syncWithSupabase]);
 
   useEffect(() => {
     if (user) {
@@ -1269,6 +1269,20 @@ export function useStore() {
     }
   };
 
+  const refreshData = async () => {
+    await syncWithSupabase();
+  };
+
+  const checkPaymentStatus = async (externalId: string) => {
+    try {
+      const response = await axios.get(`/api/payhero/status/${externalId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+      return null;
+    }
+  };
+
   const failLatestDeposit = async () => {
     if (!user) return;
     
@@ -1341,8 +1355,10 @@ export function useStore() {
     toggleBot,
     addBotProfit,
     processPayheroDeposit,
+    checkPaymentStatus,
     failLatestDeposit,
     submitVerification,
+    refreshData,
     getAllUsers,
     getGlobalStats,
     updateUserBalance,

@@ -124,6 +124,60 @@ router.post('/payhero/initiate', async (req, res) => {
   }
 });
 
+router.get('/payhero/status/:external_reference', async (req, res) => {
+  const { external_reference } = req.params;
+  
+  try {
+    if (!PAYHERO_API_KEY) {
+      throw new Error('Payhero API Key is missing.');
+    }
+
+    const authHeader = PAYHERO_API_KEY?.startsWith('Basic ') || PAYHERO_API_KEY?.startsWith('Bearer ') 
+      ? PAYHERO_API_KEY 
+      : `Bearer ${PAYHERO_API_KEY}`;
+
+    // Note: Payhero status check endpoint might vary. 
+    // This is a common pattern for their API.
+    const response = await axios.get(`https://backend.payhero.co.ke/api/v2/payments?external_reference=${external_reference}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000
+    });
+
+    // If Payhero returns the transaction, we can update our DB if it's successful
+    const payment = response.data.data?.[0] || response.data;
+    if (payment && (payment.status === 'Success' || payment.status === 'Successful')) {
+      const userId = external_reference.split('-')[0];
+      const client = supabaseAdmin || supabase;
+      
+      // Check if already completed to avoid double crediting
+      const { data: existingTx } = await client
+        .from('transactions')
+        .select('status, amount')
+        .eq('external_id', external_reference)
+        .single();
+
+      if (existingTx && existingTx.status !== 'completed') {
+        const amountUsd = existingTx.amount;
+        const { data: user } = await client.from('users').select('real_balance').eq('id', userId).single();
+        
+        if (user) {
+          const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
+          await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
+          await client.from('transactions').update({ status: 'completed' }).eq('external_id', external_reference);
+        }
+      }
+    }
+
+    res.json(response.data);
+  } catch (error: any) {
+    console.error('Status check error:', error.message);
+    res.status(500).json({ error: 'Failed to check payment status' });
+  }
+});
+
 router.post('/payhero/callback', async (req, res) => {
   const payload = req.body;
   const { status, external_reference, amount, transaction_id } = payload;

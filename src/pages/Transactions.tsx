@@ -15,7 +15,10 @@ import {
   Smartphone,
   Info,
   ChevronRight,
-  DollarSign
+  DollarSign,
+  ArrowRight,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
@@ -23,7 +26,7 @@ import { USD_TO_KES, MIN_DEPOSIT_USD, MIN_WITHDRAWAL_USD, WITHDRAWAL_EXCHANGE_RA
 import AlertModal from '../components/AlertModal';
 
 export default function Transactions() {
-  const { user, addTransaction, processPayheroDeposit, failLatestDeposit } = useStore();
+  const { user, addTransaction, processPayheroDeposit, failLatestDeposit, checkPaymentStatus, refreshData } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
   const [amount, setAmount] = useState('');
@@ -31,7 +34,8 @@ export default function Transactions() {
   const [paymentMethod, setPaymentMethod] = useState<'MPESA'>('MPESA');
   const [withdrawalMethod, setWithdrawalMethod] = useState<'MPESA' | 'BANK'>('MPESA');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED'>('IDLE');
+  const [isChecking, setIsChecking] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED' | 'VERIFYING'>('IDLE');
   const [timeLeft, setTimeLeft] = useState(30);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -57,13 +61,22 @@ export default function Transactions() {
 
   // Automatically detect when a pending transaction is completed via real-time sync
   useEffect(() => {
-    if (paymentStatus === 'WAITING' && user?.transactions) {
-      const latestDeposit = user.transactions.find(t => t.type === 'DEPOSIT');
+    if ((paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') && user?.transactions) {
+      // Find the most recent deposit
+      const latestDeposit = [...user.transactions]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .find(t => t.type === 'DEPOSIT');
+        
       if (latestDeposit && latestDeposit.status === 'completed') {
-        setPaymentStatus('SUCCESS');
+        // Only trigger success if it's a recent transaction (within last 5 mins)
+        if (Date.now() - latestDeposit.timestamp < 300000) {
+          setPaymentStatus('SUCCESS');
+        }
       } else if (latestDeposit && latestDeposit.status === 'failed') {
-        setPaymentStatus('FAILED');
-        setErrorMessage('Transaction failed or was cancelled.');
+        if (Date.now() - latestDeposit.timestamp < 300000) {
+          setPaymentStatus('FAILED');
+          setErrorMessage('Transaction failed or was cancelled.');
+        }
       }
     }
   }, [user?.transactions, paymentStatus]);
@@ -77,9 +90,7 @@ export default function Transactions() {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            setPaymentStatus('FAILED');
-            setErrorMessage('Transaction timed out. Please try again.');
-            failLatestDeposit(); // Record the failure in DB
+            setPaymentStatus('VERIFYING');
             return 0;
           }
           return prev - 1;
@@ -711,6 +722,58 @@ export default function Transactions() {
                   </>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-8 text-center space-y-6">
+                    {paymentStatus === 'VERIFYING' && (
+                      <div className="flex flex-col items-center text-center py-4">
+                        <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
+                          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Verifying Payment</h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 max-w-[280px]">
+                          We're waiting for network confirmation. This can sometimes take a minute.
+                        </p>
+                        
+                        <div className="flex flex-col gap-3 w-full">
+                          <button 
+                            onClick={async () => {
+                              setIsChecking(true);
+                              await refreshData();
+                              
+                              // Check if the transaction is now completed in our local state
+                              const latestTx = user?.transactions?.find(t => t.type === 'DEPOSIT' && t.status === 'completed');
+                              if (latestTx && (Date.now() - latestTx.timestamp < 60000)) {
+                                setPaymentStatus('SUCCESS');
+                              } else {
+                                // Try backend check
+                                const latestPending = user?.transactions?.find(t => t.type === 'DEPOSIT' && t.status === 'pending');
+                                if (latestPending?.externalId) {
+                                  const result = await checkPaymentStatus(latestPending.externalId);
+                                  if (result?.status === 'Success' || result?.status === 'Successful') {
+                                    setPaymentStatus('SUCCESS');
+                                    await refreshData();
+                                  }
+                                }
+                              }
+                              setIsChecking(false);
+                            }}
+                            disabled={isChecking}
+                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                          >
+                            {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            Check Status Again
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setPaymentStatus('IDLE');
+                              setIsModalOpen(false);
+                            }}
+                            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
+                          >
+                            Close and check history later
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {paymentStatus === 'WAITING' && (
                       <div className="flex flex-col items-center gap-6">
                         <div className="relative">
@@ -744,7 +807,7 @@ export default function Transactions() {
                           <button 
                             onClick={() => {
                               setPaymentStatus('IDLE');
-                              failLatestDeposit(); // Record as failed/cancelled
+                              setIsModalOpen(false);
                             }}
                             className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
                           >
@@ -810,23 +873,5 @@ export default function Transactions() {
         type={alertConfig.type}
       />
     </div>
-  );
-}
-
-function ArrowRight({ size }: { size: number }) {
-  return (
-    <svg 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    >
-      <line x1="5" y1="12" x2="19" y2="12" />
-      <polyline points="12 5 19 12 12 19" />
-    </svg>
   );
 }
