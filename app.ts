@@ -218,26 +218,51 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
 
     if (isSuccess) {
       const ref = tx?.external_id || external_reference;
-      const userId = ref.split('-')[0];
       
       // Check if already completed to avoid double crediting
-      const { data: currentTx } = await client
+      const queryParts = [];
+      if (ref) {
+        queryParts.push(`external_id.eq.${ref}`);
+        queryParts.push(`id.eq.${ref}`);
+      }
+      
+      const { data: currentTx, error: txFetchError } = await client
         .from('transactions')
-        .select('status, amount')
-        .eq('external_id', ref)
+        .select('status, amount, user_id, id')
+        .or(queryParts.join(','))
         .maybeSingle();
 
-      if (currentTx && currentTx.status !== 'completed') {
+      if (txFetchError) {
+        console.error('Error fetching transaction for status check:', txFetchError);
+      } else if (currentTx && currentTx.status !== 'completed') {
+        const userId = currentTx.user_id;
         const amountUsd = currentTx.amount;
-        const { data: user } = await client.from('users').select('real_balance').eq('id', userId).single();
         
-        if (user) {
-          const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
-          console.log(`Manual status check success. Updating balance for ${userId}: ${newBalance}`);
+        const { data: user, error: userFetchError } = await client
+          .from('users')
+          .select('real_balance, username')
+          .eq('id', userId)
+          .single();
+        
+        if (userFetchError) {
+          console.error('Error fetching user for status check:', userFetchError);
+        } else if (user) {
+          const currentBalance = Number(user.real_balance || 0);
+          const newBalance = Number((currentBalance + amountUsd).toFixed(2));
+          console.log(`Manual status check success for ${user.username}. Updating balance: ${currentBalance} -> ${newBalance}`);
           
-          await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
-          await client.from('transactions').update({ status: 'completed' }).eq('external_id', ref).eq('status', 'pending');
+          const { error: balanceUpdateError } = await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
+          if (balanceUpdateError) {
+            console.error('Error updating balance during status check:', balanceUpdateError);
+          } else {
+            await client.from('transactions')
+              .update({ status: 'completed' })
+              .eq('id', currentTx.id);
+            console.log(`Transaction ${currentTx.id} marked as completed via status check.`);
+          }
         }
+      } else if (currentTx?.status === 'completed') {
+        console.log(`Transaction ${currentTx.id} already completed. No update needed.`);
       }
     }
     
@@ -286,61 +311,87 @@ router.post('/payhero/callback', async (req, res) => {
     }
 
     if (isSuccess) {
-      // Extract userId from ref if possible
-      let userId = ref?.split('-')[0];
+      // 1. Find the transaction in our DB to get the correct user_id and expected amount
+      // We search by external_id (our ref) or checkoutId (Payhero's ref)
+      const queryParts = [];
+      if (ref) queryParts.push(`external_id.eq.${ref}`);
+      if (checkoutId) queryParts.push(`external_id.eq.${checkoutId}`);
       
-      // If ref is missing or doesn't have userId, try to find the transaction in DB
-      if (!userId || userId.length < 10) {
-        console.log('UserId not in ref, searching transaction in DB...');
-        const { data: tx } = await client
-          .from('transactions')
-          .select('user_id')
-          .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`)
-          .maybeSingle();
-        
-        if (tx) userId = tx.user_id;
+      if (queryParts.length === 0) {
+        console.error('No identifiers found in callback payload.');
+        return res.status(400).json({ error: 'Missing identifiers' });
       }
 
-      if (!userId) {
-        console.error('Could not determine userId for successful payment.');
-        return res.status(404).json({ error: 'User not found' });
+      const { data: tx, error: fetchError } = await client
+        .from('transactions')
+        .select('user_id, amount, status, id')
+        .or(queryParts.join(','))
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error fetching transaction for callback:', fetchError);
+        return res.status(500).json({ error: 'Database error' });
       }
 
-      const USD_TO_KES = 1; // Keep at 1 for now as per user testing
-      const amountUsd = Number((amountKes / USD_TO_KES).toFixed(2));
+      if (!tx) {
+        console.error(`No transaction found for Ref: ${ref} or CheckoutID: ${checkoutId}`);
+        // Log all pending transactions to help debug
+        const { data: pendingTxs } = await client.from('transactions').select('id, external_id, amount').eq('status', 'pending').limit(5);
+        console.log('Recent pending transactions:', JSON.stringify(pendingTxs));
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
 
-      console.log(`Processing success for user ${userId}. Amount: ${amountUsd} USD.`);
+      if (tx.status === 'completed') {
+        console.log(`Transaction ${tx.id} already marked as completed. Skipping balance update.`);
+        return res.json({ success: true, message: 'Already processed' });
+      }
 
-      // 1. Update balance
-      const { data: user, error: userError } = await client
+      const userId = tx.user_id;
+      const amountUsd = tx.amount; 
+
+      console.log(`Processing success for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
+
+      // 2. Update balance
+      const { data: userData, error: userError } = await client
         .from('users')
-        .select('real_balance')
+        .select('real_balance, username')
         .eq('id', userId)
         .single();
 
-      if (userError || !user) {
+      if (userError || !userData) {
         console.error(`User ${userId} fetch error:`, userError);
         return res.status(404).json({ error: 'User not found' });
       }
 
-      const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
-      const { error: balanceError } = await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
+      const currentBalance = Number(userData.real_balance || 0);
+      const newBalance = Number((currentBalance + amountUsd).toFixed(2));
+      
+      console.log(`Updating balance for ${userData.username} (${userId}): ${currentBalance} -> ${newBalance}`);
+      
+      const { error: balanceError } = await client
+        .from('users')
+        .update({ real_balance: newBalance })
+        .eq('id', userId);
       
       if (balanceError) {
-        console.error('Balance update error:', balanceError);
-      } else {
-        console.log(`Balance updated: ${user.real_balance} -> ${newBalance}`);
-      }
+        console.error('CRITICAL: Balance update error:', balanceError);
+        return res.status(500).json({ error: 'Failed to update balance' });
+      } 
+      
+      console.log(`Balance successfully updated for ${userId}`);
 
-      // 2. Update transaction
+      // 3. Update transaction
       const { error: txError } = await client.from('transactions').update({
         status: 'completed',
-        amount: amountUsd,
         method: `Payhero (${transactionId || checkoutId || 'M-Pesa'})`
       })
-      .eq('user_id', userId)
-      .eq('status', 'pending')
-      .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`);
+      .eq('id', tx.id);
+
+      if (txError) {
+        console.error('Transaction status update error:', txError);
+      } else {
+        console.log(`Transaction ${tx.id} marked as completed.`);
+      }
 
       if (txError) console.error('Transaction update error:', txError);
       else console.log(`Transaction ${ref || checkoutId} marked as completed.`);
