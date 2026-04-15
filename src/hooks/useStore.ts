@@ -1256,7 +1256,7 @@ export function useStore() {
       });
 
       if (response.data.success || response.data.status === 'Success' || response.data.status === 'Successful' || response.data.CheckoutRequestID) {
-        return true;
+        return response.data.external_reference || true;
       }
       
       const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
@@ -1295,7 +1295,7 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       await supabase.from('transactions')
-        .update({ status: 'failed' })
+        .update({ status: 'rejected' })
         .eq('id', latestPending.id);
     }
 

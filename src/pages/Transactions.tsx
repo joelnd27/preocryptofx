@@ -35,6 +35,7 @@ export default function Transactions() {
   const [withdrawalMethod, setWithdrawalMethod] = useState<'MPESA' | 'BANK'>('MPESA');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [currentTxRef, setCurrentTxRef] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED' | 'VERIFYING'>('IDLE');
   const [timeLeft, setTimeLeft] = useState(30);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -61,25 +62,22 @@ export default function Transactions() {
 
   // Automatically detect when a pending transaction is completed via real-time sync
   useEffect(() => {
-    if ((paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') && user?.transactions) {
-      // Find the most recent deposit
-      const latestDeposit = [...user.transactions]
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .find(t => t.type === 'DEPOSIT');
+    if ((paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') && user?.transactions && currentTxRef) {
+      // Find the specific transaction we are waiting for
+      const targetTx = user.transactions.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
         
-      if (latestDeposit && latestDeposit.status === 'completed') {
-        // Only trigger success if it's a recent transaction (within last 5 mins)
-        if (Date.now() - latestDeposit.timestamp < 300000) {
+      if (targetTx) {
+        if (targetTx.status === 'completed') {
           setPaymentStatus('SUCCESS');
-        }
-      } else if (latestDeposit && latestDeposit.status === 'failed') {
-        if (Date.now() - latestDeposit.timestamp < 300000) {
+          setCurrentTxRef(null);
+        } else if (targetTx.status === 'failed' || targetTx.status === 'rejected') {
           setPaymentStatus('FAILED');
-          setErrorMessage('Transaction failed or was cancelled.');
+          setErrorMessage('Transaction failed, was rejected, or was cancelled.');
+          setCurrentTxRef(null);
         }
       }
     }
-  }, [user?.transactions, paymentStatus]);
+  }, [user?.transactions, paymentStatus, currentTxRef]);
 
   // Handle 30-second timeout for deposits
   useEffect(() => {
@@ -174,9 +172,13 @@ export default function Transactions() {
       setPaymentStatus('WAITING');
       setErrorMessage(null);
       try {
-        const success = await processPayheroDeposit(val, phone);
-        if (success) {
-          setPaymentStatus('WAITING'); // Change from SUCCESS to WAITING
+        const result = await processPayheroDeposit(val, phone);
+        if (result) {
+          if (typeof result === 'string') {
+            setCurrentTxRef(result);
+          }
+          setPaymentStatus('WAITING');
+          setAmount('');
         } else {
           setPaymentStatus('FAILED');
           setErrorMessage('Failed to initiate payment. Please check your details.');
@@ -739,18 +741,17 @@ export default function Transactions() {
                               await refreshData();
                               
                               // Check if the transaction is now completed in our local state
-                              const latestTx = user?.transactions?.find(t => t.type === 'DEPOSIT' && t.status === 'completed');
-                              if (latestTx && (Date.now() - latestTx.timestamp < 60000)) {
+                              const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
+                              if (latestTx && latestTx.status === 'completed') {
                                 setPaymentStatus('SUCCESS');
-                              } else {
+                                setCurrentTxRef(null);
+                              } else if (currentTxRef) {
                                 // Try backend check
-                                const latestPending = user?.transactions?.find(t => t.type === 'DEPOSIT' && t.status === 'pending');
-                                if (latestPending?.externalId) {
-                                  const result = await checkPaymentStatus(latestPending.externalId);
-                                  if (result?.status === 'Success' || result?.status === 'Successful') {
-                                    setPaymentStatus('SUCCESS');
-                                    await refreshData();
-                                  }
+                                const result = await checkPaymentStatus(currentTxRef);
+                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                  setPaymentStatus('SUCCESS');
+                                  setCurrentTxRef(null);
+                                  await refreshData();
                                 }
                               }
                               setIsChecking(false);

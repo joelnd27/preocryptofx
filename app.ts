@@ -57,6 +57,10 @@ router.post('/payhero/initiate', async (req, res) => {
     }
 
     const externalReference = `${userId}-${Date.now()}`;
+    
+    console.log(`Initiating Payhero payment: ${amount} USD (${amountKes} KES) for user ${userId}. Ref: ${externalReference}`);
+    console.log(`Callback URL: ${callbackUrl}`);
+
     const payload: any = {
       amount: amountKes,
       phone_number: formattedPhone,
@@ -69,7 +73,8 @@ router.post('/payhero/initiate', async (req, res) => {
       payload.callback_url = callbackUrl;
     }
 
-    await supabase.from('transactions').insert({
+    const client = supabaseAdmin || supabase;
+    const { error: insertError } = await client.from('transactions').insert({
       user_id: userId,
       type: 'DEPOSIT',
       amount: amount,
@@ -78,6 +83,11 @@ router.post('/payhero/initiate', async (req, res) => {
       method: 'Payhero',
       external_id: externalReference
     });
+
+    if (insertError) {
+      console.error('Failed to record pending transaction:', insertError);
+      // We continue anyway so the user can still pay, but logging is important
+    }
 
     const authHeader = PAYHERO_API_KEY?.startsWith('Basic ') || PAYHERO_API_KEY?.startsWith('Bearer ') 
       ? PAYHERO_API_KEY 
@@ -88,10 +98,15 @@ router.post('/payhero/initiate', async (req, res) => {
         'Authorization': authHeader,
         'Content-Type': 'application/json'
       },
-      timeout: 10000
+      timeout: 15000
     });
 
-    res.json(response.data);
+    console.log('Payhero Response:', JSON.stringify(response.data));
+
+    res.json({
+      ...response.data,
+      external_reference: externalReference
+    });
   } catch (error: any) {
     console.error('Initiate payment error:', error);
     
@@ -180,18 +195,30 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
 
 router.post('/payhero/callback', async (req, res) => {
   const payload = req.body;
-  const { status, external_reference, amount, transaction_id } = payload;
+  console.log('Payhero Callback Received:', JSON.stringify(payload));
+  
+  const { status, external_reference, amount, transaction_id, CheckoutRequestID, ResultCode, ResultDesc } = payload;
 
-  if (status === 'Success' || status === 'Successful') {
-    const userId = external_reference?.split('-')[0] || external_reference;
-    const amountKes = Number(amount);
+  // Payhero might send status in different fields depending on the provider
+  const isSuccess = 
+    status?.toLowerCase() === 'success' || 
+    status?.toLowerCase() === 'successful' ||
+    ResultCode === 0 || 
+    ResultCode === '0';
+
+  if (isSuccess) {
+    const ref = external_reference || payload.ExternalReference;
+    const userId = ref?.split('-')[0];
+    const amountKes = Number(amount || payload.Amount);
     const USD_TO_KES = 1;
     const amountUsd = Number((amountKes / USD_TO_KES).toFixed(2));
 
+    console.log(`Processing successful callback for user ${userId}. Amount: ${amountUsd} USD. Ref: ${ref}`);
+
     try {
-      // Use Admin client to bypass RLS for background balance updates
       const client = supabaseAdmin || supabase;
       
+      // 1. Get user to update balance
       const { data: user } = await client
         .from('users')
         .select('real_balance')
@@ -200,21 +227,41 @@ router.post('/payhero/callback', async (req, res) => {
 
       if (user) {
         const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
-        await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
+        console.log(`Updating balance for ${userId}: ${user.real_balance} -> ${newBalance}`);
         
-        await client.from('transactions').update({
+        const { error: balanceError } = await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
+        if (balanceError) console.error('Balance update error:', balanceError);
+        
+        // 2. Update transaction status
+        // We try to match by external_id (which was our externalReference) or CheckoutRequestID
+        const { error: txError } = await client.from('transactions').update({
           status: 'completed',
-          external_id: transaction_id || payload.CheckoutRequestID || external_reference,
+          external_id: transaction_id || CheckoutRequestID || ref,
           amount: amountUsd
-        }).eq('user_id', userId).eq('external_id', external_reference);
+        })
+        .eq('user_id', userId)
+        .or(`external_id.eq."${ref}",external_id.eq."${CheckoutRequestID}"`);
+        
+        if (txError) console.error('Transaction update error:', txError);
+        else console.log(`Transaction ${ref} marked as completed.`);
+      } else {
+        console.error(`User ${userId} not found for callback.`);
       }
     } catch (error) {
-      console.error('Callback error:', error);
+      console.error('Callback processing exception:', error);
     }
-  } else if (external_reference) {
-    const userId = external_reference.split('-')[0];
-    const client = supabaseAdmin || supabase;
-    await client.from('transactions').update({ status: 'failed' }).eq('user_id', userId).eq('external_id', external_reference);
+  } else {
+    const ref = external_reference || payload.ExternalReference;
+    console.log(`Payment failed or cancelled for ref: ${ref}. Status: ${status}. Desc: ${ResultDesc}`);
+    
+    if (ref) {
+      const userId = ref.split('-')[0];
+      const client = supabaseAdmin || supabase;
+      await client.from('transactions')
+        .update({ status: 'rejected' })
+        .eq('user_id', userId)
+        .eq('external_id', ref);
+    }
   }
 
   res.json({ status: 'received' });
@@ -279,7 +326,7 @@ setInterval(async () => {
     
     const { data, error } = await supabaseAdmin
       .from('transactions')
-      .update({ status: 'failed' })
+      .update({ status: 'rejected' })
       .eq('status', 'pending')
       .eq('type', 'DEPOSIT')
       .lt('created_at', fifteenMinutesAgo)

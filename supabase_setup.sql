@@ -49,13 +49,23 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
     type TEXT NOT NULL, -- DEPOSIT, WITHDRAW
     amount NUMERIC NOT NULL,
-    status TEXT DEFAULT 'pending', -- pending, completed, rejected
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'rejected', 'cancelled')),
     account_type TEXT DEFAULT 'REAL', -- REAL, DEMO
     method TEXT,
     external_id TEXT,
     timestamp TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure all columns exist (for existing tables)
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS type TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS amount NUMERIC;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'REAL';
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS method TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS external_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_external_id ON public.transactions(external_id);
 
 -- Trades Table
 CREATE TABLE IF NOT EXISTS public.trades (
