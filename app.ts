@@ -45,6 +45,11 @@ router.post('/payhero/initiate', async (req, res) => {
       throw new Error('Payhero API Key or Channel ID is missing.');
     }
 
+    if (!supabaseAdmin) {
+      console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
+      // We don't block initiation, but we log it clearly
+    }
+
     const host = req.get('host');
     const protocol = (host?.includes('localhost') || host?.includes('127.0.0.1')) ? 'http' : 'https';
     
@@ -166,11 +171,15 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
 
     // First, try to find the CheckoutRequestID from our DB if external_reference is our ref
     const client = supabaseAdmin || supabase;
-    const { data: tx } = await client
+    const { data: tx, error: txError } = await client
       .from('transactions')
-      .select('method, external_id, amount')
+      .select('method, external_id, amount, id')
       .or(`external_id.eq."${external_reference}",id.eq."${external_reference}"`)
       .maybeSingle();
+
+    if (txError) {
+      console.error('Database error fetching transaction for status check:', txError);
+    }
 
     let queryId = external_reference;
     let isCheckoutId = false;
@@ -207,30 +216,35 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
     
     console.log('Payhero Status Response:', JSON.stringify(response.data));
 
-    const payment = response.data.data?.[0] || response.data;
+    const payment = response.data.data?.[0] || response.data.data || response.data;
+    console.log('Extracted Payment Data:', JSON.stringify(payment));
+    
     const isSuccess = 
       payment && (
         payment.status?.toLowerCase() === 'success' || 
         payment.status?.toLowerCase() === 'successful' ||
         payment.ResultCode === 0 || 
-        payment.ResultCode === '0'
+        payment.ResultCode === '0' ||
+        payment.ResultCode === 200 ||
+        payment.status_code === 200
       );
 
     if (isSuccess) {
       const ref = tx?.external_id || external_reference;
       
+      console.log(`Manual status check success for ${external_reference}. Ref: ${ref}`);
+
       // Check if already completed to avoid double crediting
-      const queryParts = [];
+      let query = client.from('transactions').select('status, amount, user_id, id');
+      
       if (ref) {
-        queryParts.push(`external_id.eq.${ref}`);
-        queryParts.push(`id.eq.${ref}`);
+        query = query.or(`external_id.eq."${ref}",id.eq."${ref}"`);
+      } else {
+        console.error('No reference available for status check update.');
+        return res.json(response.data);
       }
       
-      const { data: currentTx, error: txFetchError } = await client
-        .from('transactions')
-        .select('status, amount, user_id, id')
-        .or(queryParts.join(','))
-        .maybeSingle();
+      const { data: currentTx, error: txFetchError } = await query.maybeSingle();
 
       if (txFetchError) {
         console.error('Error fetching transaction for status check:', txFetchError);
@@ -313,20 +327,19 @@ router.post('/payhero/callback', async (req, res) => {
     if (isSuccess) {
       // 1. Find the transaction in our DB to get the correct user_id and expected amount
       // We search by external_id (our ref) or checkoutId (Payhero's ref)
+      let query = client.from('transactions').select('user_id, amount, status, id');
       const queryParts = [];
-      if (ref) queryParts.push(`external_id.eq.${ref}`);
-      if (checkoutId) queryParts.push(`external_id.eq.${checkoutId}`);
+      if (ref) queryParts.push(`external_id.eq."${ref}"`);
+      if (checkoutId) queryParts.push(`external_id.eq."${checkoutId}"`);
       
-      if (queryParts.length === 0) {
+      if (queryParts.length > 0) {
+        query = query.or(queryParts.join(','));
+      } else {
         console.error('No identifiers found in callback payload.');
         return res.status(400).json({ error: 'Missing identifiers' });
       }
 
-      const { data: tx, error: fetchError } = await client
-        .from('transactions')
-        .select('user_id, amount, status, id')
-        .or(queryParts.join(','))
-        .maybeSingle();
+      const { data: tx, error: fetchError } = await query.maybeSingle();
 
       if (fetchError) {
         console.error('Error fetching transaction for callback:', fetchError);
@@ -444,13 +457,27 @@ router.post('/admin/update-user', async (req, res) => {
 });
 
 router.get('/health', (req, res) => {
+  const configStatus = {
+    hasSupabaseAdmin: !!supabaseAdmin,
+    hasPayheroKey: !!PAYHERO_API_KEY,
+    hasPayheroChannel: !!PAYHERO_CHANNEL_ID,
+    callbackUrl: process.env.PAYHERO_CALLBACK_URL || 'auto-generated',
+    supabaseUrl: !!supabaseUrl,
+    supabaseAnonKey: !!supabaseAnonKey
+  };
+
+  const issues = [];
+  if (!configStatus.hasSupabaseAdmin) issues.push('SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
+  if (!configStatus.hasPayheroKey) issues.push('PAYHERO_API_KEY is missing.');
+  if (!configStatus.hasPayheroChannel) issues.push('PAYHERO_CHANNEL_ID is missing.');
+
   res.json({ 
-    status: 'ok', 
+    status: issues.length === 0 ? 'ok' : 'degraded', 
     environment: process.env.NODE_ENV, 
     timestamp: new Date().toISOString(),
-    path: req.path,
-    baseUrl: req.baseUrl,
-    originalUrl: req.originalUrl
+    config: configStatus,
+    issues: issues,
+    path: req.path
   });
 });
 

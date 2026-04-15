@@ -955,12 +955,22 @@ export default function Transactions() {
                             {errorMessage || 'Something went wrong with the transaction.'}
                           </p>
                         </div>
-                        <button 
-                          onClick={() => setPaymentStatus('IDLE')}
-                          className="w-full py-3 bg-slate-800 text-white text-sm font-bold rounded-xl"
-                        >
-                          Try Again
-                        </button>
+                        <div className="flex flex-col gap-3 w-full">
+                          <button 
+                            onClick={() => setPaymentStatus('IDLE')}
+                            className="w-full py-3 bg-slate-800 text-white text-sm font-bold rounded-xl"
+                          >
+                            Try Again
+                          </button>
+                          <a 
+                            href="/api/health" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-blue-500 hover:underline flex items-center justify-center gap-1"
+                          >
+                            <Info size={10} /> Check System Health (Debug)
+                          </a>
+                        </div>
                       </>
                     )}
                   </div>
