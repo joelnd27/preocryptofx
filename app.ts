@@ -237,8 +237,7 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
     
     const isSuccess = 
       payment && (
-        payment.status?.toLowerCase() === 'success' || 
-        payment.status?.toLowerCase() === 'successful' ||
+        (typeof payment.status === 'string' && (payment.status.toLowerCase() === 'success' || payment.status.toLowerCase() === 'successful')) || 
         payment.ResultCode === 0 || 
         payment.ResultCode === '0' ||
         payment.ResultCode === 200 ||
@@ -320,8 +319,7 @@ router.post('/payhero/callback', async (req, res) => {
     const resultDesc = payload.ResultDesc || payload.ResultDescription || payload.status_reason;
     
     const isSuccess = 
-      status?.toLowerCase() === 'success' || 
-      status?.toLowerCase() === 'successful' ||
+      (typeof status === 'string' && (status.toLowerCase() === 'success' || status.toLowerCase() === 'successful')) || 
       resultCode === 0 || 
       resultCode === '0' ||
       payload.Success === true;
