@@ -314,10 +314,15 @@ router.get('/payhero/callback', (req, res) => {
 });
 
 router.post('/payhero/callback', async (req, res) => {
-  const payload = req.body;
+  const payload = Array.isArray(req.body) ? req.body[0] : req.body;
   console.log('--- PAYHERO CALLBACK RECEIVED ---');
   console.log('Timestamp:', new Date().toISOString());
   console.log('Payload:', JSON.stringify(payload));
+
+  if (!payload || Object.keys(payload).length === 0) {
+    console.error('Callback received empty payload.');
+    return res.status(400).json({ error: 'Empty payload' });
+  }
   
   try {
     // 1. Extract success indicators
@@ -331,16 +336,31 @@ router.post('/payhero/callback', async (req, res) => {
       resultCode === '0' ||
       payload.Success === true;
 
-    // 2. Extract identifiers
-    const ref = payload.external_reference || payload.ExternalReference || payload.BillRefNumber;
-    const checkoutId = payload.CheckoutRequestID || payload.checkout_request_id;
-    const transactionId = payload.transaction_id || payload.TransactionID || payload.mpesa_code;
-    const amountKes = Number(payload.amount || payload.Amount || 0);
+    // 2. Extract identifiers (Check root, nested 'data', and 'Body.stkCallback')
+    const data = payload.data || (payload.Body && payload.Body.stkCallback) || payload;
+    
+    // Standard Safaricom Metadata extraction if available
+    let metadataAmount = 0;
+    let metadataReceipt = '';
+    if (data.CallbackMetadata && Array.isArray(data.CallbackMetadata.Item)) {
+      const items = data.CallbackMetadata.Item;
+      const amountItem = items.find((i: any) => i.Name === 'Amount');
+      const receiptItem = items.find((i: any) => i.Name === 'MpesaReceiptNumber');
+      if (amountItem) metadataAmount = Number(amountItem.Value);
+      if (receiptItem) metadataReceipt = receiptItem.Value;
+    }
+
+    const ref = data.external_reference || data.ExternalReference || data.BillRefNumber || data.Reference || data.reference || payload.external_reference || payload.ExternalReference || payload.BillRefNumber || payload.Reference;
+    const checkoutId = data.CheckoutRequestID || data.checkout_request_id || data.CheckoutID || payload.CheckoutRequestID || payload.checkout_request_id || payload.CheckoutID;
+    const transactionId = data.transaction_id || data.TransactionID || data.mpesa_code || data.MpesaReceiptNumber || payload.transaction_id || payload.MpesaReceiptNumber || metadataReceipt;
+    const amountKes = Number(data.amount || data.Amount || payload.amount || metadataAmount || 0);
 
     console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}`);
 
     if (!ref && !checkoutId) {
       console.error('Callback missing identifiers (ref/checkoutId). Cannot process.');
+      console.log('Available keys in payload:', Object.keys(payload));
+      if (payload.data) console.log('Available keys in payload.data:', Object.keys(payload.data));
       return res.status(400).json({ error: 'Missing identifiers' });
     }
 
