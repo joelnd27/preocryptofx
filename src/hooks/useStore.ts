@@ -1266,7 +1266,14 @@ export function useStore() {
       const details = error.response?.data?.details;
       const message = error.response?.data?.error || error.message;
       console.error('Payhero Initiation Error:', details || message);
-      throw new Error(details ? (typeof details === 'object' ? JSON.stringify(details) : details) : message);
+      
+      let finalMsg = details ? (typeof details === 'object' ? JSON.stringify(details) : details) : message;
+      
+      if (finalMsg && finalMsg.includes('Too many unsuccessful requests')) {
+        finalMsg = 'Too many unsuccessful requests try after 24hrs';
+      }
+      
+      throw new Error(finalMsg);
     }
   };
 

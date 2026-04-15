@@ -213,7 +213,12 @@ export default function Transactions() {
       } catch (error: any) {
         setPaymentStatus('FAILED');
         const details = error.response?.data?.details;
-        const msg = typeof details === 'object' ? JSON.stringify(details) : details;
+        let msg = typeof details === 'object' ? JSON.stringify(details) : details;
+        
+        if (msg && msg.includes('Too many unsuccessful requests')) {
+          msg = 'Too many unsuccessful requests try after 24hrs';
+        }
+        
         setErrorMessage(msg || error.message || 'An unexpected error occurred.');
       } finally {
         setIsProcessing(false);
@@ -1030,14 +1035,6 @@ export default function Transactions() {
                           >
                             Try Again
                           </button>
-                          <a 
-                            href="/api/health" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-blue-500 hover:underline flex items-center justify-center gap-1"
-                          >
-                            <Info size={10} /> Check System Health (Debug)
-                          </a>
                         </div>
                       </>
                     )}
