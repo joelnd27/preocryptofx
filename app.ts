@@ -31,7 +31,7 @@ router.post('/payhero/initiate', async (req, res) => {
   const { amount, phone, userId, username } = req.body;
 
   try {
-    const USD_TO_KES = 130;
+    const USD_TO_KES = 1;
     const amountKes = Math.round(amount * USD_TO_KES);
 
     let formattedPhone = (phone || '').replace(/\D/g, '');
@@ -131,7 +131,7 @@ router.post('/payhero/callback', async (req, res) => {
   if (status === 'Success' || status === 'Successful') {
     const userId = external_reference?.split('-')[0] || external_reference;
     const amountKes = Number(amount);
-    const USD_TO_KES = 130;
+    const USD_TO_KES = 1;
     const amountUsd = Number((amountKes / USD_TO_KES).toFixed(2));
 
     try {
