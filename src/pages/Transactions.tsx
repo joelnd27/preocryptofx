@@ -32,6 +32,7 @@ export default function Transactions() {
   const [withdrawalMethod, setWithdrawalMethod] = useState<'MPESA' | 'BANK'>('MPESA');
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED'>('IDLE');
+  const [timeLeft, setTimeLeft] = useState(30);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAW'>('ALL');
@@ -66,6 +67,26 @@ export default function Transactions() {
       }
     }
   }, [user?.transactions, paymentStatus]);
+
+  // Handle 30-second timeout for deposits
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (paymentStatus === 'WAITING') {
+      setTimeLeft(30);
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setPaymentStatus('FAILED');
+            setErrorMessage('Transaction timed out. Please try again.');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [paymentStatus]);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'N/A';
@@ -690,39 +711,43 @@ export default function Transactions() {
                 ) : (
                   <div className="flex flex-col items-center justify-center py-8 text-center space-y-6">
                     {paymentStatus === 'WAITING' && (
-                      <>
-                        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                        <div>
-                          <h4 className="text-lg font-bold mb-2">Waiting for PIN</h4>
-                          <p className="text-xs text-slate-500 px-4">Check your phone for the M-Pesa prompt and enter your PIN to complete.</p>
+                      <div className="flex flex-col items-center gap-6">
+                        <div className="relative">
+                          <div className="w-20 h-20 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-sm font-bold font-mono text-blue-500">{timeLeft}s</span>
+                          </div>
                         </div>
-                        <div className="flex flex-col gap-2 w-full px-4">
+                        <div>
+                          <h4 className="text-xl font-bold mb-2">Waiting for PIN</h4>
+                          <p className="text-xs text-slate-500 px-4 max-w-[280px] mx-auto">
+                            Check your phone for the M-Pesa prompt and enter your PIN to complete the transaction.
+                          </p>
+                        </div>
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800/50 w-full">
+                          <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400 mb-2">
+                            <Clock size={16} className="animate-pulse" />
+                            <span className="text-xs font-bold uppercase tracking-wider">STK Push Sent</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 text-left">
+                            Your balance will update automatically once confirmed. This window will close in {timeLeft} seconds if no action is taken.
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-3 w-full">
+                          <button 
+                            onClick={() => { setIsModalOpen(false); setPaymentStatus('IDLE'); }}
+                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20"
+                          >
+                            Done
+                          </button>
                           <button 
                             onClick={() => setPaymentStatus('IDLE')}
-                            className="text-[10px] text-slate-500 hover:underline mt-2"
+                            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
                           >
                             Cancel and go back
                           </button>
                         </div>
-                      </>
-                    )}
- 
-                    {paymentStatus === 'WAITING' && (
-                      <>
-                        <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500">
-                          <Clock className="animate-spin" size={32} />
-                        </div>
-                        <div>
-                          <h4 className="text-lg font-bold mb-2">STK Push Sent</h4>
-                          <p className="text-xs text-slate-500 px-4">Please check your phone and enter your M-Pesa PIN to complete the transaction. Your balance will update automatically once confirmed.</p>
-                        </div>
-                        <button 
-                          onClick={() => { setIsModalOpen(false); setPaymentStatus('IDLE'); }}
-                          className="w-full py-3 bg-blue-600 text-white text-sm font-bold rounded-xl"
-                        >
-                          Done
-                        </button>
-                      </>
+                      </div>
                     )}
 
                     {paymentStatus === 'SUCCESS' && (
