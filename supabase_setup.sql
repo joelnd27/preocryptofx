@@ -64,6 +64,7 @@ ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pe
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'REAL';
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS method TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_transactions_external_id ON public.transactions(external_id);
 

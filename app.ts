@@ -121,7 +121,7 @@ router.post('/payhero/initiate', async (req, res) => {
         .eq('user_id', userId)
         .eq('type', 'DEPOSIT')
         .eq('status', 'pending')
-        .order('created_at', { ascending: false })
+        .order('timestamp', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -329,7 +329,7 @@ setInterval(async () => {
       .update({ status: 'rejected' })
       .eq('status', 'pending')
       .eq('type', 'DEPOSIT')
-      .lt('created_at', fifteenMinutesAgo)
+      .lt('timestamp', fifteenMinutesAgo)
       .select();
     
     if (error) {
