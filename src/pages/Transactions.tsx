@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Clock,
   X,
+  XCircle,
   CreditCard,
   Wallet,
   Smartphone,
@@ -100,6 +101,20 @@ export default function Transactions() {
           if (prev <= 1) {
             clearInterval(timer);
             setPaymentStatus('VERIFYING');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (paymentStatus === 'VERIFYING') {
+      // Give verification another 30 seconds before failing
+      setTimeLeft(30);
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setPaymentStatus('FAILED');
+            setErrorMessage('Verification timed out. If you have paid, please click "Check Status" in your Activity Log.');
             return 0;
           }
           return prev - 1;
@@ -422,11 +437,28 @@ export default function Transactions() {
                           </div>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                             <button
-                              onClick={() => checkPaymentStatus(tx.externalId || tx.id)}
-                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-blue-500 transition-colors"
+                              onClick={async () => {
+                                setIsChecking(true);
+                                try {
+                                  const result = await checkPaymentStatus(tx.externalId || tx.id);
+                                  if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                    setAlertConfig({
+                                      isOpen: true,
+                                      title: 'Payment Confirmed',
+                                      message: 'Your payment has been verified and your balance updated.',
+                                      type: 'success'
+                                    });
+                                  }
+                                  await refreshData();
+                                } finally {
+                                  setIsChecking(false);
+                                }
+                              }}
+                              disabled={isChecking}
+                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-blue-500 transition-colors disabled:opacity-50"
                               title="Check Status"
                             >
-                              <RefreshCw size={10} className={cn(paymentStatus === 'VERIFYING' && "animate-spin")} />
+                              <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
                             </button>
                           )}
                         </div>
@@ -484,16 +516,46 @@ export default function Transactions() {
                     )}>
                       {tx.accountType}
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      {tx.status === 'completed' ? (
-                        <CheckCircle2 size={12} className="text-green-500" />
-                      ) : (
-                        <Clock size={12} className="text-yellow-500" />
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        {tx.status === 'completed' ? (
+                          <CheckCircle2 size={12} className="text-green-500" />
+                        ) : tx.status === 'failed' ? (
+                          <XCircle size={12} className="text-red-500" />
+                        ) : (
+                          <Clock size={12} className="text-yellow-500 animate-pulse" />
+                        )}
+                        <span className={cn(
+                          "text-[10px] font-bold uppercase tracking-tighter",
+                          tx.status === 'completed' ? "text-green-500" : tx.status === 'failed' ? "text-red-500" : "text-yellow-500"
+                        )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
+                      </div>
+                      {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setIsChecking(true);
+                            try {
+                              const result = await checkPaymentStatus(tx.externalId || tx.id);
+                              if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                setAlertConfig({
+                                  isOpen: true,
+                                  title: 'Payment Confirmed',
+                                  message: 'Your payment has been verified and your balance updated.',
+                                  type: 'success'
+                                });
+                              }
+                              await refreshData();
+                            } finally {
+                              setIsChecking(false);
+                            }
+                          }}
+                          disabled={isChecking}
+                          className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg text-blue-500 transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
+                        </button>
                       )}
-                      <span className={cn(
-                        "text-[10px] font-medium capitalize",
-                        tx.status === 'completed' ? "text-green-500" : "text-yellow-500"
-                      )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                     </div>
                   </div>
                 </div>
@@ -817,15 +879,36 @@ export default function Transactions() {
                             <span className="text-xs font-bold uppercase tracking-wider">STK Push Sent</span>
                           </div>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 text-left">
-                            Your balance will update automatically once confirmed. This window will close in {timeLeft} seconds if no action is taken.
+                            Your balance will update automatically once confirmed. If you've already entered your PIN, you can click "Check Status" below.
                           </p>
                         </div>
                         <div className="flex flex-col gap-3 w-full">
                           <button 
-                            onClick={() => { setIsModalOpen(false); setPaymentStatus('IDLE'); }}
-                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20"
+                            onClick={async () => {
+                              setIsChecking(true);
+                              await refreshData();
+                              
+                              // Check if the transaction is now completed in our local state
+                              const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
+                              if (latestTx && latestTx.status === 'completed') {
+                                setPaymentStatus('SUCCESS');
+                                setCurrentTxRef(null);
+                              } else if (currentTxRef) {
+                                // Try backend check
+                                const result = await checkPaymentStatus(currentTxRef);
+                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                  setPaymentStatus('SUCCESS');
+                                  setCurrentTxRef(null);
+                                  await refreshData();
+                                }
+                              }
+                              setIsChecking(false);
+                            }}
+                            disabled={isChecking}
+                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
                           >
-                            Done
+                            {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            Check Status
                           </button>
                           <button 
                             onClick={() => {
@@ -847,7 +930,7 @@ export default function Transactions() {
                         </div>
                         <div>
                           <h4 className="text-lg font-bold mb-2">Success!</h4>
-                          <p className="text-xs text-slate-500">Your account has been credited with ${amount}.</p>
+                          <p className="text-xs text-slate-500">Your account has been credited successfully.</p>
                         </div>
                         <button 
                           onClick={() => { setIsModalOpen(false); setPaymentStatus('IDLE'); }}
