@@ -171,11 +171,18 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
 
     // First, try to find the CheckoutRequestID from our DB if external_reference is our ref
     const client = supabaseAdmin || supabase;
-    const { data: tx, error: txError } = await client
-      .from('transactions')
-      .select('method, external_id, amount, id')
-      .or(`external_id.eq."${external_reference}",id.eq."${external_reference}"`)
-      .maybeSingle();
+    
+    // Build a very robust query to find the transaction
+    let query = client.from('transactions').select('method, external_id, amount, id, user_id, status');
+    
+    // We search by external_id, id, OR if the external_reference IS a CheckoutRequestID, we check the method field
+    const orConditions = [
+      `external_id.eq."${external_reference}"`,
+      `id.eq."${external_reference}"`,
+      `method.ilike."%${external_reference}%"`
+    ];
+    
+    const { data: tx, error: txError } = await query.or(orConditions.join(',')).maybeSingle();
 
     if (txError) {
       console.error('Database error fetching transaction for status check:', txError);
@@ -326,24 +333,60 @@ router.post('/payhero/callback', async (req, res) => {
 
     if (isSuccess) {
       // 1. Find the transaction in our DB to get the correct user_id and expected amount
-      // We search by external_id (our ref) or checkoutId (Payhero's ref)
-      let query = client.from('transactions').select('user_id, amount, status, id');
-      const queryParts = [];
-      if (ref) queryParts.push(`external_id.eq."${ref}"`);
-      if (checkoutId) queryParts.push(`external_id.eq."${checkoutId}"`);
+      // We search by external_id (our ref), id, or checkoutId (Payhero's ref)
+      let query = client.from('transactions').select('user_id, amount, status, id, external_id');
+      const orConditions = [];
+      if (ref) {
+        orConditions.push(`external_id.eq."${ref}"`);
+        orConditions.push(`id.eq."${ref}"`);
+      }
+      if (checkoutId) {
+        orConditions.push(`external_id.eq."${checkoutId}"`);
+        orConditions.push(`method.ilike."%${checkoutId}%"`);
+      }
       
-      if (queryParts.length > 0) {
-        query = query.or(queryParts.join(','));
+      if (orConditions.length > 0) {
+        query = query.or(orConditions.join(','));
       } else {
         console.error('No identifiers found in callback payload.');
         return res.status(400).json({ error: 'Missing identifiers' });
       }
 
-      const { data: tx, error: fetchError } = await query.maybeSingle();
+      let { data: tx, error: fetchError } = await query.maybeSingle();
 
       if (fetchError) {
         console.error('Error fetching transaction for callback:', fetchError);
         return res.status(500).json({ error: 'Database error' });
+      }
+
+      // Fallback: If not found by ref, try to extract userId from ref and find latest pending
+      if (!tx && ref && ref.includes('-')) {
+        try {
+          const parts = ref.split('-');
+          // A UUID has 5 parts. Our ref is uuid-timestamp.
+          if (parts.length >= 5) {
+            const potentialUserId = parts.slice(0, 5).join('-');
+            if (potentialUserId.length === 36) {
+              console.log(`Attempting fallback search for user: ${potentialUserId}`);
+              const { data: fallbackTx } = await client
+                .from('transactions')
+                .select('user_id, amount, status, id, external_id')
+                .eq('user_id', potentialUserId)
+                .eq('status', 'pending')
+                .eq('type', 'DEPOSIT')
+                .order('timestamp', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              if (fallbackTx) {
+                console.log(`Fallback match successful! Using transaction ${fallbackTx.id}`);
+                tx = fallbackTx;
+              }
+            }
+          }
+        } catch (fallbackErr) {
+          console.error('Fallback matching error:', fallbackErr);
+        }
       }
 
       if (!tx) {
@@ -451,6 +494,51 @@ router.post('/admin/update-user', async (req, res) => {
     
     if (error) throw error;
     res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/admin/credit-user', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userData?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+    const { userId, amount, transactionId } = req.body;
+    if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+    // 1. Get current balance
+    const { data: targetUser } = await supabaseAdmin.from('users').select('real_balance').eq('id', userId).single();
+    if (!targetUser) throw new Error('User not found');
+
+    const newBalance = Number((Number(targetUser.real_balance || 0) + Number(amount)).toFixed(2));
+
+    // 2. Update balance
+    await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', userId);
+
+    // 3. Update transaction if provided
+    if (transactionId) {
+      await supabaseAdmin.from('transactions').update({ status: 'completed', method: 'Manual Credit (Admin)' }).eq('id', transactionId);
+    } else {
+      // Create a manual credit record
+      await supabaseAdmin.from('transactions').insert({
+        user_id: userId,
+        type: 'DEPOSIT',
+        amount: amount,
+        status: 'completed',
+        account_type: 'REAL',
+        method: 'Manual Credit (Admin)',
+        external_id: `manual-${Date.now()}`
+      });
+    }
+
+    res.json({ success: true, newBalance });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

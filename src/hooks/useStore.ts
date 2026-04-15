@@ -220,6 +220,7 @@ export function useStore() {
           })),
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
+            userId: t.user_id,
             type: t.type,
             amount: Number(t.amount),
             status: t.status,
@@ -1365,6 +1366,29 @@ export function useStore() {
     updateUserRole,
     updateUserVerificationStatus,
     getAllTransactions,
-    updateTransactionStatus
+    updateTransactionStatus,
+    adminCreditUser: async (userId: string, amount: number, transactionId?: string) => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return false;
+
+        const response = await axios.post('/api/admin/credit-user', {
+          userId,
+          amount,
+          transactionId
+        }, {
+          headers: { Authorization: `Bearer ${session.access_token}` }
+        });
+
+        if (response.data.success) {
+          await syncWithSupabase();
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('Admin credit error:', error);
+        return false;
+      }
+    }
   };
 }

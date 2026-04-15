@@ -19,6 +19,7 @@ import {
   DollarSign,
   ArrowRight,
   RefreshCw,
+  ShieldCheck,
   Loader2
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -27,7 +28,7 @@ import { USD_TO_KES, MIN_DEPOSIT_USD, MIN_WITHDRAWAL_USD, WITHDRAWAL_EXCHANGE_RA
 import AlertModal from '../components/AlertModal';
 
 export default function Transactions() {
-  const { user, addTransaction, processPayheroDeposit, failLatestDeposit, checkPaymentStatus, refreshData } = useStore();
+  const { user, addTransaction, processPayheroDeposit, failLatestDeposit, checkPaymentStatus, refreshData, adminCreditUser } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
   const [amount, setAmount] = useState('');
@@ -460,6 +461,38 @@ export default function Transactions() {
                             >
                               <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
                             </button>
+                            {user?.role === 'admin' && tx.status === 'pending' && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance and mark as completed?`)) {
+                                    setIsChecking(true);
+                                    const success = await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
+                                    if (success) {
+                                      setAlertConfig({
+                                        isOpen: true,
+                                        title: 'Admin Force Credit',
+                                        message: 'Balance has been manually credited successfully.',
+                                        type: 'success'
+                                      });
+                                    } else {
+                                      setAlertConfig({
+                                        isOpen: true,
+                                        title: 'Error',
+                                        message: 'Failed to perform manual credit.',
+                                        type: 'error'
+                                      });
+                                    }
+                                    setIsChecking(false);
+                                  }
+                                }}
+                                disabled={isChecking}
+                                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors ml-1"
+                                title="Force Credit (Admin Only)"
+                              >
+                                <ShieldCheck size={10} />
+                              </button>
+                            )}
                           )}
                         </div>
                       </td>
@@ -531,30 +564,63 @@ export default function Transactions() {
                         )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                       </div>
                       {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            setIsChecking(true);
-                            try {
-                              const result = await checkPaymentStatus(tx.externalId || tx.id);
-                              if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
-                                setAlertConfig({
-                                  isOpen: true,
-                                  title: 'Payment Confirmed',
-                                  message: 'Your payment has been verified and your balance updated.',
-                                  type: 'success'
-                                });
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setIsChecking(true);
+                              try {
+                                const result = await checkPaymentStatus(tx.externalId || tx.id);
+                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                  setAlertConfig({
+                                    isOpen: true,
+                                    title: 'Payment Confirmed',
+                                    message: 'Your payment has been verified and your balance updated.',
+                                    type: 'success'
+                                  });
+                                }
+                                await refreshData();
+                              } finally {
+                                setIsChecking(false);
                               }
-                              await refreshData();
-                            } finally {
-                              setIsChecking(false);
-                            }
-                          }}
-                          disabled={isChecking}
-                          className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg text-blue-500 transition-colors disabled:opacity-50"
-                        >
-                          <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
-                        </button>
+                            }}
+                            disabled={isChecking}
+                            className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg text-blue-500 transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
+                          </button>
+                          {user?.role === 'admin' && (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance?`)) {
+                                  setIsChecking(true);
+                                  const success = await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
+                                  if (success) {
+                                    setAlertConfig({
+                                      isOpen: true,
+                                      title: 'Admin Force Credit',
+                                      message: 'Balance has been manually credited successfully.',
+                                      type: 'success'
+                                    });
+                                  } else {
+                                    setAlertConfig({
+                                      isOpen: true,
+                                      title: 'Error',
+                                      message: 'Failed to perform manual credit.',
+                                      type: 'error'
+                                    });
+                                  }
+                                  setIsChecking(false);
+                                }
+                              }}
+                              disabled={isChecking}
+                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-500 transition-colors disabled:opacity-50"
+                            >
+                              <ShieldCheck size={10} />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
