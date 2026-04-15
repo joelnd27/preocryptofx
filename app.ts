@@ -242,14 +242,14 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
     const payment = response.data.data?.[0] || response.data.data || response.data;
     console.log('Extracted Payment Data:', JSON.stringify(payment));
     
+    const paymentId = payment.MpesaReceiptNumber || payment.transaction_id || payment.TransID || payment.CheckoutRequestID || payment.MerchantRequestID;
+    
     const isSuccess = 
       payment && (
         (typeof payment.status === 'string' && (payment.status.toLowerCase() === 'success' || payment.status.toLowerCase() === 'successful')) || 
         payment.ResultCode === 0 || 
-        payment.ResultCode === '0' ||
-        payment.ResultCode === 200 ||
-        payment.status_code === 200
-      );
+        payment.ResultCode === '0'
+      ) && paymentId;
 
     if (isSuccess) {
       const ref = tx?.external_id || external_reference;
@@ -328,17 +328,25 @@ router.post('/payhero/callback', async (req, res) => {
     // 1. Extract success indicators (Check root and nested data)
     const data = payload.response || payload.data || (payload.Body && payload.Body.stkCallback) || payload;
     
+    // Check if this is just an initiation response (contains ResponseCode but not ResultCode)
+    const isInitiation = (payload.ResponseCode !== undefined || data.ResponseCode !== undefined) && 
+                         (payload.ResultCode === undefined && data.ResultCode === undefined);
+    
+    if (isInitiation) {
+      console.log('Detected PayHero initiation response. Ignoring as it is not a final callback.');
+      return res.status(200).json({ message: 'Initiation received' });
+    }
+
     const status = payload.status !== undefined ? payload.status : (data.status || data.Status || payload.Status);
-    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : (data.ResultCode || data.ResponseCode || payload.ResponseCode);
+    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : data.ResultCode;
     const resultDesc = data.ResultDesc || data.ResultDescription || data.status_reason || payload.ResultDesc || payload.ResultDescription || payload.status_reason;
     
+    // IMPORTANT: ResponseCode '0' means "Request Accepted", NOT "Payment Successful".
+    // We only count it as success if status is explicitly "success" or ResultCode is 0.
     const isSuccess = 
-      status === true ||
-      status === 'true' ||
       (typeof status === 'string' && (status.toLowerCase() === 'success' || status.toLowerCase() === 'successful')) || 
       resultCode === 0 || 
       resultCode === '0' ||
-      payload.Success === true ||
       data.Success === true;
 
     // 2. Extract identifiers (Check root, nested 'data', 'response', and 'Body.stkCallback')
@@ -359,7 +367,12 @@ router.post('/payhero/callback', async (req, res) => {
     const transactionId = data.transaction_id || data.TransactionID || data.mpesa_code || data.MpesaReceiptNumber || data.TransID || payload.transaction_id || payload.MpesaReceiptNumber || metadataReceipt;
     const amountKes = Number(data.amount || data.Amount || data.TransAmount || payload.amount || metadataAmount || 0);
 
-    console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}`);
+    console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}, TxID=${transactionId}`);
+
+    if (isSuccess && !transactionId) {
+      console.log('Callback indicates success but missing M-Pesa Receipt (transactionId). Treating as pending/initiation.');
+      return res.status(200).json({ message: 'Request accepted, waiting for payment completion' });
+    }
 
     if (!ref && !checkoutId) {
       console.error('Callback missing identifiers (ref/checkoutId). Cannot process.');
