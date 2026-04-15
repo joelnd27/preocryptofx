@@ -250,78 +250,116 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
 
 router.post('/payhero/callback', async (req, res) => {
   const payload = req.body;
-  console.log('Payhero Callback Received:', JSON.stringify(payload));
+  console.log('--- PAYHERO CALLBACK RECEIVED ---');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Payload:', JSON.stringify(payload));
   
-  const { status, external_reference, amount, transaction_id, CheckoutRequestID, ResultCode, ResultDesc } = payload;
+  try {
+    // 1. Extract success indicators
+    const status = payload.status || payload.Status;
+    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : payload.ResponseCode;
+    const resultDesc = payload.ResultDesc || payload.ResultDescription || payload.status_reason;
+    
+    const isSuccess = 
+      status?.toLowerCase() === 'success' || 
+      status?.toLowerCase() === 'successful' ||
+      resultCode === 0 || 
+      resultCode === '0' ||
+      payload.Success === true;
 
-  // Payhero might send status in different fields depending on the provider
-  const isSuccess = 
-    status?.toLowerCase() === 'success' || 
-    status?.toLowerCase() === 'successful' ||
-    ResultCode === 0 || 
-    ResultCode === '0';
+    // 2. Extract identifiers
+    const ref = payload.external_reference || payload.ExternalReference || payload.BillRefNumber;
+    const checkoutId = payload.CheckoutRequestID || payload.checkout_request_id;
+    const transactionId = payload.transaction_id || payload.TransactionID || payload.mpesa_code;
+    const amountKes = Number(payload.amount || payload.Amount || 0);
 
-  if (isSuccess) {
-    const ref = external_reference || payload.ExternalReference;
-    const userId = ref?.split('-')[0];
-    const amountKes = Number(amount || payload.Amount);
-    const USD_TO_KES = 1;
-    const amountUsd = Number((amountKes / USD_TO_KES).toFixed(2));
+    console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}`);
 
-    console.log(`Processing successful callback for user ${userId}. Amount: ${amountUsd} USD. Ref: ${ref}`);
+    if (!ref && !checkoutId) {
+      console.error('Callback missing identifiers (ref/checkoutId). Cannot process.');
+      return res.status(400).json({ error: 'Missing identifiers' });
+    }
 
-    try {
-      const client = supabaseAdmin || supabase;
+    const client = supabaseAdmin || supabase;
+    if (!supabaseAdmin) {
+      console.warn('WARNING: supabaseAdmin is NOT initialized. Using anon client. RLS may block updates.');
+    }
+
+    if (isSuccess) {
+      // Extract userId from ref if possible
+      let userId = ref?.split('-')[0];
       
-      // 1. Get user to update balance
-      const { data: user } = await client
+      // If ref is missing or doesn't have userId, try to find the transaction in DB
+      if (!userId || userId.length < 10) {
+        console.log('UserId not in ref, searching transaction in DB...');
+        const { data: tx } = await client
+          .from('transactions')
+          .select('user_id')
+          .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`)
+          .maybeSingle();
+        
+        if (tx) userId = tx.user_id;
+      }
+
+      if (!userId) {
+        console.error('Could not determine userId for successful payment.');
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const USD_TO_KES = 1; // Keep at 1 for now as per user testing
+      const amountUsd = Number((amountKes / USD_TO_KES).toFixed(2));
+
+      console.log(`Processing success for user ${userId}. Amount: ${amountUsd} USD.`);
+
+      // 1. Update balance
+      const { data: user, error: userError } = await client
         .from('users')
         .select('real_balance')
         .eq('id', userId)
         .single();
 
-      if (user) {
-        const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
-        console.log(`Updating balance for ${userId}: ${user.real_balance} -> ${newBalance}`);
-        
-        const { error: balanceError } = await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
-        if (balanceError) console.error('Balance update error:', balanceError);
-        
-        // 2. Update transaction status
-        // IMPORTANT: We keep the external_id as the 'ref' because the frontend uses it for tracking.
-        // We can store the Payhero transaction_id in the 'method' field or just log it.
-        const { error: txError } = await client.from('transactions').update({
-          status: 'completed',
-          amount: amountUsd,
-          method: `Payhero (${transaction_id || CheckoutRequestID || 'N/A'})`
-        })
-        .eq('user_id', userId)
-        .eq('status', 'pending')
-        .or(`external_id.eq."${ref}",external_id.eq."${CheckoutRequestID}"`);
-        
-        if (txError) console.error('Transaction update error:', txError);
-        else console.log(`Transaction ${ref} marked as completed.`);
-      } else {
-        console.error(`User ${userId} not found for callback.`);
+      if (userError || !user) {
+        console.error(`User ${userId} fetch error:`, userError);
+        return res.status(404).json({ error: 'User not found' });
       }
-    } catch (error) {
-      console.error('Callback processing exception:', error);
-    }
-  } else {
-    const ref = external_reference || payload.ExternalReference;
-    console.log(`Payment failed or cancelled for ref: ${ref}. Status: ${status}. Desc: ${ResultDesc}`);
-    
-    if (ref) {
-      const userId = ref.split('-')[0];
-      const client = supabaseAdmin || supabase;
+
+      const newBalance = Number((Number(user.real_balance) + amountUsd).toFixed(2));
+      const { error: balanceError } = await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
+      
+      if (balanceError) {
+        console.error('Balance update error:', balanceError);
+      } else {
+        console.log(`Balance updated: ${user.real_balance} -> ${newBalance}`);
+      }
+
+      // 2. Update transaction
+      const { error: txError } = await client.from('transactions').update({
+        status: 'completed',
+        amount: amountUsd,
+        method: `Payhero (${transactionId || checkoutId || 'M-Pesa'})`
+      })
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`);
+
+      if (txError) console.error('Transaction update error:', txError);
+      else console.log(`Transaction ${ref || checkoutId} marked as completed.`);
+
+    } else {
+      console.log(`Payment failed/cancelled. Reason: ${resultDesc}`);
+      
+      // Mark as rejected
       await client.from('transactions')
         .update({ status: 'rejected' })
-        .eq('user_id', userId)
-        .eq('external_id', ref);
+        .eq('status', 'pending')
+        .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`);
     }
-  }
 
-  res.json({ status: 'received' });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Callback processing exception:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Admin API Routes (Bypasses RLS using Service Role Key)

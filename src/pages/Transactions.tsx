@@ -79,6 +79,17 @@ export default function Transactions() {
     }
   }, [user?.transactions, paymentStatus, currentTxRef]);
 
+  // Poll for status updates while waiting
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+    if (paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') {
+      pollInterval = setInterval(() => {
+        refreshData();
+      }, 5000);
+    }
+    return () => clearInterval(pollInterval);
+  }, [paymentStatus, refreshData]);
+
   // Handle 30-second timeout for deposits
   useEffect(() => {
     let timer: NodeJS.Timeout;
