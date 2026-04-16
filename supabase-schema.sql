@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     user_id UUID REFERENCES public.users(id) ON DELETE CASCADE PRIMARY KEY,
     scalping_active BOOLEAN DEFAULT FALSE,
     trend_active BOOLEAN DEFAULT FALSE,
-    ai_active BOOLEAN DEFAULT FALSE
+    ai_active BOOLEAN DEFAULT FALSE,
+    custom_active BOOLEAN DEFAULT FALSE,
+    custom_config JSONB
 );
 
 -- 5. Helper function to check if user is admin (using JWT for performance and to avoid recursion)

@@ -26,6 +26,13 @@ export interface User {
     scalping: boolean;
     trend: boolean;
     ai: boolean;
+    custom: boolean;
+  };
+  customBotConfig?: {
+    name: string;
+    strategy: string;
+    risk: string;
+    expiresAt: number;
   };
   botStats?: Record<string, { profit: number, trades: number }>;
   botLogs?: string[];

@@ -13,6 +13,7 @@ import {
   MIN_BALANCE_AFTER_LOSS
 } from '../types.ts';
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
+import { getMarketerDeposit } from '../lib/utils.ts';
 
 export function useStore() {
   const [user, setUser] = useState<User | null>(() => {
@@ -233,7 +234,9 @@ export function useStore() {
             scalping: userData.bot_settings?.scalping_active || false,
             trend: userData.bot_settings?.trend_active || false,
             ai: userData.bot_settings?.ai_active || false,
+            custom: userData.bot_settings?.custom_active || false,
           },
+          customBotConfig: userData.bot_settings?.custom_config,
           createdAt: new Date(userData.created_at).getTime()
         };
         setUser(formattedUser);
@@ -434,6 +437,7 @@ export function useStore() {
         scalping: false,
         trend: false,
         ai: false,
+        custom: false,
       },
       createdAt: Date.now()
     };
@@ -816,7 +820,8 @@ export function useStore() {
         user_id: user.id,
         scalping_active: updatedBots.scalping,
         trend_active: updatedBots.trend,
-        ai_active: updatedBots.ai
+        ai_active: updatedBots.ai,
+        custom_active: updatedBots.custom
       });
     }
 
@@ -843,7 +848,8 @@ export function useStore() {
       const updatedBots = {
         scalping: false,
         trend: false,
-        ai: false
+        ai: false,
+        custom: false
       };
 
       if (isSupabaseConfigured()) {
@@ -851,7 +857,8 @@ export function useStore() {
           user_id: user.id,
           scalping_active: false,
           trend_active: false,
-          ai_active: false
+          ai_active: false,
+          custom_active: false
         });
       }
 
@@ -963,7 +970,8 @@ export function useStore() {
         ...(user.botStats || {
           scalping: { profit: 0, trades: 0 },
           trend: { profit: 0, trades: 0 },
-          ai: { profit: 0, trades: 0 }
+          ai: { profit: 0, trades: 0 },
+          custom: { profit: 0, trades: 0 }
         }),
         ...(botId ? {
           [botId]: {
@@ -1026,7 +1034,7 @@ export function useStore() {
             verificationStatus: u.verification_status,
             active_account: u.active_account,
             created_at: u.created_at,
-            total_deposits: deposits,
+            total_deposits: deposits + (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
             total_withdrawals: withdrawals
           };
         });
@@ -1121,7 +1129,7 @@ export function useStore() {
   const getGlobalStats = async () => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return { totalDeposited: 0, userCount: 0 };
     
-    const { data: usersData, error: usersError } = await supabase.from('users').select('id');
+    const { data: usersData, error: usersError } = await supabase.from('users').select('id, role');
     const { data: transData, error: transError } = await supabase
       .from('transactions')
       .select('amount')
@@ -1130,7 +1138,15 @@ export function useStore() {
 
     if (usersError || transError) return { totalDeposited: 0, userCount: 0 };
 
-    const totalDeposited = transData.reduce((sum, t) => sum + Number(t.amount), 0);
+    let totalDeposited = transData.reduce((sum, t) => sum + Number(t.amount), 0);
+    
+    // Add simulated deposits for marketers
+    usersData.forEach(u => {
+      if (u.role === 'marketer') {
+        totalDeposited += getMarketerDeposit(u.id);
+      }
+    });
+
     return {
       totalDeposited,
       userCount: usersData.length
@@ -1338,6 +1354,55 @@ export function useStore() {
     } : null);
   };
 
+  const importBot = async (config: { name: string, strategy: string, risk: string }) => {
+    if (!user) return;
+    
+    const expiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
+    const customConfig = { ...config, expiresAt };
+    
+    if (isSupabaseConfigured()) {
+      await supabase.from('bot_settings').upsert({
+        user_id: user.id,
+        custom_config: customConfig,
+        custom_active: false
+      });
+    }
+    
+    setUser(prev => prev ? {
+      ...prev,
+      customBotConfig: customConfig,
+      bots: { ...prev.bots, custom: false }
+    } : null);
+  };
+
+  // Bot Expiration Logic
+  useEffect(() => {
+    if (!user || !user.customBotConfig) return;
+    
+    const checkExpiration = async () => {
+      if (Date.now() >= user.customBotConfig!.expiresAt) {
+        console.log('[Bot] Custom bot expired. Removing...');
+        
+        if (isSupabaseConfigured()) {
+          await supabase.from('bot_settings').update({
+            custom_config: null,
+            custom_active: false
+          }).eq('user_id', user.id);
+        }
+        
+        setUser(prev => prev ? {
+          ...prev,
+          customBotConfig: undefined,
+          bots: { ...prev.bots, custom: false }
+        } : null);
+      }
+    };
+    
+    const interval = setInterval(checkExpiration, 60000); // Check every minute
+    checkExpiration();
+    return () => clearInterval(interval);
+  }, [user?.customBotConfig]);
+
   // Bot Simulation Effect
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('preocrypto_theme');
@@ -1367,6 +1432,7 @@ export function useStore() {
     failLatestDeposit,
     submitVerification,
     refreshData,
+    importBot,
     getAllUsers,
     getGlobalStats,
     updateUserBalance,

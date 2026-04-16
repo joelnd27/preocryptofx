@@ -23,7 +23,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { formatCurrency, cn } from '../lib/utils';
+import { formatCurrency, cn, getMarketerDeposit } from '../lib/utils';
 import { USD_TO_KES, MIN_DEPOSIT_USD, MIN_WITHDRAWAL_USD, WITHDRAWAL_EXCHANGE_RATE } from '../types.ts';
 import AlertModal from '../components/AlertModal';
 
@@ -663,7 +663,10 @@ export default function Transactions() {
                 <div className="p-3 bg-white/10 rounded-xl sm:rounded-2xl">
                   <p className="text-[9px] text-blue-100 uppercase font-bold mb-1 opacity-60">Deposits</p>
                   <p className="text-base sm:text-lg font-bold font-mono">
-                    {formatCurrency(user?.transactions?.filter(t => t.type === 'DEPOSIT').reduce((acc, t) => acc + t.amount, 0) || 0)}
+                    {formatCurrency(
+                      (user?.transactions?.filter(t => t.type === 'DEPOSIT' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0) || 0) +
+                      (user?.role === 'marketer' ? getMarketerDeposit(user.id) : 0)
+                    )}
                   </p>
                 </div>
                 <div className="p-3 bg-white/10 rounded-xl sm:rounded-2xl">

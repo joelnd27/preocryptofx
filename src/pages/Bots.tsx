@@ -67,22 +67,28 @@ const BOTS: BotConfig[] = [
 ];
 
 export default function Bots() {
-  const { user, toggleBot, addBotProfit, addTrade } = useStore();
+  const { user, toggleBot, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string }>>({
     scalping: { coin: 'BTC', timeframe: '1M' },
     trend: { coin: 'ETH', timeframe: '1H' },
-    ai: { coin: 'SOL', timeframe: '15M' }
+    ai: { coin: 'SOL', timeframe: '15M' },
+    custom: { coin: 'BTC', timeframe: '1M' }
   });
   
   const logs = user?.botLogs || [];
   const stats = user?.botStats || {
     scalping: { profit: 0, trades: 0 },
     trend: { profit: 0, trades: 0 },
-    ai: { profit: 0, trades: 0 }
+    ai: { profit: 0, trades: 0 },
+    custom: { profit: 0, trades: 0 }
   };
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importJson, setImportJson] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
   const [alertConfig, setAlertConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -123,7 +129,10 @@ export default function Bots() {
   }, [user?.bots, botSettings, addBotProfit, addTrade, user?.activeAccount]);
 
   const handleToggle = (botId: string) => {
-    const bot = BOTS.find(b => b.id === botId);
+    const bot = botId === 'custom' && user?.customBotConfig 
+      ? { id: 'custom', name: user.customBotConfig.name, minDeposit: 10 }
+      : BOTS.find(b => b.id === botId);
+      
     if (!bot) return;
     
     const balance = user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance;
@@ -150,6 +159,57 @@ export default function Bots() {
     });
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const content = event.target?.result as string;
+        setImportJson(content);
+        const config = JSON.parse(content);
+        
+        if (!config.name || !config.strategy) {
+          throw new Error('Invalid bot configuration format. Missing name or strategy.');
+        }
+
+        await importBot({
+          name: config.name,
+          strategy: config.strategy,
+          risk: config.risk || 'Medium'
+        });
+
+        setAlertConfig({
+          isOpen: true,
+          title: 'Bot Imported',
+          message: 'The bot configuration has been successfully imported and integrated into your library for the next 24 hours.',
+          type: 'success'
+        });
+        setIsImportModalOpen(false);
+      } catch (err: any) {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Import Failed',
+          message: err.message || 'Failed to parse bot configuration file.',
+          type: 'error'
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const getTimeRemaining = (expiresAt: number) => {
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) return 'Expired';
+    const hours = Math.floor(remaining / (1000 * 60 * 60));
+    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m remaining`;
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -162,14 +222,16 @@ export default function Bots() {
             onClick={() => setIsImportModalOpen(true)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 rounded-lg font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all border border-slate-200 dark:border-slate-800 text-xs sm:text-sm shadow-sm"
           >
-            <Upload size={16} /> <span className="hidden sm:inline">Import Logic</span><span className="sm:hidden">Import</span>
+            <Upload size={16} /> <span className="hidden sm:inline">Import Bot</span><span className="sm:hidden">Import</span>
           </button>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-600/10 text-xs sm:text-sm"
-          >
-            <Plus size={16} /> <span className="hidden sm:inline">Initialize Bot</span><span className="sm:hidden">Create</span>
-          </button>
+          {!user?.customBotConfig && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-600/10 text-xs sm:text-sm"
+            >
+              <Plus size={16} /> <span className="hidden sm:inline">Initialize Bot</span><span className="sm:hidden">Create</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -227,6 +289,56 @@ export default function Bots() {
               </button>
             );
           })}
+          {user?.customBotConfig && (
+            <button
+              onClick={() => setSelectedBot({
+                id: 'custom',
+                name: user.customBotConfig!.name,
+                description: `Custom imported bot using ${user.customBotConfig!.strategy} strategy.`,
+                type: 'ai',
+                winRate: 'Custom',
+                risk: user.customBotConfig!.risk as any,
+                minDeposit: 10
+              })}
+              className={cn(
+                "relative p-5 rounded-xl border transition-all text-left group overflow-hidden",
+                selectedBot.id === 'custom' 
+                  ? "bg-slate-900 border-blue-500 shadow-xl shadow-blue-500/10" 
+                  : "bg-white dark:bg-slate-900/30 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+              )}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center shadow-sm",
+                  user.bots.custom ? "bg-blue-500 text-white shadow-blue-500/20 shadow-lg" : "bg-slate-800 text-slate-400"
+                )}>
+                  <Zap size={20} />
+                </div>
+                <div className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border bg-blue-500/10 border-blue-500/20 text-blue-500">
+                  Custom
+                </div>
+              </div>
+              
+              <h3 className={cn(
+                "text-sm font-bold mb-1",
+                selectedBot.id === 'custom' ? "text-white" : "text-slate-900 dark:text-slate-200"
+              )}>{user.customBotConfig.name}</h3>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 leading-relaxed font-mono">
+                {getTimeRemaining(user.customBotConfig.expiresAt)}
+              </p>
+              
+              <div className="flex items-center gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Strategy</p>
+                  <p className="text-xs font-bold text-blue-500 font-mono">{user.customBotConfig.strategy}</p>
+                </div>
+                <div>
+                  <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Risk</p>
+                  <p className="text-xs font-bold text-yellow-500 font-mono">{user.customBotConfig.risk}</p>
+                </div>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Selected Bot Detailed Config */}
@@ -546,36 +658,71 @@ export default function Bots() {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-12 flex flex-col items-center justify-center text-center group hover:border-blue-500 transition-colors cursor-pointer">
-                    <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform">
-                      <Upload size={32} />
-                    </div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">Upload JSON File</p>
-                    <p className="text-xs text-slate-500">Drag and drop or click to browse</p>
+                <div 
+                  className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-12 flex flex-col items-center justify-center text-center group hover:border-blue-500 transition-colors cursor-pointer relative"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept=".json"
+                    onChange={handleFileUpload}
+                  />
+                  <div className={cn(
+                    "w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform",
+                    isUploading && "animate-bounce"
+                  )}>
+                    <Upload size={32} />
                   </div>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">
+                    {isUploading ? 'Processing...' : 'Upload JSON File'}
+                  </p>
+                  <p className="text-xs text-slate-500">Drag and drop or click to browse</p>
+                </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Or Paste JSON</label>
-                    <textarea
-                      placeholder='{ "name": "My Bot", "strategy": "..." }'
-                      className="w-full h-32 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-[10px] font-mono focus:outline-none focus:border-blue-500 transition-colors resize-none"
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Or Paste JSON</label>
+                  <textarea
+                    placeholder='{ "name": "My Bot", "strategy": "..." }'
+                    className="w-full h-32 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-[10px] font-mono focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                    value={importJson}
+                    onChange={(e) => setImportJson(e.target.value)}
+                  />
+                </div>
 
-                  <button
-                    onClick={() => {
+                <button
+                  onClick={async () => {
+                    try {
+                      const config = JSON.parse(importJson);
+                      if (!config.name || !config.strategy) {
+                        throw new Error('Invalid bot configuration format. Missing name or strategy.');
+                      }
+                      await importBot({
+                        name: config.name,
+                        strategy: config.strategy,
+                        risk: config.risk || 'Medium'
+                      });
                       setAlertConfig({
                         isOpen: true,
                         title: 'Bot Imported',
-                        message: 'The bot configuration has been successfully imported and integrated into your library.',
+                        message: 'The bot configuration has been successfully imported and integrated into your library for the next 24 hours.',
                         type: 'success'
                       });
                       setIsImportModalOpen(false);
-                    }}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
-                  >
-                    Import Configuration
-                  </button>
+                    } catch (err: any) {
+                      setAlertConfig({
+                        isOpen: true,
+                        title: 'Import Failed',
+                        message: err.message || 'Failed to parse bot configuration.',
+                        type: 'error'
+                      });
+                    }
+                  }}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Import Configuration
+                </button>
                 </div>
               </div>
             </motion.div>
