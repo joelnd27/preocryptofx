@@ -881,27 +881,7 @@ export function useStore() {
       return;
     }
     
-    const isDemo = user.activeAccount === 'DEMO';
-    const isMarketer = user.role === 'marketer';
-    const isAdmin = user.role === 'admin';
-    
-    // Win rate logic:
-    // 1. Demo accounts (all users): > 90%
-    // 2. Real accounts (Marketers/Admins): 95%
-    // 3. Real accounts (Normal users): 2-5%
-    let winChance = 0.5;
-    if (isDemo) {
-      winChance = 0.92; // > 90%
-    } else if (isMarketer || isAdmin) {
-      winChance = 0.95;
-    } else {
-      winChance = 0.035; // 3.5% (between 2-5%)
-    }
-    
-    const isWin = Math.random() < winChance;
-    
-    let finalAmount = isWin ? Math.abs(amount) : -Math.abs(amount);
-    
+    const finalAmount = amount;
     const newBalance = Math.max(MIN_BALANCE_AFTER_LOSS, Number((user[balanceKey] + finalAmount).toFixed(2)));
     
     // Get a realistic price for the bot trade

@@ -120,7 +120,7 @@ export default function Bots() {
         const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
         let botName = '';
         let coin = 'BTC';
-        let profitVal = 0;
+        let baseAmount = 0;
 
         if (botId === 'custom' && user?.customBotConfig) {
           botName = user.customBotConfig.name;
@@ -133,16 +133,31 @@ export default function Bots() {
             risk === 'High' ? 2.0 :
             risk === 'Aggressive' ? 5.0 : 1.0;
           
-          const baseProfit = (Math.random() * 5 - 1);
-          profitVal = baseProfit * riskMultiplier;
+          baseAmount = (1 + Math.random() * 4) * riskMultiplier;
         } else {
           const bot = BOTS.find(b => b.id === botId);
           if (!bot) return;
           botName = bot.name;
           coin = botSettings[botId].coin;
-          profitVal = (Math.random() * 5 - 1);
+          baseAmount = (1 + Math.random() * 4);
         }
 
+        // Apply win rate logic here so logs match balance
+        const isDemo = user.activeAccount === 'DEMO';
+        const isMarketer = user.role === 'marketer';
+        const isAdmin = user.role === 'admin';
+        
+        let winChance = 0.5;
+        if (isDemo) {
+          winChance = 0.92;
+        } else if (isMarketer || isAdmin) {
+          winChance = 0.95;
+        } else {
+          winChance = 0.035; // 3.5%
+        }
+        
+        const isWin = Math.random() < winChance;
+        const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
         const profitStr = profitVal.toFixed(2);
         
         const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed ${Math.random() > 0.5 ? 'BUY' : 'SELL'} on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
