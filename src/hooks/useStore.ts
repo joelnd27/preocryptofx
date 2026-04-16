@@ -10,7 +10,9 @@ import {
   CRYPTO_LIST, 
   MIN_DEPOSIT_USD,
   MIN_STAKE_USD,
-  MIN_BALANCE_AFTER_LOSS
+  MIN_BALANCE_AFTER_LOSS,
+  MIN_BOT_STOP_BALANCE,
+  MIN_MANUAL_STOP_BALANCE
 } from '../types.ts';
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { getMarketerDeposit } from '../lib/utils.ts';
@@ -493,8 +495,8 @@ export function useStore() {
     if (currentBalance < trade.amount) {
       throw new Error('Insufficient balance to place this trade');
     }
-    if (currentBalance - trade.amount < MIN_BALANCE_AFTER_LOSS) {
-      throw new Error(`Account balance must remain at least $${MIN_BALANCE_AFTER_LOSS} after placing a trade`);
+    if (currentBalance - trade.amount < MIN_MANUAL_STOP_BALANCE) {
+      throw new Error(`Account balance must remain at least $${MIN_MANUAL_STOP_BALANCE} after placing a trade`);
     }
     
     // Apply win rate logic
@@ -617,7 +619,7 @@ export function useStore() {
       tradeToNotify = trade;
       const isReal = trade.accountType === 'REAL';
       const balanceKey = isReal ? 'realBalance' : 'demoBalance';
-      const newBalance = Math.max(MIN_BALANCE_AFTER_LOSS, Number((prev[balanceKey] + trade.amount + currentProfit).toFixed(2)));
+      const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((prev[balanceKey] + trade.amount + currentProfit).toFixed(2)));
 
       const updatedUser = {
         ...prev,
@@ -847,7 +849,7 @@ export function useStore() {
     const currentBalance = user[balanceKey];
 
     // Auto-stop bot if balance is below minimum stake or required threshold
-    if (currentBalance < MIN_STAKE_USD || currentBalance < MIN_BALANCE_AFTER_LOSS) {
+    if (currentBalance < MIN_BOT_STOP_BALANCE) {
       console.log(`[Bot] Auto-stopping due to low balance: ${currentBalance}`);
       
       // Automatically turn off all bots if balance is too low

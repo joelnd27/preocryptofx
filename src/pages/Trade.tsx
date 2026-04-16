@@ -24,7 +24,8 @@ import {
   CRYPTO_LIST, 
   Trade as TradeType, 
   MIN_STAKE_USD, 
-  MIN_BALANCE_AFTER_LOSS 
+  MIN_BALANCE_AFTER_LOSS,
+  MIN_MANUAL_STOP_BALANCE
 } from '../types.ts';
 import { formatCurrency, cn } from '../lib/utils';
 import AdvancedChart, { ChartType, Timeframe } from '../components/AdvancedChart';
@@ -281,11 +282,11 @@ export default function Trade() {
       return;
     }
 
-    if ((currentBalance || 0) - tradeAmount < MIN_BALANCE_AFTER_LOSS) {
+    if ((currentBalance || 0) - tradeAmount < MIN_MANUAL_STOP_BALANCE) {
       setAlertConfig({
         isOpen: true,
         title: 'Risk Limit Reached',
-        message: `Your account balance must remain at least $${MIN_BALANCE_AFTER_LOSS} after placing a trade to maintain account health.`,
+        message: `Your account balance must remain at least $${MIN_MANUAL_STOP_BALANCE} after placing a trade to maintain account health.`,
         type: 'warning'
       });
       return;

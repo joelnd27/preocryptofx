@@ -79,6 +79,8 @@ export const MIN_DEPOSIT_USD = 17;
 export const MIN_WITHDRAWAL_USD = 34;
 export const MIN_STAKE_USD = 3;
 export const MIN_BALANCE_AFTER_LOSS = 3;
+export const MIN_BOT_STOP_BALANCE = 10;
+export const MIN_MANUAL_STOP_BALANCE = 3;
 
 export const CRYPTO_LIST = [
   { symbol: 'BTC', name: 'Bitcoin', basePrice: 65000 },
