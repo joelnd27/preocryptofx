@@ -285,8 +285,8 @@ export default function Trade() {
     if ((currentBalance || 0) - tradeAmount < MIN_MANUAL_STOP_BALANCE) {
       setAlertConfig({
         isOpen: true,
-        title: 'Risk Limit Reached',
-        message: `Your account balance must remain at least $${MIN_MANUAL_STOP_BALANCE} after placing a trade to maintain account health.`,
+        title: 'Manual Trade Limit',
+        message: `Your balance is too low to open new manual positions. A minimum of $${MIN_MANUAL_STOP_BALANCE} must remain in your account.`,
         type: 'warning'
       });
       return;

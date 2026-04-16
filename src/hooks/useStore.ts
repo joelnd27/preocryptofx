@@ -872,11 +872,14 @@ export function useStore() {
 
       setUser(prev => prev ? { ...prev, bots: updatedBots } : null);
       
+      const isAI = botId === 'ai' || botId === 'custom';
       const event = new CustomEvent('trade-closed', {
         detail: {
-          title: 'Bots Deactivated',
-          message: 'Trading bots stopped automatically due to insufficient balance.',
-          type: 'info'
+          title: isAI ? 'AI Bot Closed' : 'Manual Bot Closed',
+          message: isAI 
+            ? 'Neural processing has been suspended due to reaching the minimum safety limit. Kindly deposit funds to resume AI bot operations.'
+            : 'The minimum balance limit has been reached. Please top up your account to reactivate manual trading bots.',
+          type: 'warning'
         }
       });
       window.dispatchEvent(event);

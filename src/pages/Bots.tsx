@@ -108,6 +108,21 @@ export default function Bots() {
     runtime: '24h'
   });
 
+  useEffect(() => {
+    const handleTradeClosed = (e: any) => {
+      const { title, message, type } = e.detail;
+      setAlertConfig({
+        isOpen: true,
+        title,
+        message,
+        type
+      });
+    };
+
+    window.addEventListener('trade-closed', handleTradeClosed);
+    return () => window.removeEventListener('trade-closed', handleTradeClosed);
+  }, []);
+
   const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
 
   useEffect(() => {
@@ -171,17 +186,20 @@ export default function Bots() {
 
   const handleToggle = (botId: string) => {
     const bot = botId === 'custom' && user?.customBotConfig 
-      ? { id: 'custom', name: user.customBotConfig.name, minDeposit: 10 }
+      ? { id: 'custom', name: user.customBotConfig.name, minDeposit: 10, type: 'ai' as const }
       : BOTS.find(b => b.id === botId);
       
     if (!bot) return;
     
     const balance = user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance;
     if (!user?.bots[botId as keyof typeof user.bots] && balance < bot.minDeposit) {
+      const isAI = bot.type === 'ai' || botId === 'custom';
       setAlertConfig({
         isOpen: true,
-        title: 'Insufficient Capital',
-        message: `To activate ${bot.name}, you need a minimum balance of $${bot.minDeposit}. Please deposit more funds to start this bot.`,
+        title: isAI ? 'AI Bot Limit' : 'Manual Bot Limit',
+        message: isAI 
+          ? `Neural processing requires a minimum of $${bot.minDeposit}. Your current balance is below this limit.`
+          : `This manual bot requires at least $${bot.minDeposit} to operate. Please increase your balance.`,
         type: 'warning'
       });
       return;
