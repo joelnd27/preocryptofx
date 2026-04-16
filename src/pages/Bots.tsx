@@ -160,6 +160,7 @@ export default function Bots() {
   };
 
   const [importConfig, setImportConfig] = useState({
+    name: '',
     currency: 'BTC',
     risk: 'Medium'
   });
@@ -181,7 +182,7 @@ export default function Bots() {
         }
 
         await importBot({
-          name: config.name,
+          name: importConfig.name || config.name,
           strategy: config.strategy,
           risk: config.risk || importConfig.risk,
           currency: config.currency || importConfig.currency
@@ -664,6 +665,17 @@ export default function Bots() {
                 </div>
 
                 <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Bot Name (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ALPHABOT"
+                      className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      value={importConfig.name}
+                      onChange={(e) => setImportConfig({ ...importConfig, name: e.target.value })}
+                    />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Trading Currency</label>
@@ -733,7 +745,7 @@ export default function Bots() {
                           throw new Error('Invalid bot configuration format. Missing name or strategy.');
                         }
                         await importBot({
-                          name: config.name,
+                          name: importConfig.name || config.name,
                           strategy: config.strategy,
                           risk: config.risk || importConfig.risk,
                           currency: config.currency || importConfig.currency
