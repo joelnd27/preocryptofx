@@ -19,7 +19,8 @@ import {
   Plus,
   Shield,
   Target,
-  X
+  X,
+  Info
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
@@ -727,49 +728,14 @@ export default function Bots() {
                     <p className="text-xs text-slate-500">Drag and drop or click to browse</p>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Or Paste JSON</label>
-                    <textarea
-                      placeholder='{ "name": "My Bot", "strategy": "..." }'
-                      className="w-full h-32 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-[10px] font-mono focus:outline-none focus:border-blue-500 transition-colors resize-none"
-                      value={importJson}
-                      onChange={(e) => setImportJson(e.target.value)}
-                    />
+                  <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl flex gap-4">
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 shrink-0">
+                      <Info size={20} />
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      Select your preferred settings above, then upload your bot's JSON configuration file to initialize.
+                    </p>
                   </div>
-
-                  <button
-                    onClick={async () => {
-                      try {
-                        const config = JSON.parse(importJson);
-                        if (!config.name || !config.strategy) {
-                          throw new Error('Invalid bot configuration format. Missing name or strategy.');
-                        }
-                        await importBot({
-                          name: importConfig.name || config.name,
-                          strategy: config.strategy,
-                          risk: config.risk || importConfig.risk,
-                          currency: config.currency || importConfig.currency
-                        });
-                        setAlertConfig({
-                          isOpen: true,
-                          title: 'Bot Imported',
-                          message: 'The bot configuration has been successfully imported and integrated into your library for the next 24 hours.',
-                          type: 'success'
-                        });
-                        setIsImportModalOpen(false);
-                      } catch (err: any) {
-                        setAlertConfig({
-                          isOpen: true,
-                          title: 'Import Failed',
-                          message: err.message || 'Failed to parse bot configuration.',
-                          type: 'error'
-                        });
-                      }
-                    }}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
-                  >
-                    Import Configuration
-                  </button>
                 </div>
               </div>
             </motion.div>
