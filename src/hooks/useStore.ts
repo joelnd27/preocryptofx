@@ -188,6 +188,10 @@ export function useStore() {
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 50);
 
+        const botSettingsData = Array.isArray(userData.bot_settings) 
+          ? userData.bot_settings[0] 
+          : userData.bot_settings;
+
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
@@ -231,12 +235,13 @@ export function useStore() {
             externalId: t.external_id
           })),
           bots: {
-            scalping: userData.bot_settings?.[0]?.scalping_active || false,
-            trend: userData.bot_settings?.[0]?.trend_active || false,
-            ai: userData.bot_settings?.[0]?.ai_active || false,
-            custom: userData.bot_settings?.[0]?.custom_active || false,
+            scalping: botSettingsData?.scalping_active || false,
+            trend: botSettingsData?.trend_active || false,
+            ai: botSettingsData?.ai_active || false,
+            custom: botSettingsData?.custom_active || false,
           },
-          customBotConfig: userData.bot_settings?.[0]?.custom_config,
+          customBotConfig: botSettingsData?.custom_config,
+          botLogs: botSettingsData?.bot_logs || [],
           createdAt: new Date(userData.created_at).getTime()
         };
         setUser(formattedUser);
@@ -903,10 +908,18 @@ export function useStore() {
     const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
     const entryPrice = randomCoin.basePrice * (0.95 + Math.random() * 0.1);
 
+    const updatedLogs = log ? [log, ...(user.botLogs || [])].slice(0, 50) : (user.botLogs || []);
+
     if (isSupabaseConfigured()) {
       await supabase.from('users').update({
         [isReal ? 'real_balance' : 'demo_balance']: newBalance
       }).eq('id', user.id);
+
+      // Update bot logs in DB
+      await supabase.from('bot_settings').upsert({
+        user_id: user.id,
+        bot_logs: updatedLogs
+      });
 
       // Also update total and daily profit in DB
       try {
@@ -981,7 +994,7 @@ export function useStore() {
           }
         } : {})
       },
-      botLogs: log ? [log, ...(user.botLogs || [])].slice(0, 50) : (user.botLogs || []),
+      botLogs: updatedLogs,
       trades: [{
         id: Math.random().toString(36).substr(2, 9),
         coin: 'BOT',

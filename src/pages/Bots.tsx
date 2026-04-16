@@ -108,11 +108,16 @@ export default function Bots() {
     runtime: '24h'
   });
 
+  const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
+
   useEffect(() => {
+    const activeBots = Object.entries(user?.bots || {}).filter(([_, active]) => active);
+    if (activeBots.length === 0) return;
+
     const interval = setInterval(async () => {
-      const activeBots = Object.entries(user?.bots || {}).filter(([_, active]) => active);
-      if (activeBots.length > 0) {
-        const [botId] = activeBots[Math.floor(Math.random() * activeBots.length)];
+      const botsToSimulate = Object.entries(user?.bots || {}).filter(([_, active]) => active);
+      if (botsToSimulate.length > 0) {
+        const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
         let botName = '';
         let coin = 'BTC';
 
@@ -136,7 +141,7 @@ export default function Bots() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [user?.bots, botSettings, addBotProfit, addTrade, user?.activeAccount]);
+  }, [activeBotsKey, botSettings, addBotProfit]);
 
   const handleToggle = (botId: string) => {
     const bot = botId === 'custom' && user?.customBotConfig 
