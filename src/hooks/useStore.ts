@@ -1354,7 +1354,7 @@ export function useStore() {
     } : null);
   };
 
-  const importBot = async (config: { name: string, strategy: string, risk: string }) => {
+  const importBot = async (config: { name: string, strategy: string, risk: string, currency: string }) => {
     if (!user) return;
     
     const expiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now

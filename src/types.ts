@@ -32,6 +32,7 @@ export interface User {
     name: string;
     strategy: string;
     risk: string;
+    currency: string;
     expiresAt: number;
   };
   botStats?: Record<string, { profit: number, trades: number }>;

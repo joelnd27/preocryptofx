@@ -159,6 +159,11 @@ export default function Bots() {
     });
   };
 
+  const [importConfig, setImportConfig] = useState({
+    currency: 'BTC',
+    risk: 'Medium'
+  });
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -178,7 +183,8 @@ export default function Bots() {
         await importBot({
           name: config.name,
           strategy: config.strategy,
-          risk: config.risk || 'Medium'
+          risk: config.risk || importConfig.risk,
+          currency: config.currency || importConfig.currency
         });
 
         setAlertConfig({
@@ -324,13 +330,13 @@ export default function Bots() {
                 selectedBot.id === 'custom' ? "text-white" : "text-slate-900 dark:text-slate-200"
               )}>{user.customBotConfig.name}</h3>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 leading-relaxed font-mono">
-                {getTimeRemaining(user.customBotConfig.expiresAt)}
+                Custom Neural Strategy Active
               </p>
               
               <div className="flex items-center gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <div>
-                  <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Strategy</p>
-                  <p className="text-xs font-bold text-blue-500 font-mono">{user.customBotConfig.strategy}</p>
+                  <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Currency</p>
+                  <p className="text-xs font-bold text-blue-500 font-mono">{user.customBotConfig.currency}</p>
                 </div>
                 <div>
                   <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Risk</p>
@@ -658,71 +664,100 @@ export default function Bots() {
                 </div>
 
                 <div className="space-y-6">
-                <div 
-                  className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-12 flex flex-col items-center justify-center text-center group hover:border-blue-500 transition-colors cursor-pointer relative"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept=".json"
-                    onChange={handleFileUpload}
-                  />
-                  <div className={cn(
-                    "w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform",
-                    isUploading && "animate-bounce"
-                  )}>
-                    <Upload size={32} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Trading Currency</label>
+                      <select 
+                        className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        value={importConfig.currency}
+                        onChange={(e) => setImportConfig({ ...importConfig, currency: e.target.value })}
+                      >
+                        {CRYPTO_LIST.map(c => (
+                          <option key={c.symbol} value={c.symbol}>{c.symbol} ({c.name})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Risk Level</label>
+                      <select 
+                        className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        value={importConfig.risk}
+                        onChange={(e) => setImportConfig({ ...importConfig, risk: e.target.value })}
+                      >
+                        <option>Low</option>
+                        <option>Medium</option>
+                        <option>High</option>
+                        <option>Aggressive</option>
+                      </select>
+                    </div>
                   </div>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">
-                    {isUploading ? 'Processing...' : 'Upload JSON File'}
-                  </p>
-                  <p className="text-xs text-slate-500">Drag and drop or click to browse</p>
-                </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Or Paste JSON</label>
-                  <textarea
-                    placeholder='{ "name": "My Bot", "strategy": "..." }'
-                    className="w-full h-32 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-[10px] font-mono focus:outline-none focus:border-blue-500 transition-colors resize-none"
-                    value={importJson}
-                    onChange={(e) => setImportJson(e.target.value)}
-                  />
-                </div>
+                  <div 
+                    className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-12 flex flex-col items-center justify-center text-center group hover:border-blue-500 transition-colors cursor-pointer relative"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      accept=".json"
+                      onChange={handleFileUpload}
+                    />
+                    <div className={cn(
+                      "w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform",
+                      isUploading && "animate-bounce"
+                    )}>
+                      <Upload size={32} />
+                    </div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">
+                      {isUploading ? 'Processing...' : 'Upload JSON File'}
+                    </p>
+                    <p className="text-xs text-slate-500">Drag and drop or click to browse</p>
+                  </div>
 
-                <button
-                  onClick={async () => {
-                    try {
-                      const config = JSON.parse(importJson);
-                      if (!config.name || !config.strategy) {
-                        throw new Error('Invalid bot configuration format. Missing name or strategy.');
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Or Paste JSON</label>
+                    <textarea
+                      placeholder='{ "name": "My Bot", "strategy": "..." }'
+                      className="w-full h-32 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-[10px] font-mono focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                      value={importJson}
+                      onChange={(e) => setImportJson(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        const config = JSON.parse(importJson);
+                        if (!config.name || !config.strategy) {
+                          throw new Error('Invalid bot configuration format. Missing name or strategy.');
+                        }
+                        await importBot({
+                          name: config.name,
+                          strategy: config.strategy,
+                          risk: config.risk || importConfig.risk,
+                          currency: config.currency || importConfig.currency
+                        });
+                        setAlertConfig({
+                          isOpen: true,
+                          title: 'Bot Imported',
+                          message: 'The bot configuration has been successfully imported and integrated into your library for the next 24 hours.',
+                          type: 'success'
+                        });
+                        setIsImportModalOpen(false);
+                      } catch (err: any) {
+                        setAlertConfig({
+                          isOpen: true,
+                          title: 'Import Failed',
+                          message: err.message || 'Failed to parse bot configuration.',
+                          type: 'error'
+                        });
                       }
-                      await importBot({
-                        name: config.name,
-                        strategy: config.strategy,
-                        risk: config.risk || 'Medium'
-                      });
-                      setAlertConfig({
-                        isOpen: true,
-                        title: 'Bot Imported',
-                        message: 'The bot configuration has been successfully imported and integrated into your library for the next 24 hours.',
-                        type: 'success'
-                      });
-                      setIsImportModalOpen(false);
-                    } catch (err: any) {
-                      setAlertConfig({
-                        isOpen: true,
-                        title: 'Import Failed',
-                        message: err.message || 'Failed to parse bot configuration.',
-                        type: 'error'
-                      });
-                    }
-                  }}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
-                >
-                  Import Configuration
-                </button>
+                    }}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
+                  >
+                    Import Configuration
+                  </button>
                 </div>
               </div>
             </motion.div>
