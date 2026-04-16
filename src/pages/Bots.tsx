@@ -113,14 +113,23 @@ export default function Bots() {
       const activeBots = Object.entries(user?.bots || {}).filter(([_, active]) => active);
       if (activeBots.length > 0) {
         const [botId] = activeBots[Math.floor(Math.random() * activeBots.length)];
-        const bot = BOTS.find(b => b.id === botId);
-        if (!bot) return;
+        let botName = '';
+        let coin = 'BTC';
 
-        const coin = botSettings[botId].coin;
+        if (botId === 'custom' && user?.customBotConfig) {
+          botName = user.customBotConfig.name;
+          coin = user.customBotConfig.currency || 'BTC';
+        } else {
+          const bot = BOTS.find(b => b.id === botId);
+          if (!bot) return;
+          botName = bot.name;
+          coin = botSettings[botId].coin;
+        }
+
         const profitVal = (Math.random() * 5 - 1); // -1 to +4 USDT
         const profitStr = profitVal.toFixed(2);
         
-        const newLog = `[${new Date().toLocaleTimeString()}] ${bot.name} executed ${Math.random() > 0.5 ? 'BUY' : 'SELL'} on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
+        const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed ${Math.random() > 0.5 ? 'BUY' : 'SELL'} on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
 
         // Update user balance and global stats/logs
         await addBotProfit(parseFloat(profitStr), botId, newLog);

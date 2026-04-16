@@ -231,12 +231,12 @@ export function useStore() {
             externalId: t.external_id
           })),
           bots: {
-            scalping: userData.bot_settings?.scalping_active || false,
-            trend: userData.bot_settings?.trend_active || false,
-            ai: userData.bot_settings?.ai_active || false,
-            custom: userData.bot_settings?.custom_active || false,
+            scalping: userData.bot_settings?.[0]?.scalping_active || false,
+            trend: userData.bot_settings?.[0]?.trend_active || false,
+            ai: userData.bot_settings?.[0]?.ai_active || false,
+            custom: userData.bot_settings?.[0]?.custom_active || false,
           },
-          customBotConfig: userData.bot_settings?.custom_config,
+          customBotConfig: userData.bot_settings?.[0]?.custom_config,
           createdAt: new Date(userData.created_at).getTime()
         };
         setUser(formattedUser);
@@ -821,7 +821,8 @@ export function useStore() {
         scalping_active: updatedBots.scalping,
         trend_active: updatedBots.trend,
         ai_active: updatedBots.ai,
-        custom_active: updatedBots.custom
+        custom_active: updatedBots.custom,
+        custom_config: user.customBotConfig // Preserve custom config on toggle
       });
     }
 
@@ -1364,14 +1365,14 @@ export function useStore() {
       await supabase.from('bot_settings').upsert({
         user_id: user.id,
         custom_config: customConfig,
-        custom_active: false
+        custom_active: false // Require manual start
       });
     }
     
     setUser(prev => prev ? {
       ...prev,
       customBotConfig: customConfig,
-      bots: { ...prev.bots, custom: false }
+      bots: { ...prev.bots, custom: false } // Require manual start
     } : null);
   };
 
