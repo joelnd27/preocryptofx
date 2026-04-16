@@ -120,18 +120,29 @@ export default function Bots() {
         const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
         let botName = '';
         let coin = 'BTC';
+        let profitVal = 0;
 
         if (botId === 'custom' && user?.customBotConfig) {
           botName = user.customBotConfig.name;
           coin = user.customBotConfig.currency || 'BTC';
+          
+          // Scale profit based on risk level
+          const risk = user.customBotConfig.risk || 'Medium';
+          const riskMultiplier = 
+            risk === 'Low' ? 0.5 :
+            risk === 'High' ? 2.0 :
+            risk === 'Aggressive' ? 5.0 : 1.0;
+          
+          const baseProfit = (Math.random() * 5 - 1);
+          profitVal = baseProfit * riskMultiplier;
         } else {
           const bot = BOTS.find(b => b.id === botId);
           if (!bot) return;
           botName = bot.name;
           coin = botSettings[botId].coin;
+          profitVal = (Math.random() * 5 - 1);
         }
 
-        const profitVal = (Math.random() * 5 - 1); // -1 to +4 USDT
         const profitStr = profitVal.toFixed(2);
         
         const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed ${Math.random() > 0.5 ? 'BUY' : 'SELL'} on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;

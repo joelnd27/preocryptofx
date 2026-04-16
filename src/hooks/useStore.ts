@@ -916,10 +916,9 @@ export function useStore() {
       }).eq('id', user.id);
 
       // Update bot logs in DB
-      await supabase.from('bot_settings').upsert({
-        user_id: user.id,
+      await supabase.from('bot_settings').update({
         bot_logs: updatedLogs
-      });
+      }).eq('user_id', user.id);
 
       // Also update total and daily profit in DB
       try {
