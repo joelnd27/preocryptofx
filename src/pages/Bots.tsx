@@ -108,22 +108,6 @@ export default function Bots() {
     runtime: '24h'
   });
 
-  // Listen for auto-stop events from store
-  useEffect(() => {
-    const handleAutoStop = (e: any) => {
-      const { title, message, type } = e.detail;
-      setAlertConfig({
-        isOpen: true,
-        title,
-        message,
-        type
-      });
-    };
-
-    window.addEventListener('trade-closed', handleAutoStop);
-    return () => window.removeEventListener('trade-closed', handleAutoStop);
-  }, []);
-
   const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
 
   useEffect(() => {

@@ -723,62 +723,6 @@ export function useStore() {
     return () => clearInterval(interval);
   }, [user?.trades, user?.id]);
 
-  // Real-time balance safety monitor
-  useEffect(() => {
-    if (!user) return;
-    
-    const isReal = user.activeAccount === 'REAL';
-    const balance = isReal ? user.realBalance : user.demoBalance;
-    
-    // Auto-stop bots if balance hits threshold
-    if (balance < MIN_BOT_STOP_BALANCE && (user.bots.scalping_active || user.bots.trend_active || user.bots.ai_active || user.bots.custom_active)) {
-      const updatedBots = {
-        ...user.bots,
-        scalping_active: false,
-        trend_active: false,
-        ai_active: false,
-        custom_active: false
-      };
-
-      if (isSupabaseConfigured()) {
-        supabase.from('bot_settings').update({
-          scalping_active: false,
-          trend_active: false,
-          ai_active: false,
-          custom_active: false
-        }).eq('user_id', user.id);
-      }
-
-      setUser(prev => prev ? { ...prev, bots: updatedBots } : null);
-      
-      const event = new CustomEvent('trade-closed', {
-        detail: {
-          title: 'Bots Deactivated',
-          message: `Trading bots stopped automatically. Balance ($${balance}) is below the $${MIN_BOT_STOP_BALANCE} safety threshold.`,
-          type: 'warning'
-        }
-      });
-      window.dispatchEvent(event);
-    }
-
-    // Margin Call for Manual Trades
-    if (balance < MIN_MANUAL_STOP_BALANCE && user.trades.some(t => t.status === 'OPEN')) {
-      const openTrades = user.trades.filter(t => t.status === 'OPEN');
-      openTrades.forEach(trade => {
-        closeTrade(trade.id, -trade.amount); // Close as lost
-      });
-
-      const event = new CustomEvent('trade-closed', {
-        detail: {
-          title: 'Margin Call',
-          message: `Open trades closed automatically. Balance ($${balance}) is below the $${MIN_MANUAL_STOP_BALANCE} safety threshold.`,
-          type: 'error'
-        }
-      });
-      window.dispatchEvent(event);
-    }
-  }, [user?.realBalance, user?.demoBalance, user?.activeAccount]);
-
   // Marketer Auto-Process for existing pending withdrawals on load
   // (Consolidated into universal auto-process above)
 
