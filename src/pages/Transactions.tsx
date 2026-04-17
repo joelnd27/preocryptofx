@@ -158,8 +158,10 @@ export default function Transactions() {
       if (user?.verificationStatus !== 'verified') {
         setAlertConfig({
           isOpen: true,
-          title: 'Verification Required',
-          message: 'Please verify your account in the Profile section before making a deposit.',
+          title: 'Identity Verification Required',
+          message: user?.verificationStatus === 'pending' 
+            ? 'Your account verification is currently being processed. You will be able to deposit funds once approved.'
+            : 'Access to deposits is restricted until your identity is verified. Please visit the Profile section to complete verification.',
           type: 'warning'
         });
         return;
@@ -228,8 +230,10 @@ export default function Transactions() {
       if (user?.verificationStatus !== 'verified') {
         setAlertConfig({
           isOpen: true,
-          title: 'Verification Required',
-          message: 'Please verify your account in the Profile section before making a withdrawal.',
+          title: 'Identity Verification Required',
+          message: user?.verificationStatus === 'pending'
+            ? 'Your account verification is currently being processed. You will be able to withdraw funds once approved.'
+            : 'Access to withdrawals is restricted until your identity is verified. Please visit the Profile section to complete verification.',
           type: 'warning'
         });
         return;
@@ -345,6 +349,28 @@ export default function Transactions() {
           </div>
         </div>
       </div>
+
+      {user?.verificationStatus !== 'verified' && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 sm:p-6 bg-amber-500/10 border border-amber-500/20 rounded-3xl flex items-start gap-4"
+        >
+          <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-500 shrink-0">
+            <ShieldCheck size={24} />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm sm:text-base font-bold text-amber-900 dark:text-amber-500">
+              Identity Verification Required
+            </h3>
+            <p className="text-xs sm:text-sm text-amber-800/80 dark:text-amber-400/80 leading-relaxed">
+              {user?.verificationStatus === 'pending' 
+                ? "Your document verification is currently in progress. Deposits and withdrawals will be enabled as soon as our team completes the review (usually within 24 hours)."
+                : "To ensure the security of your funds and comply with financial regulations, you must verify your identity before making deposits or withdrawals. Please head to the Profile section to submit your documents."}
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
