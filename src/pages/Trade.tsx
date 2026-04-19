@@ -178,6 +178,8 @@ export default function Trade() {
         tempPrice = close;
       }
       initialHistory[c.symbol] = history;
+      // Sync the initial real-time price with the final historical closing price
+      initialPrices[c.symbol] = tempPrice;
     });
     
     setPrices(initialPrices);
