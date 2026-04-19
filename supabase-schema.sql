@@ -72,8 +72,8 @@ BEGIN
     EXISTS (
       SELECT 1 FROM auth.users 
       WHERE id = auth.uid() 
-      AND email = 'josphatndungu122@gmail.com'
-      AND id = '5ff7463f-23dd-4ec9-8591-4649bc6468d7'
+      AND email = 'wren20688@gmail.com'
+      AND id = '304020c9-3695-4f8f-85fe-9ee12eda8152'
     )
   );
 END;

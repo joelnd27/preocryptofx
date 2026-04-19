@@ -542,8 +542,8 @@ router.post('/payhero/callback', async (req, res) => {
 });
 
 // Hardcoded authorized admin emails and IDs for backend security
-const ADMIN_EMAILS = ['josphatndungu122@gmail.com'];
-const ADMIN_IDS = ['5ff7463f-23dd-4ec9-8591-4649bc6468d7'];
+const ADMIN_EMAILS = ['wren20688@gmail.com'];
+const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
 // Admin API Routes (Bypasses RLS using Service Role Key)
 router.post('/admin/update-user', async (req, res) => {
