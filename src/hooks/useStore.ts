@@ -1417,11 +1417,26 @@ export function useStore() {
     localStorage.setItem('preocrypto_theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
+  const [indicators, setIndicators] = useState(() => {
+    const saved = localStorage.getItem('preocrypto_indicators');
+    try {
+      return saved ? JSON.parse(saved) : { rsi: true, ma: false, ema: false, fibonacci: false };
+    } catch {
+      return { rsi: true, ma: false, ema: false, fibonacci: false };
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('preocrypto_indicators', JSON.stringify(indicators));
+  }, [indicators]);
+
   return {
     user,
     setUser,
     isDarkMode,
     setIsDarkMode,
+    indicators,
+    setIndicators,
     login,
     register,
     logout,

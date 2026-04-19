@@ -36,7 +36,7 @@ import AdvancedChart, { ChartType, Timeframe } from '../components/AdvancedChart
 import AlertModal from '../components/AlertModal';
 
 export default function Trade() {
-  const { user, addTrade, closeTrade, isDarkMode } = useStore();
+  const { user, addTrade, closeTrade, isDarkMode, indicators, setIndicators } = useStore();
   const [selectedCoin, setSelectedCoin] = useState(CRYPTO_LIST[0]);
   const [amount, setAmount] = useState('');
   const [duration, setDuration] = useState('30');
@@ -45,7 +45,6 @@ export default function Trade() {
   const [priceHistory, setPriceHistory] = useState<Record<string, any[]>>({});
   const [chartType, setChartType] = useState<ChartType>('AREA');
   const [timeframe, setTimeframe] = useState<Timeframe>('1M');
-  const [indicators, setIndicators] = useState({ rsi: true, ma: false, ema: false, fibonacci: false });
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [isAssetSelectorOpen, setIsAssetSelectorOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<'BUY' | 'SELL' | null>(null);
