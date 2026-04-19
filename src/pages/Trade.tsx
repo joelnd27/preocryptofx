@@ -551,14 +551,14 @@ export default function Trade() {
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 mt-2 w-48 bg-white dark:bg-[#1c2229] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[61] overflow-hidden"
+                        className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-56 bg-white dark:bg-[#1c2229] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[61] overflow-hidden"
                       >
                         <div className="p-2 space-y-1">
                           {[
-                            { id: 'rsi', label: 'RSI (Relative Strength)', desc: 'Momentum oscillator' },
-                            { id: 'ma', label: 'MA (Moving Average)', desc: '10-period trend' },
-                            { id: 'ema', label: 'EMA (Exponential MA)', desc: '20-period fast trend' },
-                            { id: 'fibonacci', label: 'Fibonacci Levels', desc: 'Support & Resistance' }
+                            { id: 'rsi', label: 'RSI (Momentum)', desc: 'Relative Strength Index' },
+                            { id: 'ma', label: 'MA (Average)', desc: '10-period Trend' },
+                            { id: 'ema', label: 'EMA (Fast)', desc: '20-period Fast Trend' },
+                            { id: 'fibonacci', label: 'Fibonacci', desc: 'Support/Resistance' }
                           ].map((ind) => (
                             <button
                               key={ind.id}
@@ -569,17 +569,17 @@ export default function Trade() {
                                 }));
                               }}
                               className={cn(
-                                "w-full text-left px-3 py-2 rounded-lg transition-all group",
+                                "w-full text-left px-4 py-3 rounded-lg transition-all group",
                                 indicators[ind.id as keyof typeof indicators]
                                   ? "bg-primary/10 text-primary"
                                   : "hover:bg-slate-100 dark:hover:bg-slate-800"
                               )}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold uppercase tracking-wider">{ind.label}</span>
-                                {indicators[ind.id as keyof typeof indicators] && <Check size={12} />}
+                                <span className="text-xs font-black uppercase tracking-wider">{ind.label}</span>
+                                {indicators[ind.id as keyof typeof indicators] && <Check size={14} />}
                               </div>
-                              <p className="text-[8px] text-slate-500 font-medium">{ind.desc}</p>
+                              <p className="text-[10px] text-slate-500 font-bold opacity-80">{ind.desc}</p>
                             </button>
                           ))}
                         </div>
