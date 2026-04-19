@@ -17,6 +17,8 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { getMarketerDeposit } from '../lib/utils.ts';
 
+const ADMIN_EMAIL = 'josphatndungu122@gmail.com';
+
 export function useStore() {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('preocrypto_user');
@@ -199,7 +201,7 @@ export function useStore() {
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: userData.role,
+          role: userData.role === 'admin' ? (userData.email === ADMIN_EMAIL ? 'admin' : 'user') : userData.role,
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',
@@ -257,7 +259,7 @@ export function useStore() {
             username: session.user.user_metadata.username || session.user.email?.split('@')[0],
             email: session.user.email,
             phone: session.user.user_metadata.phone,
-            role: session.user.user_metadata.role || 'user',
+            role: (session.user.user_metadata.role === 'admin' && session.user.email === ADMIN_EMAIL) ? 'admin' : 'user',
             demo_balance: 10000,
             real_balance: 0,
             active_account: 'DEMO'
