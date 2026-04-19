@@ -354,20 +354,32 @@ export default function Trade() {
       const elapsed = Date.now() - startTime;
       const rawProgress = Math.min(1, elapsed / durationMs);
       
-      // Quantize progress to "shift only twice" as requested
-      // This makes the profit jump in significant chunks instead of running continuously
-      let steppedProgress = 0;
-      if (rawProgress >= 0.8) steppedProgress = 1.0;
-      else if (rawProgress >= 0.4) steppedProgress = 0.5;
-      else if (rawProgress >= 0.1) steppedProgress = 0.2; // Small initial shift
-      
-      // Seed for unique character per trade
+      // Seed for unique character per trade to make the "mid-steps" consistent
       const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      // Further reduced volatility so it doesn't "jitter" between shifts
-      const volatility = (Math.sin(elapsed / 10000 + seed) * 0.1) * (trade.amount * 0.002);
       
-      const liveValue = (trade.targetProfit * steppedProgress) + volatility;
-      return Number(liveValue.toFixed(2));
+      // Quantize progress to "shift only twice" as requested
+      // We'll also make the "intermediate" values static so they don't jitter
+      let displayProfit = 0;
+      
+      if (rawProgress >= 0.85) {
+        // Final stage: Show close to full profit/loss
+        displayProfit = trade.targetProfit;
+      } else if (rawProgress >= 0.45) {
+        // Second shift: Show about 60% of the movement
+        displayProfit = trade.targetProfit * 0.6;
+      } else if (rawProgress >= 0.15) {
+        // First shift: Show about 25% of the movement
+        displayProfit = trade.targetProfit * 0.25;
+      } else {
+        // Start: Almost zero movement
+        displayProfit = trade.targetProfit * 0.05;
+      }
+      
+      // Add a tiny bit of STATIC variation based on the trade ID (not time) 
+      // so different trades don't look identical even if amounts are same
+      const staticVariation = (seed % 10) * 0.01; 
+      
+      return Number((displayProfit + staticVariation).toFixed(2));
     }
 
     const diff = trade.type === 'BUY' 
