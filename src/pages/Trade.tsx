@@ -17,7 +17,10 @@ import {
   BrainCircuit,
   TrendingUp,
   TrendingDown,
-  Lightbulb
+  Lightbulb,
+  Layers,
+  Settings,
+  Check
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { 
@@ -43,6 +46,7 @@ export default function Trade() {
   const [chartType, setChartType] = useState<ChartType>('AREA');
   const [timeframe, setTimeframe] = useState<Timeframe>('1M');
   const [indicators, setIndicators] = useState({ rsi: true, ma: false, ema: false });
+  const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [isAssetSelectorOpen, setIsAssetSelectorOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<'BUY' | 'SELL' | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -187,10 +191,22 @@ export default function Trade() {
         const nextPrices = { ...prevPrices };
         Object.keys(nextPrices).forEach(key => {
           const currentPrice = nextPrices[key];
-          // Very small volatility for realistic movement (0.005% per update)
-          const baseVolatility = 0.00005; 
-          const change = currentPrice * (Math.random() * baseVolatility * 2 - baseVolatility);
-          nextPrices[key] = currentPrice + change;
+          
+          // Higher volatility for more "active" looking charts (0.015% to 0.05% per update)
+          // We also ensure even tiny priced assets like SHIB move visibly
+          let volatility = 0.00015; 
+          if (currentPrice < 1) volatility = 0.0005; // More push for penny coins
+          if (currentPrice < 0.01) volatility = 0.001; // Even more for micro coins
+          
+          const change = currentPrice * (Math.random() * volatility * 2 - volatility);
+          
+          // Ensure price never hits zero or stays strictly flat
+          nextPrices[key] = Math.max(0.00000001, currentPrice + change);
+          
+          // Add a tiny random "kick" if price is really small and hasn't moved
+          if (nextPrices[key] === currentPrice) {
+            nextPrices[key] += Math.random() * 0.0000001;
+          }
         });
 
         // Update history in the same tick to avoid synchronization issues
@@ -506,6 +522,70 @@ export default function Trade() {
             </div>
             
             <div className="flex items-center gap-3">
+              {/* Indicators Button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowIndicatorMenu(!showIndicatorMenu)}
+                  className={cn(
+                    "p-2 rounded-lg transition-all border border-slate-200 dark:border-slate-800",
+                    showIndicatorMenu ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-primary"
+                  )}
+                  title="Indicators"
+                >
+                  <Layers size={14} />
+                </button>
+
+                <AnimatePresence>
+                  {showIndicatorMenu && (
+                    <>
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setShowIndicatorMenu(false)}
+                        className="fixed inset-0 z-[60]"
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute right-0 mt-2 w-48 bg-white dark:bg-[#1c2229] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[61] overflow-hidden"
+                      >
+                        <div className="p-2 space-y-1">
+                          {[
+                            { id: 'rsi', label: 'RSI (Relative Strength)', desc: 'Stops & momentum' },
+                            { id: 'ma', label: 'MA (Moving Average)', desc: 'Trend direction' },
+                            { id: 'ema', label: 'EMA (Exponential MA)', desc: 'Fast trend' }
+                          ].map((ind) => (
+                            <button
+                              key={ind.id}
+                              onClick={() => {
+                                setIndicators(prev => ({ 
+                                  ...prev, 
+                                  [ind.id]: !prev[ind.id as keyof typeof prev] 
+                                }));
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-2 rounded-lg transition-all group",
+                                indicators[ind.id as keyof typeof indicators]
+                                  ? "bg-primary/10 text-primary"
+                                  : "hover:bg-slate-100 dark:hover:bg-slate-800"
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold uppercase tracking-wider">{ind.label}</span>
+                                {indicators[ind.id as keyof typeof indicators] && <Check size={12} />}
+                              </div>
+                              <p className="text-[8px] text-slate-500 font-medium">{ind.desc}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+
               <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                 {['AREA', 'LINE', 'CANDLE'].map((t) => (
                   <button
@@ -543,6 +623,7 @@ export default function Trade() {
               type={chartType} 
               timeframe={timeframe}
               isDarkMode={isDarkMode}
+              symbol={selectedCoin.symbol}
               indicators={indicators}
             />
           </div>

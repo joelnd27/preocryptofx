@@ -17,6 +17,7 @@ interface AdvancedChartProps {
   type: ChartType;
   timeframe: Timeframe;
   isDarkMode: boolean;
+  symbol: string;
   indicators?: {
     rsi: boolean;
     ma: boolean;
@@ -24,7 +25,7 @@ interface AdvancedChartProps {
   };
 }
 
-export default function AdvancedChart({ data, type, timeframe, isDarkMode, indicators }: AdvancedChartProps) {
+export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbol, indicators }: AdvancedChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any> | null>(null);
@@ -49,6 +50,10 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, indic
         timeScale: {
           timeVisible: true,
           secondsVisible: timeframe === '1S' || timeframe === '1M',
+          rightOffset: 12, // Give some space at the right edge
+          barSpacing: 10, // Maintain a decent size for bars/candles
+          minBarSpacing: 1,
+          shiftVisibleRangeOnNewBar: true, // This makes old bars "vanish" to the left
           tickMarkFormatter: (time: number) => {
             const date = new Date(time * 1000);
             return date.toLocaleTimeString([], { 
@@ -102,8 +107,15 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, indic
 
     try {
       const isCandle = type === 'CANDLE' || type === 'HOLLOW';
-      const isNewData = data.length !== lastDataRef.current.length || 
-                       (data.length > 0 && lastDataRef.current.length > 0 && data[0].timeValue !== lastDataRef.current[0].timeValue);
+      
+      // Data is "new" if coin changed, length changed, or the timestamps/prices at start/end changed
+      const isNewData = !lastDataRef.current.length || 
+                       symbol !== (lastDataRef.current as any).symbol ||
+                       data.length !== lastDataRef.current.length || 
+                       (data.length > 0 && lastDataRef.current.length > 0 && (
+                         data[0].timeValue !== lastDataRef.current[0].timeValue ||
+                         data[0].close !== lastDataRef.current[0].close
+                       ));
       
       // Create or update main series
       if (!seriesRef.current || seriesRef.current.seriesType() !== (isCandle ? 'Candlestick' : (type === 'AREA' ? 'Area' : 'Line')) || isNewData) {
@@ -159,8 +171,10 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, indic
           })));
         }
         
-        // Only fit content on initial load or if explicitly requested
-        if (isNewData) {
+        // Only fit content when the coin changes (Initial Load)
+        // This prevents candles from getting smaller as more data is added
+        const isNewCoin = !lastDataRef.current.length || symbol !== (lastDataRef.current as any).symbol;
+        if (isNewCoin) {
           chart.timeScale().fitContent();
         }
       } else {
@@ -183,6 +197,7 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, indic
       }
 
       lastDataRef.current = data;
+      (lastDataRef.current as any).symbol = symbol;
 
       // Handle Indicators (simplified update for performance)
       if (indicators?.ma && isCandle) {
