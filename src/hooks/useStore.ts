@@ -17,7 +17,8 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { getMarketerDeposit } from '../lib/utils.ts';
 
-const ADMIN_EMAILS = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
+const ADMIN_EMAILS = ['josphatndungu122@gmail.com'];
+const ADMIN_IDS = ['5ff7463f-23dd-4ec9-8591-4649bc64687d'];
 
 export function useStore() {
   const [user, setUser] = useState<User | null>(() => {
@@ -201,7 +202,7 @@ export function useStore() {
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: userData.role === 'admin' ? (ADMIN_EMAILS.includes(userData.email.toLowerCase()) ? 'admin' : 'user') : userData.role,
+          role: userData.role === 'admin' ? (ADMIN_EMAILS.includes(userData.email.toLowerCase()) && ADMIN_IDS.includes(userData.id) ? 'admin' : 'user') : userData.role,
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',

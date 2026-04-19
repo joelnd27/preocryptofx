@@ -541,8 +541,9 @@ router.post('/payhero/callback', async (req, res) => {
   }
 });
 
-// Hardcoded authorized admin emails for backend security
-const ADMIN_EMAILS = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
+// Hardcoded authorized admin emails and IDs for backend security
+const ADMIN_EMAILS = ['josphatndungu122@gmail.com'];
+const ADMIN_IDS = ['5ff7463f-23dd-4ec9-8591-4649bc64687d'];
 
 // Admin API Routes (Bypasses RLS using Service Role Key)
 router.post('/admin/update-user', async (req, res) => {
@@ -554,10 +555,13 @@ router.post('/admin/update-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email for security
-    if (!ADMIN_EMAILS.includes(user.email || '')) {
-      console.warn(`Unauthorized admin attempt by: ${user.email}`);
-      return res.status(403).json({ error: 'Forbidden: Unauthorized Email' });
+    // CRITICAL: Double-check email and ID for security
+    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
+    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    
+    if (!isAuthorizedEmail || !isAuthorizedId) {
+      console.warn(`Unauthorized admin attempt by: Email[${user.email}] ID[${user.id}]`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
 
     // 2. Check role in DB
@@ -588,10 +592,13 @@ router.post('/admin/credit-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email for security
-    if (!ADMIN_EMAILS.includes(user.email || '')) {
-      console.warn(`Unauthorized credit attempt by: ${user.email}`);
-      return res.status(403).json({ error: 'Forbidden: Unauthorized Email' });
+    // CRITICAL: Double-check email and ID for security
+    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
+    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    
+    if (!isAuthorizedEmail || !isAuthorizedId) {
+      console.warn(`Unauthorized credit attempt by: Email[${user.email}] ID[${user.id}]`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
 
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();

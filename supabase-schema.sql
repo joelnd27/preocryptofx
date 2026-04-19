@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     custom_config JSONB
 );
 
--- 5. Helper function to check if user is admin (Strictly by email for security)
+-- 5. Helper function to check if user is admin (Strictly by email and ID for double security)
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -68,6 +68,7 @@ BEGIN
       SELECT 1 FROM auth.users 
       WHERE id = auth.uid() 
       AND email IN ('josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com')
+      AND id IN ('5ff7463f-23dd-4ec9-8591-4649bc64687d', '2d36966e-87aa-4d75-ac49-f78f7ad0ebd0')
     )
   );
 END;
