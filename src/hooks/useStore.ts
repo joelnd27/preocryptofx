@@ -595,7 +595,7 @@ export function useStore() {
         .from('trades')
         .select('id')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .order('timestamp', { ascending: false })
         .range(50, 1000);
       
       if (oldTrades && oldTrades.length > 0) {
