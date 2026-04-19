@@ -27,7 +27,7 @@ export default function Register() {
       await register(username, email, password, role, phone);
       setSuccess(true);
       // STRICT: Only redirect to admin if the email matches the authorized list exactly
-      const adminEmails = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
+      const adminEmails = ['wren20688@gmail.com'];
       const isAdmin = adminEmails.includes(email.toLowerCase());
       // Wait a bit before navigating to let them see the success message
       setTimeout(() => navigate(isAdmin ? '/admin' : '/dashboard'), 2000);

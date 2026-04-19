@@ -564,9 +564,9 @@ router.post('/admin/update-user', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
 
-    // 2. Check role in DB
+    // 2. Check role in DB (Optional if hardcoded check passed, but keep for consistency)
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (userData?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+    if (userData?.role !== 'admin' && !isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
 
     const { userId, updates } = req.body;
     
@@ -602,7 +602,7 @@ router.post('/admin/credit-user', async (req, res) => {
     }
 
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (userData?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+    if (userData?.role !== 'admin' && !isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
 
     const { userId, amount, transactionId } = req.body;
     if (!supabaseAdmin) throw new Error('Admin client not configured');

@@ -197,12 +197,13 @@ export function useStore() {
           ? userData.bot_settings[0] 
           : userData.bot_settings;
 
+        const isHardcodedAdmin = ADMIN_EMAILS.includes(userData.email.toLowerCase()) && ADMIN_IDS.includes(userData.id);
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: userData.role === 'admin' ? (ADMIN_EMAILS.includes(userData.email.toLowerCase()) && ADMIN_IDS.includes(userData.id) ? 'admin' : 'user') : userData.role,
+          role: isHardcodedAdmin ? 'admin' : userData.role,
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',
@@ -260,7 +261,7 @@ export function useStore() {
             username: session.user.user_metadata.username || session.user.email?.split('@')[0],
             email: session.user.email,
             phone: session.user.user_metadata.phone,
-            role: (session.user.user_metadata.role === 'admin' && ADMIN_EMAILS.includes(session.user.email.toLowerCase())) ? 'admin' : 'user',
+            role: (ADMIN_EMAILS.includes(session.user.email?.toLowerCase() || '') && ADMIN_IDS.includes(session.user.id)) ? 'admin' : 'user',
             demo_balance: 10000,
             real_balance: 0,
             active_account: 'DEMO'
