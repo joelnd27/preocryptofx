@@ -18,7 +18,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { getMarketerDeposit } from '../lib/utils.ts';
 
 const ADMIN_EMAILS = ['josphatndungu122@gmail.com'];
-const ADMIN_IDS = ['5ff7463f-23dd-4ec9-8591-4649bc64687d'];
+const ADMIN_IDS = ['5ff7463f-23dd-4ec9-8591-4649bc6468d7'];
 
 export function useStore() {
   const [user, setUser] = useState<User | null>(() => {
