@@ -197,7 +197,7 @@ export function useStore() {
           ? userData.bot_settings[0] 
           : userData.bot_settings;
 
-        const isHardcodedAdmin = ADMIN_EMAILS.includes(userData.email.toLowerCase()) && ADMIN_IDS.includes(userData.id);
+        const isHardcodedAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) && ADMIN_IDS.includes(userData.id);
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
