@@ -53,6 +53,19 @@ router.post('/payhero/initiate', async (req, res) => {
     const host = req.get('host');
     const protocol = (host?.includes('localhost') || host?.includes('127.0.0.1')) ? 'http' : 'https';
     
+    // De-duplicate: Mark previous pending deposits for this user as cancelled/stale
+    // before creating a new one to avoid multiple pending entries in history.
+    try {
+      const adminClient = supabaseAdmin || supabase;
+      await adminClient.from('transactions')
+        .update({ status: 'rejected' })
+        .eq('user_id', userId)
+        .eq('type', 'DEPOSIT')
+        .eq('status', 'pending');
+    } catch (err) {
+      console.warn('Failed to clean up prior pending deposits:', err);
+    }
+
     // On Netlify, the actual API is at /.netlify/functions/api
     // But with our redirects, /api/payhero/callback works too.
     let callbackUrl: string | undefined;
@@ -528,6 +541,9 @@ router.post('/payhero/callback', async (req, res) => {
   }
 });
 
+// Hardcoded authorized admin emails for backend security
+const ADMIN_EMAILS = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
+
 // Admin API Routes (Bypasses RLS using Service Role Key)
 router.post('/admin/update-user', async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -537,6 +553,12 @@ router.post('/admin/update-user', async (req, res) => {
     // 1. Verify the requester is an admin
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // CRITICAL: Double-check email for security
+    if (!ADMIN_EMAILS.includes(user.email || '')) {
+      console.warn(`Unauthorized admin attempt by: ${user.email}`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Email' });
+    }
 
     // 2. Check role in DB
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
@@ -565,6 +587,12 @@ router.post('/admin/credit-user', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // CRITICAL: Double-check email for security
+    if (!ADMIN_EMAILS.includes(user.email || '')) {
+      console.warn(`Unauthorized credit attempt by: ${user.email}`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Email' });
+    }
 
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
     if (userData?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
@@ -634,7 +662,7 @@ app.use('/api', router);
 app.use('/.netlify/functions/api', router);
 
 // Background task to mark stale pending transactions as failed (Timeout Handling)
-// Runs every 5 minutes
+// Marks transactions as failed if they remain pending for more than 15 minutes
 setInterval(async () => {
   if (!supabaseAdmin || !supabaseUrl) {
     console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL is not configured.');
@@ -642,6 +670,7 @@ setInterval(async () => {
   }
 
   try {
+    // 15 minutes ago
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     
     const { data, error } = await supabaseAdmin
@@ -653,19 +682,14 @@ setInterval(async () => {
       .select();
     
     if (error) {
-      console.error('Error cleaning up stale transactions:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
+      console.error('Error cleaning up stale transactions:', error);
     } else if (data && data.length > 0) {
-      console.log(`Cleaned up ${data.length} stale transactions.`);
+      console.log(`Cleaned up ${data.length} stale transactions (older than 15 minutes).`);
     }
   } catch (err) {
     console.error('Stale transaction cleanup exception:', err);
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000); // Check every 5 minutes
 
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));

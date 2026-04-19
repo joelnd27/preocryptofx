@@ -59,15 +59,46 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     custom_config JSONB
 );
 
--- 5. Helper function to check if user is admin (using JWT for performance and to avoid recursion)
+-- 5. Helper function to check if user is admin (Strictly by email for security)
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
   RETURN (
-    COALESCE(auth.jwt() -> 'user_metadata' ->> 'role', 'user') = 'admin'
+    EXISTS (
+      SELECT 1 FROM auth.users 
+      WHERE id = auth.uid() 
+      AND email IN ('josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com')
+    )
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5b. Prevent unauthorized role or balance changes by users
+CREATE OR REPLACE FUNCTION public.protect_user_fields()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- If the requester is not a verified admin email
+  IF NOT public.is_admin() THEN
+    -- Prevent changing role
+    IF (OLD.role IS DISTINCT FROM NEW.role) THEN
+      NEW.role := OLD.role;
+    END IF;
+    -- Prevent changing real balance directly
+    IF (OLD.real_balance IS DISTINCT FROM NEW.real_balance) THEN
+      NEW.real_balance := OLD.real_balance;
+    END IF;
+    -- Prevent changing demo balance (optional, but safer)
+    -- IF (OLD.demo_balance IS DISTINCT FROM NEW.demo_balance) THEN
+    --   NEW.demo_balance := OLD.demo_balance;
+    -- END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER tr_protect_user_fields
+  BEFORE UPDATE ON public.users
+  FOR EACH ROW EXECUTE FUNCTION public.protect_user_fields();
 
 -- 6. Trigger to handle new user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()

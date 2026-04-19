@@ -21,9 +21,9 @@ export default function Login() {
     
     try {
       await login(email, password);
-      // Check for the specific admin email or the "admin" string hint
+      // STRICT: Only redirect to admin if the email matches the authorized list exactly
       const adminEmails = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
-      const isAdmin = adminEmails.includes(email.toLowerCase()) || email.toLowerCase().includes('admin');
+      const isAdmin = adminEmails.includes(email.toLowerCase());
       navigate(isAdmin ? '/admin' : '/dashboard');
     } catch (err: any) {
       console.error('Login error:', err);

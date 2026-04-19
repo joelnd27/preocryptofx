@@ -357,7 +357,7 @@ export default function Trade() {
       // Simulate some volatility but trend towards targetProfit
       // We use a pseudo-random value based on trade ID to keep it consistent
       const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const volatility = (Math.sin(elapsed / 1000 + seed) * 0.5) * (trade.amount * 0.02);
+      const volatility = (Math.sin(elapsed / 2000 + seed) * 0.4) * (trade.amount * 0.015);
       
       return (trade.targetProfit * progress) + volatility;
     }
@@ -369,7 +369,8 @@ export default function Trade() {
     // Calculate percentage change
     const percentChange = diff / trade.price;
     
-    return trade.amount * percentChange * 10; 
+    // Reduced leverage from 10x to 3x for more realistic movement
+    return trade.amount * percentChange * 3; 
   };
 
   return (
