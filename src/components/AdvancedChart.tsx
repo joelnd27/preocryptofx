@@ -22,6 +22,7 @@ interface AdvancedChartProps {
     rsi: boolean;
     ma: boolean;
     ema: boolean;
+    fibonacci: boolean;
   };
 }
 
@@ -31,6 +32,8 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
   const seriesRef = useRef<ISeriesApi<any> | null>(null);
   const maSeriesRef = useRef<ISeriesApi<any> | null>(null);
   const emaSeriesRef = useRef<ISeriesApi<any> | null>(null);
+  const rsiSeriesRef = useRef<ISeriesApi<any> | null>(null);
+  const fibLinesRef = useRef<any[]>([]);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -74,6 +77,14 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
             });
           },
         },
+        leftPriceScale: {
+          visible: true,
+          borderVisible: false,
+        },
+        rightPriceScale: {
+          visible: true,
+          borderVisible: false,
+        },
       });
 
       chartRef.current = chart;
@@ -93,6 +104,8 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
         seriesRef.current = null;
         maSeriesRef.current = null;
         emaSeriesRef.current = null;
+        rsiSeriesRef.current = null;
+        fibLinesRef.current = [];
       };
     } catch (error) {
       console.error('Chart initialization failed:', error);
@@ -199,39 +212,124 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
       lastDataRef.current = data;
       (lastDataRef.current as any).symbol = symbol;
 
-      // Handle Indicators (simplified update for performance)
-      if (indicators?.ma && isCandle) {
+      // Handle Indicators
+      // 1. Moving Averages (MA/EMA) - Now visible on all chart types
+      if (indicators?.ma) {
         if (!maSeriesRef.current) {
-          maSeriesRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1 });
+          maSeriesRef.current = chart.addSeries(LineSeries, { 
+            color: '#f59e0b', 
+            lineWidth: 1,
+            priceLineVisible: false,
+          });
         }
         const maData = data.map((d, i, arr) => {
-          if (i < 10) return null;
-          const sum = arr.slice(i - 10, i).reduce((acc, val) => acc + val.close, 0);
-          return { time: d.timeValue as any, value: sum / 10 };
+          const period = 10;
+          if (i < period) return null;
+          const sum = arr.slice(i - period, i).reduce((acc, val) => acc + val.close, 0);
+          return { time: d.timeValue as any, value: sum / period };
         }).filter(d => d !== null);
         maSeriesRef.current.setData(maData as any);
       } else if (maSeriesRef.current) {
-        try {
-          chart.removeSeries(maSeriesRef.current);
-        } catch (e) {}
+        try { chart.removeSeries(maSeriesRef.current); } catch (e) {}
         maSeriesRef.current = null;
       }
 
-      if (indicators?.ema && isCandle) {
+      if (indicators?.ema) {
         if (!emaSeriesRef.current) {
-          emaSeriesRef.current = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1 });
+          emaSeriesRef.current = chart.addSeries(LineSeries, { 
+            color: '#9333ea', 
+            lineWidth: 1,
+            priceLineVisible: false,
+          });
         }
         const emaData = data.map((d, i, arr) => {
-          if (i < 20) return null;
-          const sum = arr.slice(i - 20, i).reduce((acc, val) => acc + val.close, 0);
-          return { time: d.timeValue as any, value: sum / 20 };
+          const period = 20;
+          if (i < period) return null;
+          const sum = arr.slice(i - period, i).reduce((acc, val) => acc + val.close, 0);
+          return { time: d.timeValue as any, value: sum / period };
         }).filter(d => d !== null);
         emaSeriesRef.current.setData(emaData as any);
       } else if (emaSeriesRef.current) {
-        try {
-          chart.removeSeries(emaSeriesRef.current);
-        } catch (e) {}
+        try { chart.removeSeries(emaSeriesRef.current); } catch (e) {}
         emaSeriesRef.current = null;
+      }
+
+      // 2. RSI (Relative Strength Index) - Separate pane (overlay with own scale)
+      if (indicators?.rsi) {
+        if (!rsiSeriesRef.current) {
+          rsiSeriesRef.current = chart.addSeries(LineSeries, {
+            color: '#3b82f6',
+            lineWidth: 1,
+            priceScaleId: 'left',
+            priceLineVisible: false,
+          });
+          rsiSeriesRef.current.priceScale().applyOptions({
+            scaleMargins: {
+              top: 0.8, // RSI at the bottom
+              bottom: 0.05,
+            },
+          });
+        }
+        
+        // Calculate RSI (14 period)
+        const calculateRSI = (prices: number[]) => {
+          if (prices.length < 15) return 50;
+          let gains = 0;
+          let losses = 0;
+          for (let i = 1; i < 15; i++) {
+            const diff = prices[i] - prices[i - 1];
+            if (diff > 0) gains += diff;
+            else losses -= diff;
+          }
+          const avgGain = gains / 14;
+          const avgLoss = losses / 14;
+          if (avgLoss === 0) return 100;
+          const rs = avgGain / avgLoss;
+          return 100 - (100 / (1 + rs));
+        };
+
+        const rsiData = data.map((d, i, arr) => {
+          if (i < 14) return null;
+          const slice = arr.slice(i - 14, i + 1).map(x => x.close);
+          return { time: d.timeValue as any, value: calculateRSI(slice) };
+        }).filter(d => d !== null);
+        rsiSeriesRef.current.setData(rsiData as any);
+      } else if (rsiSeriesRef.current) {
+        try { chart.removeSeries(rsiSeriesRef.current); } catch (e) {}
+        rsiSeriesRef.current = null;
+      }
+
+      // 3. Fibonacci Retracement
+      // Clear existing Fibonacci lines
+      if (seriesRef.current) {
+        fibLinesRef.current.forEach(line => {
+          try { seriesRef.current?.removePriceLine(line); } catch (e) {}
+        });
+        fibLinesRef.current = [];
+
+        if (indicators?.fibonacci && data.length > 20) {
+          const highs = data.map(d => d.high || d.close);
+          const lows = data.map(d => d.low || d.close);
+          const max = Math.max(...highs);
+          const min = Math.min(...lows);
+          const range = max - min;
+
+          const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+          const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#4f46e5'];
+
+          levels.forEach((lvl, idx) => {
+            const price = max - (range * lvl);
+            const line = seriesRef.current?.createPriceLine({
+              price: price,
+              color: colors[idx],
+              lineWidth: 1,
+              lineStyle: idx === 0 || idx === 6 ? 0 : 2, // Solid for boundary, dashed for mid
+              axisLabelVisible: true,
+              title: `FIB ${lvl}`,
+            });
+            if (line) fibLinesRef.current.push(line);
+          });
+        }
       }
 
     } catch (error) {

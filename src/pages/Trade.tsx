@@ -45,7 +45,7 @@ export default function Trade() {
   const [priceHistory, setPriceHistory] = useState<Record<string, any[]>>({});
   const [chartType, setChartType] = useState<ChartType>('AREA');
   const [timeframe, setTimeframe] = useState<Timeframe>('1M');
-  const [indicators, setIndicators] = useState({ rsi: true, ma: false, ema: false });
+  const [indicators, setIndicators] = useState({ rsi: true, ma: false, ema: false, fibonacci: false });
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [isAssetSelectorOpen, setIsAssetSelectorOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<'BUY' | 'SELL' | null>(null);
@@ -553,9 +553,10 @@ export default function Trade() {
                       >
                         <div className="p-2 space-y-1">
                           {[
-                            { id: 'rsi', label: 'RSI (Relative Strength)', desc: 'Stops & momentum' },
-                            { id: 'ma', label: 'MA (Moving Average)', desc: 'Trend direction' },
-                            { id: 'ema', label: 'EMA (Exponential MA)', desc: 'Fast trend' }
+                            { id: 'rsi', label: 'RSI (Relative Strength)', desc: 'Momentum oscillator' },
+                            { id: 'ma', label: 'MA (Moving Average)', desc: '10-period trend' },
+                            { id: 'ema', label: 'EMA (Exponential MA)', desc: '20-period fast trend' },
+                            { id: 'fibonacci', label: 'Fibonacci Levels', desc: 'Support & Resistance' }
                           ].map((ind) => (
                             <button
                               key={ind.id}
