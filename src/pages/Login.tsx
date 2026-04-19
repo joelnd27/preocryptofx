@@ -21,7 +21,9 @@ export default function Login() {
     
     try {
       await login(email, password);
-      const isAdmin = email.includes('admin'); // This is just a hint for the UI, real role comes from DB
+      // Check for the specific admin email or the "admin" string hint
+      const adminEmails = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
+      const isAdmin = adminEmails.includes(email.toLowerCase()) || email.toLowerCase().includes('admin');
       navigate(isAdmin ? '/admin' : '/dashboard');
     } catch (err: any) {
       console.error('Login error:', err);

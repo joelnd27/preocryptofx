@@ -26,8 +26,11 @@ export default function Register() {
     try {
       await register(username, email, password, role, phone);
       setSuccess(true);
+      // Check for the specific admin email or the "admin" string hint
+      const adminEmails = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
+      const isAdmin = adminEmails.includes(email.toLowerCase()) || email.toLowerCase().includes('admin');
       // Wait a bit before navigating to let them see the success message
-      setTimeout(() => navigate('/dashboard'), 2000);
+      setTimeout(() => navigate(isAdmin ? '/admin' : '/dashboard'), 2000);
     } catch (err: any) {
       console.error('Registration error:', err);
       if (err.message.includes('rate limit exceeded')) {

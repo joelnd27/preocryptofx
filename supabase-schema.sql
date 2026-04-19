@@ -75,7 +75,7 @@ RETURNS TRIGGER AS $$
 DECLARE
   user_role TEXT;
 BEGIN
-  user_role := CASE WHEN NEW.email IN ('josphatndungu1022@gmail.com', 'wren20688@gmail.com') THEN 'admin' ELSE 'user' END;
+  user_role := CASE WHEN NEW.email IN ('josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com') THEN 'admin' ELSE 'user' END;
 
   -- Update auth.users metadata to include the role (this allows auth.jwt() to see it)
   UPDATE auth.users SET raw_user_meta_data = 
