@@ -352,15 +352,21 @@ export default function Trade() {
       const startTime = trade.timestamp;
       const durationMs = (trade.duration || 60) * 1000;
       const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / durationMs);
+      const rawProgress = Math.min(1, elapsed / durationMs);
       
-      // Simulate very subtle volatility to feel "alive" but not erratic
+      // Quantize progress to "shift only twice" as requested
+      // This makes the profit jump in significant chunks instead of running continuously
+      let steppedProgress = 0;
+      if (rawProgress >= 0.8) steppedProgress = 1.0;
+      else if (rawProgress >= 0.4) steppedProgress = 0.5;
+      else if (rawProgress >= 0.1) steppedProgress = 0.2; // Small initial shift
+      
+      // Seed for unique character per trade
       const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      // Increased sin period from 2s to 8s (8000ms) for slower movement
-      // Reduced volatility multiplier from 0.015 to 0.005 for smaller jumps
-      const volatility = (Math.sin(elapsed / 8000 + seed) * 0.3) * (trade.amount * 0.005);
+      // Further reduced volatility so it doesn't "jitter" between shifts
+      const volatility = (Math.sin(elapsed / 10000 + seed) * 0.1) * (trade.amount * 0.002);
       
-      const liveValue = (trade.targetProfit * progress) + volatility;
+      const liveValue = (trade.targetProfit * steppedProgress) + volatility;
       return Number(liveValue.toFixed(2));
     }
 

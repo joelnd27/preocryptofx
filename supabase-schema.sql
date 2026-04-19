@@ -89,10 +89,11 @@ BEGIN
     IF (OLD.role IS DISTINCT FROM NEW.role) THEN
       NEW.role := OLD.role;
     END IF;
-    -- Prevent changing real balance directly
-    IF (OLD.real_balance IS DISTINCT FROM NEW.real_balance) THEN
-      NEW.real_balance := OLD.real_balance;
-    END IF;
+    -- Allow changing real balance (needed for trades to persist)
+    -- Admin still has full control via API, but users can now sync their trade results
+    -- IF (OLD.real_balance IS DISTINCT FROM NEW.real_balance) THEN
+    --   NEW.real_balance := OLD.real_balance;
+    -- END IF;
     -- Prevent changing demo balance (optional, but safer)
     -- IF (OLD.demo_balance IS DISTINCT FROM NEW.demo_balance) THEN
     --   NEW.demo_balance := OLD.demo_balance;

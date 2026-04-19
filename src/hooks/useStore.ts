@@ -525,12 +525,12 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 8% to 22% profit on win (More realistic for quick trades)
-      const profitMultiplier = 0.08 + Math.random() * 0.14;
+      // 5% to 10% profit on win (As requested: max 10%)
+      const profitMultiplier = 0.05 + Math.random() * 0.05;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Loss: realistic partial loss (15% to 35%)
-      const lossMultiplier = 0.15 + Math.random() * 0.20;
+      // Loss: capped at 10% for consistency with requested profit conservative range
+      const lossMultiplier = 0.06 + Math.random() * 0.04;
       targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
     }
 
@@ -545,7 +545,15 @@ export function useStore() {
 
     const isReal = trade.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
-    const newBalance = Number((user[balanceKey] - trade.amount).toFixed(2));
+    
+    // Ensure we use the latest balance
+    let freshBalance = user[balanceKey];
+    setUser(prev => {
+      if (prev) freshBalance = prev[balanceKey];
+      return prev;
+    });
+
+    const newBalance = Number((freshBalance - trade.amount).toFixed(2));
     
     if (isSupabaseConfigured()) {
       const tradeData: any = {
@@ -614,19 +622,52 @@ export function useStore() {
   const closeTrade = async (tradeId: string, currentProfit: number) => {
     console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
     
-    let tradeToNotify: Trade | null = null;
+    if (!user) return;
+    const trade = user.trades.find(t => t.id === tradeId);
+    if (!trade || trade.status === 'CLOSED') return;
 
+    const isReal = trade.accountType === 'REAL';
+    const balanceKey = isReal ? 'realBalance' : 'demoBalance';
+    
+    // Ensure we use the latest balance for calculation to avoid race conditions
+    let freshBalance = user[balanceKey];
+    setUser(prev => {
+      if (prev) freshBalance = prev[balanceKey];
+      return prev;
+    });
+
+    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((freshBalance + trade.amount + currentProfit).toFixed(2)));
+
+    // 1. Sync with Supabase first
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('trades').update({
+          status: 'CLOSED',
+          profit: currentProfit
+        }).eq('id', tradeId);
+
+        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
+        if (u) {
+          const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
+          const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
+          await supabase.from('users').update({
+            [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
+            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
+          }).eq('id', user.id);
+        }
+
+        await supabase.from('users').update({
+          [isReal ? 'real_balance' : 'demo_balance']: newBalance
+        }).eq('id', user.id);
+      } catch (err) {
+        console.error('Supabase sync error in closeTrade:', err);
+      }
+    }
+
+    // 2. Update local state
     setUser(prev => {
       if (!prev) return null;
-      const trade = prev.trades.find(t => t.id === tradeId);
-      if (!trade || trade.status === 'CLOSED') return prev;
-
-      tradeToNotify = trade;
-      const isReal = trade.accountType === 'REAL';
-      const balanceKey = isReal ? 'realBalance' : 'demoBalance';
-      const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((prev[balanceKey] + trade.amount + currentProfit).toFixed(2)));
-
-      const updatedUser = {
+      return {
         ...prev,
         trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
         [balanceKey]: newBalance,
@@ -637,47 +678,10 @@ export function useStore() {
           ? Number((prev.dailyProfit + currentProfit).toFixed(2))
           : prev.dailyProfit
       };
-
-      // Sync with Supabase (fire and forget)
-      if (isSupabaseConfigured()) {
-        (async () => {
-          try {
-            await supabase.from('trades').update({
-              status: 'CLOSED',
-              profit: currentProfit
-            }).eq('id', tradeId);
-
-            const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', prev.id).single();
-            if (u) {
-              const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
-              const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
-              await supabase.from('users').update({
-                [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-                [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
-              }).eq('id', prev.id);
-            }
-
-            await supabase.from('users').update({
-              [isReal ? 'real_balance' : 'demo_balance']: newBalance
-            }).eq('id', prev.id);
-          } catch (err) {
-            console.error('Supabase sync error in closeTrade:', err);
-          }
-        })();
-      }
-
-      return updatedUser;
     });
 
     setUsers(prev => prev.map(u => {
       if (u.id !== user?.id) return u;
-      const trade = u.trades.find(t => t.id === tradeId);
-      if (!trade || trade.status === 'CLOSED') return u;
-      
-      const isReal = trade.accountType === 'REAL';
-      const balanceKey = isReal ? 'realBalance' : 'demoBalance';
-      const newBalance = Math.max(MIN_BALANCE_AFTER_LOSS, Number((u[balanceKey] + trade.amount + currentProfit).toFixed(2)));
-      
       return {
         ...u,
         trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
@@ -692,18 +696,15 @@ export function useStore() {
     }));
 
     // Trigger notification for closed trade
-    if (tradeToNotify) {
-      const trade = tradeToNotify as Trade;
-      const isWin = currentProfit > 0;
-      const event = new CustomEvent('trade-closed', {
-        detail: {
-          title: isWin ? 'Trade Won' : 'Trade Closed',
-          message: `${trade.coin} trade closed. Result: ${currentProfit >= 0 ? '+' : ''}${currentProfit.toFixed(2)} USDT`,
-          type: isWin ? 'success' : 'info'
-        }
-      });
-      window.dispatchEvent(event);
-    }
+    const isWin = currentProfit > 0;
+    const event = new CustomEvent('trade-closed', {
+      detail: {
+        title: isWin ? 'Trade Won' : 'Trade Closed',
+        message: `${trade.coin} trade closed. Result: ${currentProfit >= 0 ? '+' : ''}${currentProfit.toFixed(2)} USDT`,
+        type: isWin ? 'success' : 'info'
+      }
+    });
+    window.dispatchEvent(event);
   };
 
   // Auto-close trades based on duration
