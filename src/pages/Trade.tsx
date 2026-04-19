@@ -167,11 +167,18 @@ export default function Trade() {
       // Generate 100 points
       for (let i = 0; i < 100; i++) {
         const open = tempPrice;
-        const volatility = timeframe === '1M' || timeframe === '1S' ? 0.001 : (timeframe === '1H' ? 0.005 : 0.02);
-        const change = tempPrice * (Math.random() * volatility * 2 - volatility);
+        
+        // Match live volatility more closely for a consistent "vibe"
+        // 1M/1S should feel fast and active, 1H/1D more stable but still with clear wicks
+        const baseVol = timeframe === '1S' ? 0.001 : (timeframe === '1M' ? 0.002 : 0.015);
+        const change = tempPrice * (Math.random() * baseVol * 2 - baseVol);
         const close = open + change;
-        const high = Math.max(open, close) + Math.random() * (tempPrice * volatility * 0.5);
-        const low = Math.min(open, close) - Math.random() * (tempPrice * volatility * 0.5);
+        
+        // Wicks should be more dramatic to match the live feeling (0.8x to 1.5x the body size)
+        const bodySize = Math.abs(open - close);
+        const wickVol = tempPrice * (baseVol * 0.5);
+        const high = Math.max(open, close) + (Math.random() * wickVol + bodySize * 0.2);
+        const low = Math.min(open, close) - (Math.random() * wickVol + bodySize * 0.2);
         
         // Align timeValue to the interval to ensure consistent candles
         const pointTime = now - (100 - i) * interval;
