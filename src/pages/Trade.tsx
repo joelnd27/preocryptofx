@@ -187,8 +187,8 @@ export default function Trade() {
         const nextPrices = { ...prevPrices };
         Object.keys(nextPrices).forEach(key => {
           const currentPrice = nextPrices[key];
-          // Smaller volatility for smoother movement at higher frequency
-          const baseVolatility = 0.0002; 
+          // Very small volatility for realistic movement (0.005% per update)
+          const baseVolatility = 0.00005; 
           const change = currentPrice * (Math.random() * baseVolatility * 2 - baseVolatility);
           nextPrices[key] = currentPrice + change;
         });
@@ -354,23 +354,24 @@ export default function Trade() {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(1, elapsed / durationMs);
       
-      // Simulate some volatility but trend towards targetProfit
-      // We use a pseudo-random value based on trade ID to keep it consistent
+      // Simulate very subtle volatility to feel "alive" but not erratic
       const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const volatility = (Math.sin(elapsed / 2000 + seed) * 0.4) * (trade.amount * 0.015);
+      // Increased sin period from 2s to 8s (8000ms) for slower movement
+      // Reduced volatility multiplier from 0.015 to 0.005 for smaller jumps
+      const volatility = (Math.sin(elapsed / 8000 + seed) * 0.3) * (trade.amount * 0.005);
       
-      return (trade.targetProfit * progress) + volatility;
+      const liveValue = (trade.targetProfit * progress) + volatility;
+      return Number(liveValue.toFixed(2));
     }
 
     const diff = trade.type === 'BUY' 
       ? (currentPrice - trade.price) 
       : (trade.price - currentPrice);
     
-    // Calculate percentage change
     const percentChange = diff / trade.price;
     
-    // Reduced leverage from 10x to 3x for more realistic movement
-    return trade.amount * percentChange * 3; 
+    // Normal movement (no target profit) - reduced leverage to 1.5x for realism
+    return Number((trade.amount * percentChange * 1.5).toFixed(2));
   };
 
   return (

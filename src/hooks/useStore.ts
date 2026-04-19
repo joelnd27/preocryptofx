@@ -525,12 +525,12 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 15% to 45% profit on win (More realistic for standard trades)
-      const profitMultiplier = 0.15 + Math.random() * 0.30;
+      // 8% to 22% profit on win (More realistic for quick trades)
+      const profitMultiplier = 0.08 + Math.random() * 0.14;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Loss is now a realistic partial loss (30% to 65%) rather than full 100%
-      const lossMultiplier = 0.30 + Math.random() * 0.35;
+      // Loss: realistic partial loss (15% to 35%)
+      const lossMultiplier = 0.15 + Math.random() * 0.20;
       targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
     }
 
