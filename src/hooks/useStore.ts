@@ -62,15 +62,18 @@ export function useStore() {
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const randomThreshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
-      // 1. Check for Auto-Verify
       if (ageInMs >= randomThreshold && user.verificationStatus === 'pending') {
-        console.log('[Auto-Verify] Verifying account...');
-        const updatedUser = { ...user, verificationStatus: 'verified' as const };
-        setUser(updatedUser);
+        console.log(`[Auto-Verify] Verifying account ${user.id}... (Age: ${Math.round(ageInMs/60000)} mins, Threshold: ${Math.round(randomThreshold/60000)} mins)`);
+        
         if (isSupabaseConfigured()) {
-          await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
+          const { error } = await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
+          if (error) {
+            console.error('Auto-verify DB update failed:', error);
+            return;
+          }
         }
-        // Trigger notification event
+        
+        setUser(prev => prev ? { ...prev, verificationStatus: 'verified' } : null);
         window.dispatchEvent(new CustomEvent('verification-success'));
       }
     };
@@ -433,6 +436,9 @@ export function useStore() {
         console.error('Supabase register error:', authError.message, authError.status);
         if (authError.message.includes('rate limit exceeded')) {
           throw new Error('Registration limit reached. Please wait 15 minutes or disable "Rate Limits" in your Supabase Auth settings.');
+        }
+        if (authError.message.toLowerCase().includes('leaked')) {
+          throw new Error('This password has been found in a public data leak. For your security, please choose a more unique password.');
         }
         throw new Error(authError.message);
       }
@@ -1034,7 +1040,27 @@ export function useStore() {
         .order('created_at', { ascending: false });
       
       if (!error && data) {
-        dbUsers = data.map(u => {
+        const now = Date.now();
+        const fiveMinutesInMs = 5 * 60 * 1000;
+        const tenMinutesInMs = 10 * 60 * 1000;
+
+        dbUsers = await Promise.all(data.map(async (u) => {
+          // Check if this user should be auto-verified
+          let currentStatus = u.verification_status;
+          const submittedAt = u.verification_submitted_at ? Number(u.verification_submitted_at) : null;
+
+          if (currentStatus === 'pending' && submittedAt) {
+            const ageInMs = now - submittedAt;
+            const seed = parseInt(u.id.slice(0, 8), 36) || 0;
+            const threshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
+
+            if (ageInMs >= threshold) {
+              console.log(`[Admin Auto-Verify] Cleaning up user ${u.id}...`);
+              await supabase.from('users').update({ verification_status: 'verified' }).eq('id', u.id);
+              currentStatus = 'verified';
+            }
+          }
+
           const deposits = (u.transactions || [])
             .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed')
             .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
@@ -1050,13 +1076,13 @@ export function useStore() {
             role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && ADMIN_IDS.includes(u.id)) ? 'admin' : (u.role === 'admin' ? 'user' : u.role),
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
-            verificationStatus: u.verification_status,
+            verificationStatus: currentStatus,
             active_account: u.active_account,
             created_at: u.created_at,
             total_deposits: deposits + (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
             total_withdrawals: withdrawals
           };
-        });
+        }));
       }
     }
 

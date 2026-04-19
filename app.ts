@@ -698,6 +698,52 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
 
+// Background task for Automatic Account Verification (Offline)
+// Processes pending verifications every 60 seconds
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    const now = Date.now();
+    const fiveMinutesInMs = 5 * 60 * 1000;
+    const tenMinutesInMs = 10 * 60 * 1000;
+
+    // Fetch users in pending status
+    const { data: pendingUsers, error } = await supabaseAdmin
+      .from('users')
+      .select('id, verification_status, verification_submitted_at')
+      .eq('verification_status', 'pending');
+
+    if (error) {
+      console.error('Offline Verification Sync Error:', error);
+      return;
+    }
+
+    if (!pendingUsers || pendingUsers.length === 0) return;
+
+    for (const user of pendingUsers) {
+      if (!user.verification_submitted_at) continue;
+
+      const submittedAt = Number(user.verification_submitted_at);
+      const ageInMs = now - submittedAt;
+
+      // Use same deterministic threshold as frontend
+      const seed = parseInt(user.id.slice(0, 8), 36) || 0;
+      const threshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
+
+      if (ageInMs >= threshold) {
+        console.log(`[Offline-Verify] Automatically verifying user ${user.id} (Waited: ${Math.round(ageInMs/60000)}m)`);
+        await supabaseAdmin
+          .from('users')
+          .update({ verification_status: 'verified' })
+          .eq('id', user.id);
+      }
+    }
+  } catch (err) {
+    console.error('Offline Verification Sync Exception:', err);
+  }
+}, 60 * 1000); // Check every minute
+
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));
 

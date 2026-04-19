@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
@@ -10,6 +10,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('+254');
   const [password, setPassword] = useState('');
+  const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
   const [role, setRole] = useState<'user' | 'marketer'>('user');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -142,11 +143,53 @@ export default function Register() {
                   type="password"
                   required
                   value={password}
+                  onFocus={() => setShowPasswordRequirements(true)}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
                   placeholder="••••••••"
                 />
               </div>
+
+              {/* Password Strength Meter & Requirements */}
+              <AnimatePresence>
+                {showPasswordRequirements && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-3 pt-1 overflow-hidden"
+                  >
+                    <div className="flex gap-1 h-1.5">
+                      {[1, 2, 3, 4].map((step) => {
+                        const strength = 
+                          (password.length >= 8 ? 1 : 0) +
+                          (/[0-9]/.test(password) || /[^A-Za-z0-9]/.test(password) ? 1 : 0) +
+                          (/[A-Z]/.test(password) ? 1 : 0) +
+                          (password.length >= 12 ? 1 : 0);
+                        
+                        return (
+                          <div 
+                            key={step}
+                            className={cn(
+                              "flex-1 rounded-full transition-all duration-500",
+                              step <= strength 
+                                ? strength <= 1 ? "bg-red-500" : strength <= 2 ? "bg-yellow-500" : "bg-green-500"
+                                : "bg-slate-800"
+                            )}
+                          />
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      <RequirementItem met={password.length >= 8} text="8+ characters" />
+                      <RequirementItem met={/[A-Z]/.test(password)} text="1 capital letter" />
+                      <RequirementItem met={/[0-9]/.test(password)} text="1 number" />
+                      <RequirementItem met={/[^A-Za-z0-9]/.test(password)} text="1 symbol" />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="flex items-start gap-3 px-1">
@@ -180,6 +223,25 @@ export default function Register() {
           </div>
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+function RequirementItem({ met, text }: { met: boolean; text: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className={cn(
+        "w-3.5 h-3.5 rounded-full flex items-center justify-center transition-colors",
+        met ? "bg-green-500/20 text-green-500" : "bg-slate-800 text-slate-600"
+      )}>
+        <CheckCircle2 size={10} />
+      </div>
+      <span className={cn(
+        "text-[10px] font-bold uppercase tracking-wider transition-colors",
+        met ? "text-slate-300" : "text-slate-500"
+      )}>
+        {text}
+      </span>
     </div>
   );
 }
