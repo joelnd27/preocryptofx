@@ -238,6 +238,7 @@ export default function AdminPanel() {
                           >
                             <option value="user">User</option>
                             <option value="marketer">Marketer</option>
+                            {u.role === 'admin' && <option value="admin">Admin</option>}
                           </select>
                           <span className={cn(
                             "px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest",

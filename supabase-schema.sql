@@ -63,12 +63,17 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
+  -- Allow the Service Role (the backend server) to perform updates
+  IF (auth.role() = 'service_role') THEN
+    RETURN TRUE;
+  END IF;
+
   RETURN (
     EXISTS (
       SELECT 1 FROM auth.users 
       WHERE id = auth.uid() 
-      AND email IN ('josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com')
-      AND id IN ('5ff7463f-23dd-4ec9-8591-4649bc64687d', '2d36966e-87aa-4d75-ac49-f78f7ad0ebd0')
+      AND email = 'josphatndungu122@gmail.com'
+      AND id = '5ff7463f-23dd-4ec9-8591-4649bc6468d7'
     )
   );
 END;
