@@ -28,23 +28,34 @@ import {
   Trade as TradeType, 
   MIN_STAKE_USD, 
   MIN_BALANCE_AFTER_LOSS,
-  MIN_MANUAL_STOP_BALANCE
+  MIN_MANUAL_STOP_BALANCE,
+  ChartType,
+  Timeframe
 } from '../types.ts';
 import { formatCurrency, cn } from '../lib/utils';
-import AdvancedChart, { ChartType, Timeframe } from '../components/AdvancedChart';
+import AdvancedChart from '../components/AdvancedChart';
 
 import AlertModal from '../components/AlertModal';
 
 export default function Trade() {
-  const { user, addTrade, closeTrade, isDarkMode, indicators, setIndicators } = useStore();
+  const { 
+    user, 
+    addTrade, 
+    closeTrade, 
+    isDarkMode, 
+    indicators, 
+    setIndicators,
+    chartType,
+    setChartType,
+    timeframe,
+    setTimeframe 
+  } = useStore();
   const [selectedCoin, setSelectedCoin] = useState(CRYPTO_LIST[0]);
   const [amount, setAmount] = useState('');
   const [duration, setDuration] = useState('30');
   const [search, setSearch] = useState('');
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [priceHistory, setPriceHistory] = useState<Record<string, any[]>>({});
-  const [chartType, setChartType] = useState<ChartType>('AREA');
-  const [timeframe, setTimeframe] = useState<Timeframe>('1M');
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [isAssetSelectorOpen, setIsAssetSelectorOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<'BUY' | 'SELL' | null>(null);

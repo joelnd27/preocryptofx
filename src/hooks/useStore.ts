@@ -7,6 +7,8 @@ import {
   INITIAL_DEMO_BALANCE, 
   INITIAL_REAL_BALANCE, 
   AccountType, 
+  ChartType,
+  Timeframe,
   CRYPTO_LIST, 
   MIN_DEPOSIT_USD,
   MIN_STAKE_USD,
@@ -250,6 +252,19 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           createdAt: new Date(userData.created_at).getTime()
         };
+
+        // Cloud sync for chart settings
+        if (userData.preferred_indicators) {
+          try {
+            const parsed = typeof userData.preferred_indicators === 'string' 
+              ? JSON.parse(userData.preferred_indicators) 
+              : userData.preferred_indicators;
+            setIndicators(parsed);
+          } catch (e) { console.warn('Failed to parse indicators from DB', e); }
+        }
+        if (userData.preferred_chart_type) setChartType(userData.preferred_chart_type as ChartType);
+        if (userData.preferred_timeframe) setTimeframe(userData.preferred_timeframe as Timeframe);
+
         setUser(formattedUser);
       } else if (!error) {
         // User exists in Auth but not in public.users table
@@ -1430,6 +1445,45 @@ export function useStore() {
     localStorage.setItem('preocrypto_indicators', JSON.stringify(indicators));
   }, [indicators]);
 
+  const [chartType, setChartType] = useState<ChartType>(() => {
+    const saved = localStorage.getItem('preocrypto_chart_type');
+    return (saved as ChartType) || 'AREA';
+  });
+
+  const [timeframe, setTimeframe] = useState<Timeframe>(() => {
+    const saved = localStorage.getItem('preocrypto_timeframe');
+    return (saved as Timeframe) || '1M';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('preocrypto_chart_type', chartType);
+  }, [chartType]);
+
+  useEffect(() => {
+    localStorage.setItem('preocrypto_timeframe', timeframe);
+  }, [timeframe]);
+
+  // Sync settings to Cloud (Supabase)
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured()) return;
+
+    const syncSettings = async () => {
+      try {
+        await supabase.from('users').update({
+          preferred_indicators: indicators,
+          preferred_chart_type: chartType,
+          preferred_timeframe: timeframe
+        }).eq('id', user.id);
+      } catch (err) {
+        console.error('Failed to sync chart settings to cloud:', err);
+      }
+    };
+
+    // Debounce cloud sync to avoid rapid API calls
+    const timeout = setTimeout(syncSettings, 2000);
+    return () => clearTimeout(timeout);
+  }, [user?.id, indicators, chartType, timeframe]);
+
   return {
     user,
     setUser,
@@ -1437,6 +1491,10 @@ export function useStore() {
     setIsDarkMode,
     indicators,
     setIndicators,
+    chartType,
+    setChartType,
+    timeframe,
+    setTimeframe,
     login,
     register,
     logout,

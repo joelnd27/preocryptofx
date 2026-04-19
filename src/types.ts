@@ -1,4 +1,6 @@
 export type AccountType = 'DEMO' | 'REAL';
+export type ChartType = 'LINE' | 'CANDLE' | 'HOLLOW' | 'AREA';
+export type Timeframe = '1S' | '1M' | '15M' | '1H' | '4H' | '1D' | '1W';
 
 export interface User {
   id: string;

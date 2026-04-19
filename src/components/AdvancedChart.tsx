@@ -8,9 +8,7 @@ import {
   AreaSeries,
   LineSeries
 } from 'lightweight-charts';
-
-export type ChartType = 'LINE' | 'CANDLE' | 'HOLLOW' | 'AREA';
-export type Timeframe = '1S' | '1M' | '15M' | '1H' | '4H' | '1D' | '1W';
+import { ChartType, Timeframe } from '../types';
 
 interface AdvancedChartProps {
   data: any[];
