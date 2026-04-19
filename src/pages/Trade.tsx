@@ -148,120 +148,117 @@ export default function Trade() {
     }
   };
 
-  // Initialize prices and history
+  // Deterministic Synchronized Price Generator
+  const getSyncedPrice = (symbol: string, timestamp: number) => {
+    const coin = CRYPTO_LIST.find(c => c.symbol === symbol);
+    const basePrice = (coin as any)?.basePrice || 50000;
+    
+    // Create a unique seed for this coin from its symbol
+    const seed = symbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    
+    // Slow trend waves (hours)
+    const wave1 = Math.sin(timestamp / 7200 + seed) * 0.08;
+    const wave2 = Math.cos(timestamp / 3600 + seed * 1.5) * 0.04;
+    
+    // Medium volatility (minutes)
+    const wave3 = Math.sin(timestamp / 600 + seed * 0.7) * 0.015;
+    const wave4 = Math.cos(timestamp / 300 + seed * 2.3) * 0.008;
+    
+    // Faster moves (seconds)
+    const wave5 = Math.sin(timestamp / 60 + seed * 3.1) * 0.003;
+    
+    // High frequency noise / jitter
+    const noiseVal = (Math.sin(timestamp + seed * 0.5) * 10000);
+    const jitter = (noiseVal - Math.floor(noiseVal)) * 0.0015;
+    
+    const totalMultiplier = 1 + wave1 + wave2 + wave3 + wave4 + wave5 + jitter;
+    return Math.max(0.00000001, basePrice * totalMultiplier);
+  };
+
+  const getSyncedCandle = (symbol: string, timeValue: number, interval: number) => {
+    // A candle represents a period [timeValue, timeValue + interval]
+    const open = getSyncedPrice(symbol, timeValue);
+    const close = getSyncedPrice(symbol, timeValue + interval - 1);
+    
+    // Sample points across the candle duration to find high and low
+    let high = Math.max(open, close);
+    let low = Math.min(open, close);
+    
+    for (let i = 1; i <= 4; i++) {
+      const sampleTime = timeValue + Math.floor((interval / 5) * i);
+      const samplePrice = getSyncedPrice(symbol, sampleTime);
+      high = Math.max(high, samplePrice);
+      low = Math.min(low, samplePrice);
+    }
+    
+    const wickBuffer = (high - low) * 0.05;
+    
+    return {
+      timeValue,
+      open,
+      high: Math.max(high + wickBuffer, open, close),
+      low: Math.min(low - wickBuffer, open, close),
+      close,
+      price: close
+    };
+  };
+
+  // Initialize prices and history (Deterministic Sync)
   useEffect(() => {
     const initialPrices: Record<string, number> = {};
     const initialHistory: Record<string, any[]> = {};
     const interval = getIntervalSeconds(timeframe);
+    const now = Math.floor(Date.now() / 1000);
+    const alignedNow = now - (now % interval);
     
     CRYPTO_LIST.forEach(c => {
-      const basePrice = (c as any).basePrice || 50000;
-      // Add some initial randomness to the base price
-      const startPrice = basePrice * (1 + (Math.random() * 0.04 - 0.02));
-      initialPrices[c.symbol] = startPrice;
-      
       const history = [];
-      let tempPrice = startPrice;
-      const now = Math.floor(Date.now() / 1000);
-      
-      // Generate 100 points
-      for (let i = 0; i < 100; i++) {
-        const open = tempPrice;
-        const volatility = timeframe === '1M' || timeframe === '1S' ? 0.001 : (timeframe === '1H' ? 0.005 : 0.02);
-        const change = tempPrice * (Math.random() * volatility * 2 - volatility);
-        const close = open + change;
-        const high = Math.max(open, close) + Math.random() * (tempPrice * volatility * 0.5);
-        const low = Math.min(open, close) - Math.random() * (tempPrice * volatility * 0.5);
-        
-        // Align timeValue to the interval to ensure consistent candles
-        const pointTime = now - (100 - i) * interval;
-        const alignedTime = pointTime - (pointTime % interval);
-
-        history.push({
-          timeValue: alignedTime,
-          open,
-          high,
-          low,
-          close,
-          price: close
-        });
-        tempPrice = close;
+      for (let i = 0; i < 150; i++) {
+        const pointTime = alignedNow - (150 - i) * interval;
+        history.push(getSyncedCandle(c.symbol, pointTime, interval));
       }
       initialHistory[c.symbol] = history;
-      // Sync the initial real-time price with the final historical closing price
-      initialPrices[c.symbol] = tempPrice;
+      initialPrices[c.symbol] = history[history.length - 1].close;
     });
     
     setPrices(initialPrices);
     setPriceHistory(initialHistory);
 
     const liveInterval = setInterval(() => {
-      const now = Math.floor(Date.now() / 1000);
+      const nowTs = Math.floor(Date.now() / 1000);
       const currentInterval = getIntervalSeconds(timeframe);
+      const activeAlignedNow = nowTs - (nowTs % currentInterval);
       
       setPrices(prevPrices => {
-        const nextPrices = { ...prevPrices };
-        Object.keys(nextPrices).forEach(key => {
-          const currentPrice = nextPrices[key];
-          
-          // Higher volatility for more "active" looking charts (0.015% to 0.05% per update)
-          // We also ensure even tiny priced assets like SHIB move visibly
-          let volatility = 0.00015; 
-          if (currentPrice < 1) volatility = 0.0005; // More push for penny coins
-          if (currentPrice < 0.01) volatility = 0.001; // Even more for micro coins
-          
-          const change = currentPrice * (Math.random() * volatility * 2 - volatility);
-          
-          // Ensure price never hits zero or stays strictly flat
-          nextPrices[key] = Math.max(0.00000001, currentPrice + change);
-          
-          // Add a tiny random "kick" if price is really small and hasn't moved
-          if (nextPrices[key] === currentPrice) {
-            nextPrices[key] += Math.random() * 0.0000001;
-          }
+        const nextPrices: Record<string, number> = {};
+        CRYPTO_LIST.forEach(c => {
+          nextPrices[c.symbol] = getSyncedPrice(c.symbol, nowTs);
         });
-
-        // Update history in the same tick to avoid synchronization issues
+        
         setPriceHistory(prevHistory => {
           const nextHistory = { ...prevHistory };
           Object.keys(nextHistory).forEach(symbol => {
-            const currentPrice = nextPrices[symbol];
             const history = [...(nextHistory[symbol] || [])];
             if (history.length === 0) return;
 
-            const lastPoint = { ...history[history.length - 1] };
-            
-            // Align current time to interval
-            const alignedNow = now - (now % currentInterval);
+            const lastPoint = history[history.length - 1];
+            const currentCandle = getSyncedCandle(symbol, activeAlignedNow, currentInterval);
 
-            // If more than interval passed, start a new candle
-            if (alignedNow > lastPoint.timeValue) {
-              const newPoint = {
-                timeValue: alignedNow,
-                open: lastPoint.close,
-                high: Math.max(lastPoint.close, currentPrice),
-                low: Math.min(lastPoint.close, currentPrice),
-                close: currentPrice,
-                price: currentPrice
-              };
-              history.push(newPoint);
-              if (history.length > 200) history.shift(); // Keep buffer manageable
+            if (activeAlignedNow > lastPoint.timeValue) {
+              nextHistory[symbol] = [...history.slice(-199), currentCandle];
             } else {
-              // Update current candle
-              lastPoint.close = currentPrice;
-              lastPoint.price = currentPrice;
-              lastPoint.high = Math.max(lastPoint.high, currentPrice);
-              lastPoint.low = Math.min(lastPoint.low, currentPrice);
-              history[history.length - 1] = lastPoint;
+              nextHistory[symbol] = [
+                ...history.slice(0, -1),
+                currentCandle
+              ];
             }
-            nextHistory[symbol] = history;
           });
           return nextHistory;
         });
 
         return nextPrices;
       });
-    }, 500); // Update every 500ms for smoother movement
+    }, 1000);
 
     return () => clearInterval(liveInterval);
   }, [timeframe]);
