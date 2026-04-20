@@ -153,7 +153,7 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm relative overflow-hidden group"
+            className="bg-[#121212] border border-gray-800 p-6 rounded-2xl shadow-sm relative overflow-hidden group"
           >
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-4">
@@ -181,7 +181,7 @@ export default function Dashboard() {
         {/* Market Analysis (Pie & Bar) */}
         <div className="lg:col-span-2 space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-8 rounded-3xl shadow-sm">
+            <div className="bg-[#121212] border border-gray-800 p-8 rounded-3xl shadow-sm">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                 <PieIcon size={16} className="text-primary" /> Market Distribution
               </h3>
@@ -217,7 +217,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-8 rounded-3xl shadow-sm">
+            <div className="bg-[#121212] border border-gray-800 p-8 rounded-3xl shadow-sm">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                 <BarChart3 size={16} className="text-primary" /> 24h Trading Volume
               </h3>
@@ -239,7 +239,7 @@ export default function Dashboard() {
           </div>
 
           {/* Recent Trades Table */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <div className="bg-[#121212] border border-gray-800 rounded-3xl overflow-hidden shadow-sm">
             <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h3 className="font-bold text-slate-900 dark:text-white">Recent Trade History</h3>
               <button 
@@ -307,7 +307,7 @@ export default function Dashboard() {
         {/* Sidebar Info */}
         <div className="space-y-8">
           {/* Live AI Feed */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
+          <div className="bg-[#121212] border border-gray-800 p-6 rounded-3xl shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-slate-900 dark:text-white">Global Market Activity</h3>
               <div className="flex items-center gap-2">
@@ -380,7 +380,7 @@ export default function Dashboard() {
           </div>
 
           {/* Notifications */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
+          <div className="bg-[#121212] border border-gray-800 p-6 rounded-3xl shadow-sm">
             <h3 className="font-bold text-slate-900 dark:text-white mb-6">Recent Alerts</h3>
             <div className="space-y-4">
               {(user?.transactions || [])
