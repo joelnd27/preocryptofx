@@ -562,7 +562,7 @@ router.post('/admin/update-user', async (req, res) => {
     // 2. Check role securely (bypasses RLS)
     const { data: userData } = await supabaseAdmin.from('users').select('role').eq('id', user.id).single();
     
-    // MASTER ADMIN EMAILS AND IDS
+    // MASTER ADMIN EMAILS AND IDS (OR logic for flexibility)
     const isHardcodedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === (user.email || '').toLowerCase()) || 
                             ADMIN_IDS.includes(user.id);
                             

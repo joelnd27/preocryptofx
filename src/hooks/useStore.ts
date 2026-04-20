@@ -219,13 +219,13 @@ export function useStore() {
           ? userData.bot_settings[0] 
           : userData.bot_settings;
 
-        const isHardcodedAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) && ADMIN_IDS.includes(userData.id);
+        const isMasterAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) || ADMIN_IDS.includes(userData.id);
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: isHardcodedAdmin ? 'admin' : (userData.role === 'admin' ? 'user' : (userData.role || 'user')),
+          role: (isMasterAdmin || userData.role === 'admin') ? 'admin' : (userData.role || 'user'),
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',
@@ -1121,9 +1121,9 @@ export function useStore() {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && ADMIN_IDS.includes(u.id)) 
+            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) || ADMIN_IDS.includes(u.id) || u.role === 'admin') 
               ? 'admin' 
-              : (u.role === 'admin' ? 'user' : (u.role || 'user')),
+              : (u.role || 'user'),
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: currentStatus,
