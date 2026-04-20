@@ -100,21 +100,25 @@ export function useStore() {
     return () => clearInterval(interval);
   }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt, user?.verificationDocuments]);
 
-  // Daily Profit Reset Logic
+  // Daily Profit Reset Logic (00:00 UTC)
   useEffect(() => {
     if (!user) return;
 
     const checkReset = async () => {
-      const today = new Date().toISOString().split('T')[0];
-      if (user.lastProfitResetDate !== today) {
-        console.log('Resetting daily profit for new day:', today);
+      // Use UTC date to ensure reset happens at exactly 00:00 UTC
+      const now = new Date();
+      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+        .toISOString().split('T')[0];
+        
+      if (user.lastProfitResetDate !== todayUTC) {
+        console.log('[Finance] Resetting daily profit to 0 for new UTC day:', todayUTC);
         
         setUser(prev => {
           if (!prev) return null;
           return {
             ...prev,
             dailyProfit: 0,
-            lastProfitResetDate: today
+            lastProfitResetDate: todayUTC
           };
         });
 
@@ -122,16 +126,45 @@ export function useStore() {
           await supabase.from('users').update({
             daily_profit_real: 0,
             daily_profit_demo: 0,
-            last_profit_reset_date: today
+            last_profit_reset_date: todayUTC
           }).eq('id', user.id);
         }
       }
     };
 
     checkReset();
-    const interval = setInterval(checkReset, 60000); // Check every minute
+    const interval = setInterval(checkReset, 180000); // Check every 3 minutes
     return () => clearInterval(interval);
   }, [user?.id, user?.lastProfitResetDate]);
+
+  // REAL-TIME SYNC: Listen for balance/role changes from Admin instantly
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured()) return;
+
+    console.log('[Sync] Enabling real-time profile listener for:', user.id);
+
+    const channel = supabase
+      .channel(`user-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+          filter: `id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('[Sync] Database update detected, re-syncing profile...', payload.new);
+          // When a change is detected (like Admin updating balance), pull latest data
+          syncWithSupabase();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, syncWithSupabase]);
 
   // Marketer Auto-Process for existing pending withdrawals
   useEffect(() => {
