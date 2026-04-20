@@ -95,6 +95,10 @@ export default function AdminPanel() {
       const matchesSearch = t.users?.email?.toLowerCase().includes(search.toLowerCase()) || 
                            t.users?.username?.toLowerCase().includes(search.toLowerCase());
       
+      // Hide auto-rejected fraudulent transactions from main view unless explicitly searched
+      const isAutoRejected = t.method?.includes('Auto-Rejected');
+      if (isAutoRejected && search === '') return false;
+
       return matchesSearch;
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -406,7 +410,7 @@ export default function AdminPanel() {
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        {t.status === 'pending' && (
+                        {t.status === 'pending' && t.type === 'WITHDRAW' && (
                           <div className="flex items-center justify-end gap-2">
                             <button 
                               onClick={() => handleUpdateTransaction(t.id, 'completed')}
@@ -423,6 +427,9 @@ export default function AdminPanel() {
                               <XCircle size={14} />
                             </button>
                           </div>
+                        )}
+                        {t.status === 'pending' && t.type === 'DEPOSIT' && (
+                          <span className="text-[10px] text-slate-400 font-medium italic">Processing via API...</span>
                         )}
                       </td>
                     </tr>

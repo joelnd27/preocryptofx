@@ -52,18 +52,35 @@ export function useStore() {
     if (!user || user.verificationStatus !== 'pending' || !user.verificationSubmittedAt) return;
 
     const checkVerification = async () => {
+      const isMarketer = user.role === 'marketer';
+      const hasDocs = user.verificationDocuments && Object.keys(user.verificationDocuments).length > 0;
+      
       const now = Date.now();
       const ageInMs = now - user.verificationSubmittedAt!;
+
+      // 1. Marketers verify IMMEDIATELY
+      if (isMarketer && user.verificationStatus === 'pending') {
+        console.log(`[Auto-Verify] Verifying MARKETER ${user.id} immediately...`);
+        if (isSupabaseConfigured()) {
+          await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
+        }
+        setUser(prev => prev ? { ...prev, verificationStatus: 'verified' } : null);
+        window.dispatchEvent(new CustomEvent('verification-success'));
+        return;
+      }
+
+      // 2. Regular Users: MUST have documents
+      if (!hasDocs) return;
+
       const fiveMinutesInMs = 5 * 60 * 1000;
       const tenMinutesInMs = 10 * 60 * 1000;
-      const thirtyMinutesInMs = 30 * 60 * 1000;
-
+      
       // Deterministic threshold between 5-10 mins per user
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const randomThreshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
       if (ageInMs >= randomThreshold && user.verificationStatus === 'pending') {
-        console.log(`[Auto-Verify] Verifying account ${user.id}... (Age: ${Math.round(ageInMs/60000)} mins, Threshold: ${Math.round(randomThreshold/60000)} mins)`);
+        console.log(`[Auto-Verify] Verifying USER ${user.id} after ${Math.round(ageInMs/60000)} mins...`);
         
         if (isSupabaseConfigured()) {
           const { error } = await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);

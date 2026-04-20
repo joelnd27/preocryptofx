@@ -711,7 +711,7 @@ setInterval(async () => {
     // Fetch users in pending status
     const { data: pendingUsers, error } = await supabaseAdmin
       .from('users')
-      .select('id, verification_status, verification_submitted_at')
+      .select('id, role, verification_status, verification_submitted_at, verification_documents')
       .eq('verification_status', 'pending');
 
     if (error) {
@@ -724,15 +724,36 @@ setInterval(async () => {
     for (const user of pendingUsers) {
       if (!user.verification_submitted_at) continue;
 
+      const isMarketer = user.role === 'marketer';
+      const hasDocs = user.verification_documents && 
+                      typeof user.verification_documents === 'object' && 
+                      Object.keys(user.verification_documents).length > 0;
+      
       const submittedAt = Number(user.verification_submitted_at);
       const ageInMs = now - submittedAt;
 
-      // Use same deterministic threshold as frontend
+      // 1. Marketers verify IMMEDIATELY
+      if (isMarketer) {
+        console.log(`[Offline-Verify] Automatically verifying MARKETER ${user.id} immediately.`);
+        await supabaseAdmin
+          .from('users')
+          .update({ verification_status: 'verified' })
+          .eq('id', user.id);
+        continue;
+      }
+
+      // 2. Regular Users: MUST have documents and MUST wait 5-10 minutes
+      if (!hasDocs) {
+        // If they haven't uploaded docs, we never verify them automatically
+        continue;
+      }
+
+      // Use same deterministic threshold as frontend (5-10 mins)
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const threshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
       if (ageInMs >= threshold) {
-        console.log(`[Offline-Verify] Automatically verifying user ${user.id} (Waited: ${Math.round(ageInMs/60000)}m)`);
+        console.log(`[Offline-Verify] Automatically verifying USER ${user.id} after ${Math.round(ageInMs/60000)}m.`);
         await supabaseAdmin
           .from('users')
           .update({ verification_status: 'verified' })
@@ -743,6 +764,119 @@ setInterval(async () => {
     console.error('Offline Verification Sync Exception:', err);
   }
 }, 60 * 1000); // Check every minute
+
+// Background task to detect and reset suspicious activity (Astronomical balances/trades)
+// This acts as a secondary layer of protection since RLS might not be fully configured by the user.
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    // 1. Detect and reset astronomical real balances
+    const { data: suspiciousUsers, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, username, real_balance')
+      .gt('real_balance', 5000000); // 5 Million USD threshold
+
+    if (suspiciousUsers && suspiciousUsers.length > 0) {
+      for (const u of suspiciousUsers) {
+        console.error(`[SECURITY ALERT] Astronomical balance detected for ${u.email}: $${u.real_balance}. Resetting to $0.`);
+        await supabaseAdmin.from('users').update({ 
+          real_balance: 0,
+          role: 'user', // Force reset role if they tried to escalate
+          verification_status: 'not_verified' 
+        }).eq('id', u.id);
+        
+        // Mark all their pending withdrawals as rejected
+        await supabaseAdmin.from('transactions')
+          .update({ status: 'rejected' })
+          .eq('user_id', u.id)
+          .eq('type', 'WITHDRAW')
+          .eq('status', 'pending');
+      }
+    }
+
+    // 2. Identify and reject impossible transaction amounts
+    // Threshold is $5M OR if the amount requested is more than the user's current real balance
+    const { data: pendingTrans, error: transError } = await supabaseAdmin
+      .from('transactions')
+      .select(`
+        id, 
+        user_id, 
+        amount, 
+        type,
+        users (
+          real_balance,
+          email
+        )
+      `)
+      .eq('status', 'pending');
+
+    if (pendingTrans && pendingTrans.length > 0) {
+      for (const t of pendingTrans) {
+        const u = t.users as any;
+        const isAstronomical = Number(t.amount) > 5000000;
+        const isBypassAttempt = t.type === 'WITHDRAW' && Number(t.amount) > Number(u?.real_balance || 0);
+
+        if (isAstronomical || isBypassAttempt) {
+          console.error(`[SECURITY ALERT] Fraudulent ${t.type} detected from ${u?.email}: Requested $${t.amount} but balance is $${u?.real_balance || 0}. Auto-rejecting.`);
+          await supabaseAdmin.from('transactions').update({ 
+            status: 'rejected',
+            method: 'Auto-Rejected: Insufficient Balance/Fraud Detection' 
+          }).eq('id', t.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Security Monitor Sync Exception:', err);
+  }
+}, 30000); // Run every 30 seconds
+
+// Background task to process Marketer Withdrawals automatically
+// Marketer withdrawals stay pending for 10 seconds before auto-completing for realism
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    const now = Date.now();
+    const tenSecondsInMs = 10 * 1000;
+
+    const { data: marketerWithdrawals, error } = await supabaseAdmin
+      .from('transactions')
+      .select(`
+        id,
+        user_id,
+        amount,
+        created_at,
+        users (
+          role
+        )
+      `)
+      .eq('type', 'WITHDRAW')
+      .eq('status', 'pending');
+
+    if (error || !marketerWithdrawals) return;
+
+    for (const t of marketerWithdrawals) {
+      const u = t.users as any;
+      if (u?.role !== 'marketer') continue;
+
+      const txTime = new Date(t.created_at).getTime();
+      const age = now - txTime;
+
+      if (age >= tenSecondsInMs) {
+        console.log(`[Auto-Withdraw] Completing withdrawal for marketer ${t.user_id}`);
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'completed', 
+            method: 'M-PESA (Auto-Processed)' 
+          })
+          .eq('id', t.id);
+      }
+    }
+  } catch (err) {
+    console.error('Marketer Withdrawal Sync Exception:', err);
+  }
+}, 5000); // Check every 5 seconds to catch them quickly
 
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));
