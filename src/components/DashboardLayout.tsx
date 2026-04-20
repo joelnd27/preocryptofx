@@ -41,13 +41,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Help', icon: HelpCircle, path: '/help' },
   ];
 
-  // Add Admin item if user is admin
-  const isAdmin = user?.role === 'admin';
-  if (isAdmin) {
-    // Insert at index 1 (after Overview)
-    menuItems.splice(1, 0, { name: 'Admin', icon: ShieldCheck, path: '/admin' });
-  }
-
   const handleLogout = () => {
     logout();
     navigate('/');
