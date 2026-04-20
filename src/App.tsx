@@ -19,7 +19,6 @@ import Help from './pages/Help.tsx';
 import AdminPanel from './pages/AdminPanel.tsx';
 import Verification from './pages/Verification.tsx';
 import DashboardLayout from './components/DashboardLayout.tsx';
-import Chatbot from './components/Chatbot.tsx';
 import AlertModal from './components/AlertModal.tsx';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
@@ -96,8 +95,6 @@ export default function App() {
         message={alertConfig.message}
         type={alertConfig.type}
       />
-      
-      <Chatbot />
     </Router>
   );
 }

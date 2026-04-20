@@ -32,10 +32,7 @@ export default function AdminPanel() {
       const { data: usersData, error: usersError } = await supabase.from('users').select('*').order('created_at', { ascending: false });
       if (usersError) throw usersError;
 
-      const { data: transData, error: transError } = await supabase
-        .from('transactions')
-        .select('*, users:user_id (username, email)')
-        .order('timestamp', { ascending: false });
+      const { data: transData, error: transError } = await supabase.from('transactions').select('*, users:user_id (username, email)').eq('status', 'pending').order('timestamp', { ascending: false });
       if (transError) throw transError;
 
       setUsers(usersData.map((u: any) => ({
@@ -88,31 +85,6 @@ export default function AdminPanel() {
     try {
       await supabase.from('users').update({ verification_status: status }).eq('id', userId);
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, verificationStatus: status as any } : u));
-    } catch (err) { console.error(err); } finally { setProcessingId(null); }
-  };
-
-  const handleUpdateBalance = async (userId: string, currentBalance: number) => {
-    const amountStr = prompt(`Enter NEW balance for this user (Current: $${currentBalance}):`, currentBalance.toString());
-    if (amountStr === null) return;
-    
-    const amount = parseFloat(amountStr);
-    if (isNaN(amount)) return alert('Invalid amount');
-
-    setProcessingId(userId);
-    try {
-      await supabase.from('users').update({ real_balance: amount }).eq('id', userId);
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, realBalance: amount } : u));
-    } catch (err) { console.error(err); } finally { setProcessingId(null); }
-  };
-
-  const handleChangeRole = async (userId: string, currentRole: string) => {
-    const newRole = prompt(`Enter NEW role for this user (user, marketer, admin). Current: ${currentRole}`, currentRole);
-    if (!newRole || !['user', 'marketer', 'admin'].includes(newRole)) return alert('Invalid role');
-
-    setProcessingId(userId);
-    try {
-      await supabase.from('users').update({ role: newRole }).eq('id', userId);
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole as any } : u));
     } catch (err) { console.error(err); } finally { setProcessingId(null); }
   };
 
@@ -171,10 +143,9 @@ export default function AdminPanel() {
                   <td className="px-6 py-4">
                     <div className="flex flex-col"><span className="text-green-500 font-bold">${u.realBalance.toLocaleString()}</span><span className="text-gray-500 text-xs">${u.demoBalance.toLocaleString()} Demo</span></div>
                   </td>
-                  <td className="px-6 py-4 flex flex-wrap gap-2">
-                    {u.verificationStatus !== 'verified' && <button onClick={() => handleVerification(u.id, 'verified')} className="text-[10px] bg-green-600 px-2 py-1 rounded text-white font-bold">Verify</button>}
-                    <button onClick={() => handleUpdateBalance(u.id, u.realBalance)} className="text-[10px] bg-blue-600 px-2 py-1 rounded text-white font-bold">Edit Balance</button>
-                    <button onClick={() => handleChangeRole(u.id, u.role)} className="text-[10px] bg-purple-600 px-2 py-1 rounded text-white font-bold">Change Role</button>
+                  <td className="px-6 py-4 flex gap-2">
+                    {u.verificationStatus !== 'verified' && <button onClick={() => handleVerification(u.id, 'verified')} className="text-xs bg-green-600 px-2 py-1 rounded text-white">Verify</button>}
+                    {u.role === 'user' && <button onClick={() => updateUserRole(u.id, 'marketer')} className="text-xs bg-blue-600 px-2 py-1 rounded text-white">Make Marketer</button>}
                   </td>
                 </tr>
               ))}
@@ -194,23 +165,11 @@ export default function AdminPanel() {
             <tbody className="divide-y divide-gray-800">
               {transactions.map((t) => (
                 <tr key={t.id} className="hover:bg-[#1a1a1a]">
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-white">{t.username}</span>
-                      <span className="text-xs text-gray-500">{t.type} via {t.method}</span>
-                      <span className={`text-[10px] font-bold mt-1 ${t.status === 'completed' ? 'text-green-500' : t.status === 'rejected' ? 'text-red-500' : 'text-yellow-500'}`}>
-                        {t.status.toUpperCase()}
-                      </span>
-                    </div>
-                  </td>
+                  <td className="px-6 py-4"><div className="flex flex-col"><span className="text-white">{t.username}</span><span className="text-xs text-gray-500">{t.type} via {t.method}</span></div></td>
                   <td className="px-6 py-4 font-bold text-blue-500">${t.amount.toLocaleString()}</td>
                   <td className="px-6 py-4 flex gap-2">
-                    {t.status === 'pending' && (
-                      <>
-                        <button onClick={() => processTransaction(t.id, 'completed', t.userId, t.amount, t.type)} className="p-1 bg-green-600 rounded text-white"><CheckCircle2 className="w-4 h-4" /></button>
-                        <button onClick={() => processTransaction(t.id, 'rejected', t.userId, t.amount, t.type)} className="p-1 bg-red-600 rounded text-white"><XCircle className="w-4 h-4" /></button>
-                      </>
-                    )}
+                    <button onClick={() => processTransaction(t.id, 'completed', t.userId, t.amount, t.type)} className="p-1 bg-green-600 rounded text-white"><CheckCircle2 className="w-4 h-4" /></button>
+                    <button onClick={() => processTransaction(t.id, 'rejected', t.userId, t.amount, t.type)} className="p-1 bg-red-600 rounded text-white"><XCircle className="w-4 h-4" /></button>
                   </td>
                 </tr>
               ))}
