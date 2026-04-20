@@ -74,6 +74,13 @@ export default function AdminPanel() {
   const handleUpdateRole = async (userId: string, role: 'user' | 'marketer' | 'admin') => {
     const success = await updateUserRole(userId, role);
     if (success) {
+      // Update local state immediately so the UI reflects the change without waiting for loadData
+      setUsers(prev => prev.map(u => u.id === userId ? { 
+        ...u, 
+        role,
+        verificationStatus: role === 'marketer' ? 'verified' : u.verificationStatus 
+      } : u));
+      // Re-fetch to ensure everything is in sync with DB
       loadData();
     }
   };

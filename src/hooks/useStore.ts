@@ -141,9 +141,9 @@ export function useStore() {
       const pendingWithdrawals = user.transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'pending');
       
       for (const tx of pendingWithdrawals) {
-        // Wait 7 seconds from transaction timestamp if it's very recent, or process immediately if older
+        // Wait 5 seconds from transaction timestamp if it's very recent, or process immediately if older
         const age = Date.now() - tx.timestamp;
-        const waitTime = Math.max(0, 7000 - age);
+        const waitTime = Math.max(0, 5000 - age);
         
         setTimeout(async () => {
           if (isSupabaseConfigured()) {
@@ -225,7 +225,7 @@ export function useStore() {
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: isHardcodedAdmin ? 'admin' : (userData.role === 'admin' ? 'user' : userData.role),
+          role: isHardcodedAdmin ? 'admin' : (userData.role === 'admin' ? 'user' : (userData.role || 'user')),
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',
@@ -865,10 +865,10 @@ export function useStore() {
       return updatedUser;
     });
 
-    // Marketer Auto-Process for Withdrawals (7 Seconds)
+    // Marketer Auto-Process for Withdrawals (5 Seconds)
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
       const txId = newTransaction.id;
-      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 7 seconds.`);
+      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 5 seconds.`);
       
       setTimeout(async () => {
         if (isSupabaseConfigured() && txId) {
@@ -886,7 +886,7 @@ export function useStore() {
             )
           };
         });
-      }, 7000);
+      }, 5000);
     }
   };
 
@@ -1121,7 +1121,9 @@ export function useStore() {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && ADMIN_IDS.includes(u.id)) ? 'admin' : (u.role === 'admin' ? 'user' : u.role),
+            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && ADMIN_IDS.includes(u.id)) 
+              ? 'admin' 
+              : (u.role === 'admin' ? 'user' : (u.role || 'user')),
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: currentStatus,
