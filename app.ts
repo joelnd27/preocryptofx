@@ -555,26 +555,28 @@ router.post('/admin/update-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email and ID for security
-    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
-    const isAuthorizedId = ADMIN_IDS.includes(user.id);
-    
-    if (!isAuthorizedEmail || !isAuthorizedId) {
-      console.warn(`Unauthorized admin attempt by: Email[${user.email}] ID[${user.id}]`);
-      return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Admin client not configured.' });
     }
 
-    // 2. Check role in DB (Optional if hardcoded check passed, but keep for consistency)
-    const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (userData?.role !== 'admin' && !isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
+    // 2. Check role securely (bypasses RLS)
+    const { data: userData } = await supabaseAdmin.from('users').select('role').eq('id', user.id).single();
+    
+    // MASTER ADMIN EMAILS AND IDS
+    const isHardcodedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === (user.email || '').toLowerCase()) || 
+                            ADMIN_IDS.includes(user.id);
+                            
+    const isDbAdmin = userData?.role === 'admin';
+
+    if (!isHardcodedAdmin && !isDbAdmin) {
+      console.warn(`Unauthorized admin update attempt by: Email[${user.email}] ID[${user.id}]`);
+      return res.status(403).json({ error: 'Forbidden: You do not have admin privileges' });
+    }
 
     const { userId, updates } = req.body;
     
-    if (!supabaseAdmin) {
-      return res.status(500).json({ error: 'Admin client not configured. Please set SUPABASE_SERVICE_ROLE_KEY in your environment variables.' });
-    }
-
     // 3. Perform update using admin client (bypasses RLS)
+    console.log(`Admin ${user.email} is updating user ${userId} with:`, updates);
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', userId).select().single();
     
     if (error) throw error;
@@ -592,20 +594,22 @@ router.post('/admin/credit-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email and ID for security
-    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
-    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Admin client not configured.' });
+    }
+
+    // Check role in DB securely using Admin client (bypasses RLS)
+    const { data: userData } = await supabaseAdmin.from('users').select('role').eq('id', user.id).single();
     
-    if (!isAuthorizedEmail || !isAuthorizedId) {
+    const isHardcodedAdmin = ADMIN_EMAILS.includes(user.email || '') || ADMIN_IDS.includes(user.id);
+    const isDbAdmin = userData?.role === 'admin';
+
+    if (!isHardcodedAdmin && !isDbAdmin) {
       console.warn(`Unauthorized credit attempt by: Email[${user.email}] ID[${user.id}]`);
       return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
 
-    const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (userData?.role !== 'admin' && !isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
-
     const { userId, amount, transactionId } = req.body;
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
 
     // 1. Get current balance
     const { data: targetUser } = await supabaseAdmin.from('users').select('real_balance').eq('id', userId).single();
@@ -633,6 +637,64 @@ router.post('/admin/credit-user', async (req, res) => {
     }
 
     res.json({ success: true, newBalance });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/admin/update-transaction', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Admin client not configured.' });
+    }
+
+    // Check role in DB securely using Admin client (bypasses RLS)
+    const { data: userData } = await supabaseAdmin.from('users').select('role').eq('id', user.id).single();
+    
+    const isHardcodedAdmin = ADMIN_EMAILS.includes(user.email || '') || ADMIN_IDS.includes(user.id);
+    const isDbAdmin = userData?.role === 'admin';
+
+    if (!isHardcodedAdmin && !isDbAdmin) {
+      console.warn(`Unauthorized transaction update attempt by: Email[${user.email}] ID[${user.id}]`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
+    }
+
+    const { transactionId, status } = req.body;
+
+    // 1. Get current transaction and user data
+    const { data: trans } = await supabaseAdmin.from('transactions').select('*').eq('id', transactionId).single();
+    if (!trans) throw new Error('Transaction not found');
+
+    if (status === 'completed' && trans.status !== 'completed') {
+      if (trans.type === 'DEPOSIT') {
+        const { data: userData } = await supabaseAdmin.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
+        if (userData) {
+          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
+          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
+          await supabaseAdmin.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
+        }
+      }
+    } else if (status === 'rejected' && trans.status === 'pending') {
+      if (trans.type === 'WITHDRAW') {
+        const { data: userData } = await supabaseAdmin.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
+        if (userData) {
+          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
+          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
+          await supabaseAdmin.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
+        }
+      }
+    }
+
+    const { data, error } = await supabaseAdmin.from('transactions').update({ status }).eq('id', transactionId).select().single();
+    if (error) throw error;
+
+    res.json(data);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

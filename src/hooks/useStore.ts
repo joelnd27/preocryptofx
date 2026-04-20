@@ -1185,45 +1185,21 @@ export function useStore() {
   const updateTransactionStatus = async (transactionId: string, status: 'completed' | 'rejected') => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
-    const { data: trans, error: fetchError } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('id', transactionId)
-      .single();
-      
-    if (fetchError || !trans) return false;
-    
-    if (status === 'completed' && trans.status !== 'completed') {
-      if (trans.type === 'DEPOSIT') {
-        const { data: userData } = await supabase.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
-        if (userData) {
-          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
-          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
-          await supabase.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
-        }
-      }
-      // For WITHDRAW, balance is already deducted on creation. 
-      // Completing it just means the admin confirmed the payout.
-    } else if (status === 'rejected' && trans.status === 'pending') {
-      if (trans.type === 'WITHDRAW') {
-        const { data: userData } = await supabase.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
-        if (userData) {
-          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
-          
-          // CRITICAL SECURITY CHECK: Never refund if the transaction amount is suspicious or would cause overflow
-          // Actually, since we now validate withdrawal creation, this is safer, but let's be double sure.
-          if (trans.amount > 0 && trans.amount < 1000000000) { // Safety cap of 1B
-            const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
-            await supabase.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
-          } else {
-            console.error('[SECURITY] Blocked a suspicious refund attempt:', { transactionId, amount: trans.amount });
-          }
-        }
-      }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await axios.post('/api/admin/update-transaction', {
+        transactionId,
+        status
+      }, {
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
+
+      if (response.status !== 200) throw new Error(response.data.error);
+      return true;
+    } catch (error: any) {
+      console.error('Error updating transaction status via API:', error.response?.data?.error || error.message);
+      return false;
     }
-    
-    const { error } = await supabase.from('transactions').update({ status }).eq('id', transactionId);
-    return !error;
   };
 
   const getGlobalStats = async () => {
