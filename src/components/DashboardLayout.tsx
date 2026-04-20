@@ -36,10 +36,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const isAdmin = user?.role === 'admin';
 
-  const menuItems = isAdmin ? [
-    { icon: ShieldCheck, label: 'Admin', path: '/admin' },
-    { icon: UserIcon, label: 'Profile', path: '/profile' },
-  ] : [
+  const menuItems = [
     { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
     { icon: TrendingUp, label: 'Trade', path: '/trade' },
     { icon: Bot, label: 'AI Bots', path: '/bots' },

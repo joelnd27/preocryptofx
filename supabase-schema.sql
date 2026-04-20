@@ -59,61 +59,13 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     custom_config JSONB
 );
 
--- 5. Helper function to check if user is admin (Strictly by email and ID for double security)
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
-BEGIN
-  -- Allow the Service Role (the backend server) to perform updates
-  IF (auth.role() = 'service_role') THEN
-    RETURN TRUE;
-  END IF;
-
-  RETURN (
-    EXISTS (
-      SELECT 1 FROM auth.users 
-      WHERE id = auth.uid() 
-      AND email = 'wren20688@gmail.com'
-      AND id = '304020c9-3695-4f8f-85fe-9ee12eda8152'
-    )
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 5b. Prevent unauthorized role or balance changes by users
-CREATE OR REPLACE FUNCTION public.protect_user_fields()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- If the requester is not a verified admin email
-  IF NOT public.is_admin() THEN
-    -- Prevent changing role
-    IF (OLD.role IS DISTINCT FROM NEW.role) THEN
-      NEW.role := OLD.role;
-    END IF;
-    -- Allow changing real balance (needed for trades to persist)
-    -- Admin still has full control via API, but users can now sync their trade results
-    -- IF (OLD.real_balance IS DISTINCT FROM NEW.real_balance) THEN
-    --   NEW.real_balance := OLD.real_balance;
-    -- END IF;
-    -- Prevent changing demo balance (optional, but safer)
-    -- IF (OLD.demo_balance IS DISTINCT FROM NEW.demo_balance) THEN
-    --   NEW.demo_balance := OLD.demo_balance;
-    -- END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER tr_protect_user_fields
-  BEFORE UPDATE ON public.users
-  FOR EACH ROW EXECUTE FUNCTION public.protect_user_fields();
-
 -- 6. Trigger to handle new user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   user_role TEXT;
 BEGIN
-  user_role := CASE WHEN NEW.email IN ('wren20688@gmail.com') THEN 'admin' ELSE 'user' END;
+  user_role := 'user';
 
   -- Update auth.users metadata to include the role (this allows auth.jwt() to see it)
   UPDATE auth.users SET raw_user_meta_data = 
@@ -147,39 +99,8 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 8. Auto-process pending items (Verification ONLY)
--- This function can be called via RPC or scheduled with pg_cron
-CREATE OR REPLACE FUNCTION public.auto_process_pending()
-RETURNS void AS $$
-BEGIN
-  -- Auto-verify users pending for more than 5-10 minutes (average 7.5 mins = 450000ms)
-  -- Note: verification_submitted_at is BIGINT (ms)
-  UPDATE public.users
-  SET verification_status = 'verified'
-  WHERE verification_status = 'pending'
-    AND verification_submitted_at IS NOT NULL
-    AND (EXTRACT(EPOCH FROM NOW()) * 1000) - verification_submitted_at > 450000;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Enable Row Level Security (RLS)
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.bot_settings ENABLE ROW LEVEL SECURITY;
-
--- Policies
-CREATE POLICY "Users can view their own profile" ON public.users FOR SELECT USING (auth.uid() = id OR is_admin());
-CREATE POLICY "Users can update their own profile" ON public.users FOR UPDATE USING (auth.uid() = id OR is_admin());
-
-CREATE POLICY "Users can view their own transactions" ON public.transactions FOR SELECT USING (auth.uid() = user_id OR is_admin());
-CREATE POLICY "Users can insert their own transactions" ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id OR is_admin());
-CREATE POLICY "Admins can update transactions" ON public.transactions FOR UPDATE USING (is_admin());
-
-CREATE POLICY "Users can view their own trades" ON public.trades FOR SELECT USING (auth.uid() = user_id OR is_admin());
-CREATE POLICY "Users can insert their own trades" ON public.trades FOR INSERT WITH CHECK (auth.uid() = user_id OR is_admin());
-CREATE POLICY "Users can update their own trades" ON public.trades FOR UPDATE USING (auth.uid() = user_id OR is_admin());
-CREATE POLICY "Users can delete their own trades" ON public.trades FOR DELETE USING (auth.uid() = user_id OR is_admin());
-
-CREATE POLICY "Users can view their own bot settings" ON public.bot_settings FOR SELECT USING (auth.uid() = user_id OR is_admin());
-CREATE POLICY "Users can update their own bot settings" ON public.bot_settings FOR UPDATE USING (auth.uid() = user_id OR is_admin());
+-- RLs IS DISABLED FOR SIMPLICITY AS PER MORNING STATE
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trades DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bot_settings DISABLE ROW LEVEL SECURITY;

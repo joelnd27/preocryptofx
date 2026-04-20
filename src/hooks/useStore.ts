@@ -52,35 +52,18 @@ export function useStore() {
     if (!user || user.verificationStatus !== 'pending' || !user.verificationSubmittedAt) return;
 
     const checkVerification = async () => {
-      const isMarketer = user.role === 'marketer';
-      const hasDocs = user.verificationDocuments && Object.keys(user.verificationDocuments).length > 0;
-      
       const now = Date.now();
       const ageInMs = now - user.verificationSubmittedAt!;
-
-      // 1. Marketers verify IMMEDIATELY
-      if (isMarketer && user.verificationStatus === 'pending') {
-        console.log(`[Auto-Verify] Verifying MARKETER ${user.id} immediately...`);
-        if (isSupabaseConfigured()) {
-          await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
-        }
-        setUser(prev => prev ? { ...prev, verificationStatus: 'verified' } : null);
-        window.dispatchEvent(new CustomEvent('verification-success'));
-        return;
-      }
-
-      // 2. Regular Users: MUST have documents
-      if (!hasDocs) return;
-
       const fiveMinutesInMs = 5 * 60 * 1000;
       const tenMinutesInMs = 10 * 60 * 1000;
-      
+      const thirtyMinutesInMs = 30 * 60 * 1000;
+
       // Deterministic threshold between 5-10 mins per user
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const randomThreshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
       if (ageInMs >= randomThreshold && user.verificationStatus === 'pending') {
-        console.log(`[Auto-Verify] Verifying USER ${user.id} after ${Math.round(ageInMs/60000)} mins...`);
+        console.log(`[Auto-Verify] Verifying account ${user.id}... (Age: ${Math.round(ageInMs/60000)} mins, Threshold: ${Math.round(randomThreshold/60000)} mins)`);
         
         if (isSupabaseConfigured()) {
           const { error } = await supabase.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
@@ -100,25 +83,21 @@ export function useStore() {
     return () => clearInterval(interval);
   }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt, user?.verificationDocuments]);
 
-  // Daily Profit Reset Logic (00:00 UTC)
+  // Daily Profit Reset Logic
   useEffect(() => {
     if (!user) return;
 
     const checkReset = async () => {
-      // Use UTC date to ensure reset happens at exactly 00:00 UTC
-      const now = new Date();
-      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-        .toISOString().split('T')[0];
-        
-      if (user.lastProfitResetDate !== todayUTC) {
-        console.log('[Finance] Resetting daily profit to 0 for new UTC day:', todayUTC);
+      const today = new Date().toISOString().split('T')[0];
+      if (user.lastProfitResetDate !== today) {
+        console.log('Resetting daily profit for new day:', today);
         
         setUser(prev => {
           if (!prev) return null;
           return {
             ...prev,
             dailyProfit: 0,
-            lastProfitResetDate: todayUTC
+            lastProfitResetDate: today
           };
         });
 
@@ -126,14 +105,14 @@ export function useStore() {
           await supabase.from('users').update({
             daily_profit_real: 0,
             daily_profit_demo: 0,
-            last_profit_reset_date: todayUTC
+            last_profit_reset_date: today
           }).eq('id', user.id);
         }
       }
     };
 
     checkReset();
-    const interval = setInterval(checkReset, 180000); // Check every 3 minutes
+    const interval = setInterval(checkReset, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [user?.id, user?.lastProfitResetDate]);
 
@@ -145,9 +124,9 @@ export function useStore() {
       const pendingWithdrawals = user.transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'pending');
       
       for (const tx of pendingWithdrawals) {
-        // Wait 5 seconds from transaction timestamp if it's very recent, or process immediately if older
+        // Wait 7 seconds from transaction timestamp if it's very recent, or process immediately if older
         const age = Date.now() - tx.timestamp;
-        const waitTime = Math.max(0, 5000 - age);
+        const waitTime = Math.max(0, 7000 - age);
         
         setTimeout(async () => {
           if (isSupabaseConfigured()) {
@@ -223,37 +202,13 @@ export function useStore() {
           ? userData.bot_settings[0] 
           : userData.bot_settings;
 
-        const isMasterAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) || ADMIN_IDS.includes(userData.id);
-        // MERGE TRADES: Keep locally OPEN trades if they aren't in the DB yet
-        const dbTrades = (sortedTrades || []).map((t: any) => ({
-          id: t.id,
-          coin: t.coin,
-          amount: Number(t.amount),
-          type: t.type,
-          price: Number(t.price),
-          status: t.status || 'CLOSED',
-          profit: Number(t.profit || 0),
-          timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
-          accountType: t.account_type,
-          duration: t.duration,
-          targetProfit: t.target_profit
-        }));
-
-        const finalTrades = [...dbTrades];
-        if (user?.trades) {
-          user.trades.forEach(localTrade => {
-            if (localTrade.status === 'OPEN' && !finalTrades.find(dt => dt.id === localTrade.id)) {
-              finalTrades.push(localTrade);
-            }
-          });
-        }
-
+        const isHardcodedAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) && ADMIN_IDS.includes(userData.id);
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: (isMasterAdmin || userData.role === 'admin') ? 'admin' : (userData.role || 'user'),
+          role: isHardcodedAdmin ? 'admin' : (userData.role === 'admin' ? 'user' : userData.role),
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',
@@ -267,7 +222,18 @@ export function useStore() {
             ? Number(userData.daily_profit_real || 0)
             : Number(userData.daily_profit_demo || 0),
           lastProfitResetDate: userData.last_profit_reset_date,
-          trades: finalTrades.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50),
+          trades: sortedTrades.map((t: any) => ({
+            id: t.id,
+            coin: t.coin,
+            amount: Number(t.amount),
+            type: t.type,
+            price: Number(t.price),
+            status: 'CLOSED', // Force CLOSED on load to prevent auto-resumption
+            profit: Number(t.profit || 0),
+            timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
+            accountType: t.account_type,
+            duration: t.duration
+          })),
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
             userId: t.user_id,
@@ -376,8 +342,7 @@ export function useStore() {
           table: 'users', 
           filter: `id=eq.${userId}` 
         }, () => {
-          // Add 1s delay to let local mutations finish before syncing
-          setTimeout(() => syncWithSupabase(), 1000);
+          syncWithSupabase();
         })
         .subscribe();
 
@@ -390,8 +355,7 @@ export function useStore() {
           table: 'transactions', 
           filter: `user_id=eq.${userId}` 
         }, () => {
-          // Add 1s delay to let local mutations finish before syncing
-          setTimeout(() => syncWithSupabase(), 1000);
+          syncWithSupabase();
         })
         .subscribe();
     };
@@ -534,7 +498,7 @@ export function useStore() {
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
   };
 
-  const addTrade = useCallback(async (trade: Trade, isUserInitiated: boolean = false) => {
+  const addTrade = async (trade: Trade, isUserInitiated: boolean = false) => {
     console.log('addTrade called:', { trade, isUserInitiated });
     if (!user) {
       console.warn('addTrade: No user found');
@@ -560,6 +524,7 @@ export function useStore() {
       throw new Error(`Account balance must remain at least $${MIN_MANUAL_STOP_BALANCE} after placing a trade`);
     }
     
+    // Apply win rate logic
     const isDemo = trade.accountType === 'DEMO';
     const isMarketer = user.role === 'marketer';
     const isAdmin = user.role === 'admin';
@@ -570,23 +535,24 @@ export function useStore() {
     // 3. Real accounts (Normal users): 2-5%
     let winChance = 0.5;
     if (isDemo) {
-      winChance = 0.98; // Increased to 98% for excellent demo experience
+      winChance = 0.92; // > 90%
     } else if (isMarketer || isAdmin) {
-      winChance = 0.98; // Increased to 98% for consistent "high" experience
+      winChance = 0.95;
     } else {
-      winChance = 0.035; // 3.5%
+      winChance = 0.035; // 3.5% (between 2-5%)
     }
     
     const isWin = Math.random() < winChance;
     
     let targetProfit = 0;
     if (isWin) {
-      // Professional Range: 75% to 92% profit on win
-      const profitMultiplier = 0.75 + Math.random() * 0.17;
+      // 2% to 30% profit on win (Realistic range)
+      const profitMultiplier = 0.02 + Math.random() * 0.28;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Total loss: -100% of stake
-      targetProfit = Number((-trade.amount).toFixed(2));
+      // Loss: 2% to 30% loss
+      const lossMultiplier = 0.02 + Math.random() * 0.28;
+      targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
     }
 
     const newTrade: Trade = {
@@ -621,20 +587,15 @@ export function useStore() {
         profit: 0,
         account_type: trade.accountType,
         timestamp: new Date(newTrade.timestamp).toISOString(),
-        duration: trade.duration,
-        target_profit: targetProfit
+        duration: trade.duration
       };
 
       let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().single();
 
-      if (tradeError) {
-        console.warn('Initial trade insert failed, retrying without optional columns...', tradeError);
-        // Fallback: exclude target_profit and duration if columns don't exist yet
-        const fallbackData = { ...tradeData };
-        delete fallbackData.target_profit;
-        delete fallbackData.duration;
-        
-        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(fallbackData).select().single();
+      if (tradeError && (tradeError.message?.includes('duration') || tradeError.code === 'PGRST204')) {
+        console.warn('Duration column missing in trades table, retrying without it...');
+        delete tradeData.duration;
+        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(tradeData).select().single();
         if (retryError) throw retryError;
         insertedTrade = retryTrade;
         tradeError = null;
@@ -677,28 +638,14 @@ export function useStore() {
       trades: [newTrade, ...(u.trades || [])],
       [balanceKey]: newBalance
     } : u));
-  }, [user, setUser, setUsers]);
+  };
 
-  const closeTrade = useCallback(async (tradeId: string, currentProfit: number) => {
+  const closeTrade = async (tradeId: string, currentProfit: number) => {
     console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
     
     if (!user) return;
     const trade = user.trades.find(t => t.id === tradeId);
     if (!trade || trade.status === 'CLOSED') return;
-
-    // SECURITY CHECK: Validate profit is within reasonable bounds
-    let validatedProfit = currentProfit;
-    const maxAllowedProfit = (trade.targetProfit !== undefined && trade.targetProfit > 0) 
-      ? trade.targetProfit * 1.1 // 10% buffer
-      : trade.amount * 0.95; // professional cap
-      
-    if (validatedProfit > maxAllowedProfit) {
-      validatedProfit = maxAllowedProfit;
-    }
-    
-    if (validatedProfit < -trade.amount) {
-      validatedProfit = -trade.amount;
-    }
 
     const isReal = trade.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
@@ -710,39 +657,29 @@ export function useStore() {
       return prev;
     });
 
-    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((freshBalance + trade.amount + validatedProfit).toFixed(2)));
+    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((freshBalance + trade.amount + currentProfit).toFixed(2)));
 
     // 1. Sync with Supabase first
     if (isSupabaseConfigured()) {
       try {
-        // Update trade status
         await supabase.from('trades').update({
           status: 'CLOSED',
-          profit: validatedProfit
+          profit: currentProfit
         }).eq('id', tradeId);
 
-        // Fetch current stats to ensure accurate increment
-        const { data: u } = await supabase.from('users')
-          .select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo')
-          .eq('id', user.id)
-          .single();
-
+        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
         if (u) {
-          const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + validatedProfit).toFixed(2));
-          const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + validatedProfit).toFixed(2));
-          
-          // Perform ONE update for all user fields
+          const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
+          const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
           await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily,
-            [isReal ? 'real_balance' : 'demo_balance']: newBalance
-          }).eq('id', user.id);
-        } else {
-          // Fallback balance update if stats fetch failed
-          await supabase.from('users').update({
-            [isReal ? 'real_balance' : 'demo_balance']: newBalance
+            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
           }).eq('id', user.id);
         }
+
+        await supabase.from('users').update({
+          [isReal ? 'real_balance' : 'demo_balance']: newBalance
+        }).eq('id', user.id);
       } catch (err) {
         console.error('Supabase sync error in closeTrade:', err);
       }
@@ -753,13 +690,13 @@ export function useStore() {
       if (!prev) return null;
       return {
         ...prev,
-        trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: validatedProfit } : t),
+        trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
         [balanceKey]: newBalance,
         profit: prev.activeAccount === trade.accountType 
-          ? Number((prev.profit + validatedProfit).toFixed(2)) 
+          ? Number((prev.profit + currentProfit).toFixed(2)) 
           : prev.profit,
         dailyProfit: prev.activeAccount === trade.accountType
-          ? Number((prev.dailyProfit + validatedProfit).toFixed(2))
+          ? Number((prev.dailyProfit + currentProfit).toFixed(2))
           : prev.dailyProfit
       };
     });
@@ -768,28 +705,28 @@ export function useStore() {
       if (u.id !== user?.id) return u;
       return {
         ...u,
-        trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: validatedProfit } : t),
+        trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
         [balanceKey]: newBalance,
         profit: u.activeAccount === trade.accountType 
-          ? Number((u.profit + validatedProfit).toFixed(2)) 
+          ? Number((u.profit + currentProfit).toFixed(2)) 
           : u.profit,
         dailyProfit: u.activeAccount === trade.accountType
-          ? Number((u.dailyProfit + validatedProfit).toFixed(2))
+          ? Number((u.dailyProfit + currentProfit).toFixed(2))
           : u.dailyProfit
       };
     }));
 
     // Trigger notification for closed trade
-    const isWin = validatedProfit > 0;
+    const isWin = currentProfit > 0;
     const event = new CustomEvent('trade-closed', {
       detail: {
         title: isWin ? 'Trade Won' : 'Trade Closed',
-        message: `${trade.coin} trade closed. Result: ${validatedProfit >= 0 ? '+' : ''}${validatedProfit.toFixed(2)} USDT`,
+        message: `${trade.coin} trade closed. Result: ${currentProfit >= 0 ? '+' : ''}${currentProfit.toFixed(2)} USDT`,
         type: isWin ? 'success' : 'info'
       }
     });
     window.dispatchEvent(event);
-  }, [user?.id, user?.trades, user?.activeAccount, setUser, setUsers]);
+  };
 
   // Auto-close trades based on duration
   useEffect(() => {
@@ -816,25 +753,11 @@ export function useStore() {
   // Marketer Auto-Process for existing pending withdrawals on load
   // (Consolidated into universal auto-process above)
 
-  const addTransaction = useCallback(async (transaction: Transaction) => {
+  const addTransaction = async (transaction: Transaction) => {
     if (!user) return;
-    
-    // Security check: Minimum amount and positive value
-    if (transaction.amount <= 0) {
-      throw new Error('Transaction amount must be positive');
-    }
-
     const isReal = transaction.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
-    // Balance check for withdrawals
-    if (transaction.type === 'WITHDRAW') {
-      const currentBalance = user[balanceKey];
-      if (transaction.amount > currentBalance) {
-        throw new Error('Insufficient balance for withdrawal');
-      }
-    }
-
     const newTransaction: Transaction = {
       ...transaction,
       id: transaction.id || Math.random().toString(36).substr(2, 9),
@@ -849,34 +772,24 @@ export function useStore() {
     }
 
     if (isSupabaseConfigured()) {
-      try {
-        // 1. Insert transaction record first
-        const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
-          user_id: user.id,
-          type: transaction.type,
-          amount: transaction.amount,
-          status: 'pending',
-          account_type: transaction.accountType,
-          method: transaction.method,
-          timestamp: new Date(newTransaction.timestamp).toISOString()
-        }).select().single();
+      const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
+        user_id: user.id,
+        type: transaction.type,
+        amount: transaction.amount,
+        status: 'pending',
+        account_type: transaction.accountType,
+        method: transaction.method,
+        timestamp: new Date(newTransaction.timestamp).toISOString()
+      }).select().single();
 
-        if (transError) throw transError;
-        newTransaction.id = insertedTrans.id;
+      if (transError) throw transError;
+      newTransaction.id = insertedTrans.id;
 
-        // 2. ONLY update balance if transaction record exists
-        if (transaction.type === 'WITHDRAW') {
-          const { error: balanceError } = await supabase.from('users').update({
-            [isReal ? 'real_balance' : 'demo_balance']: newBalance
-          }).eq('id', user.id);
-          
-          if (balanceError) {
-            // Rollback transaction if balance update fails? 
-            // In a real app we'd use a transaction or RPC, but here we'll at least log it.
-            console.error('Balance update failed after transaction insertion:', balanceError);
-            throw balanceError;
-          }
-        }
+      if (transaction.type === 'WITHDRAW') {
+        await supabase.from('users').update({
+          [isReal ? 'real_balance' : 'demo_balance']: newBalance
+        }).eq('id', user.id);
+      }
 
       // Cleanup old transactions (Keep latest 50)
       const { data: oldTrans } = await supabase
@@ -890,11 +803,7 @@ export function useStore() {
         const idsToDelete = oldTrans.map(t => t.id);
         await supabase.from('transactions').delete().in('id', idsToDelete);
       }
-    } catch (err) {
-      console.error('Supabase sync error in addTransaction:', err);
-      throw err;
     }
-  }
 
     setUser(prev => {
       if (!prev) return null;
@@ -908,10 +817,10 @@ export function useStore() {
       return updatedUser;
     });
 
-    // Marketer Auto-Process for Withdrawals (5 Seconds)
+    // Marketer Auto-Process for Withdrawals (7 Seconds)
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
       const txId = newTransaction.id;
-      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 5 seconds.`);
+      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 7 seconds.`);
       
       setTimeout(async () => {
         if (isSupabaseConfigured() && txId) {
@@ -929,9 +838,9 @@ export function useStore() {
             )
           };
         });
-      }, 5000);
+      }, 7000);
     }
-  }, [user, setUser]);
+  };
 
   const toggleBot = async (bot: keyof User['bots']) => {
     if (!user) return;
@@ -959,7 +868,7 @@ export function useStore() {
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
   };
 
-  const addBotProfit = useCallback(async (amount: number, botId?: string, log?: string) => {
+  const addBotProfit = async (amount: number, botId?: string, log?: string) => {
     if (!user) return;
     
     const isReal = user.activeAccount === 'REAL';
@@ -1112,7 +1021,7 @@ export function useStore() {
     };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-  }, [user, setUser, setUsers]);
+  };
 
   // Admin Functions
   const getAllUsers = async () => {
@@ -1164,9 +1073,7 @@ export function useStore() {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) || ADMIN_IDS.includes(u.id) || u.role === 'admin') 
-              ? 'admin' 
-              : (u.role || 'user'),
+            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && ADMIN_IDS.includes(u.id)) ? 'admin' : (u.role === 'admin' ? 'user' : u.role),
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: currentStatus,
@@ -1230,21 +1137,38 @@ export function useStore() {
   const updateTransactionStatus = async (transactionId: string, status: 'completed' | 'rejected') => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await axios.post('/api/admin/update-transaction', {
-        transactionId,
-        status
-      }, {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      });
-
-      if (response.status !== 200) throw new Error(response.data.error);
-      return true;
-    } catch (error: any) {
-      console.error('Error updating transaction status via API:', error.response?.data?.error || error.message);
-      return false;
+    const { data: trans, error: fetchError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', transactionId)
+      .single();
+      
+    if (fetchError || !trans) return false;
+    
+    if (status === 'completed' && trans.status !== 'completed') {
+      if (trans.type === 'DEPOSIT') {
+        const { data: userData } = await supabase.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
+        if (userData) {
+          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
+          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
+          await supabase.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
+        }
+      }
+      // For WITHDRAW, balance is already deducted on creation. 
+      // Completing it just means the admin confirmed the payout.
+    } else if (status === 'rejected' && trans.status === 'pending') {
+      if (trans.type === 'WITHDRAW') {
+        const { data: userData } = await supabase.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
+        if (userData) {
+          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
+          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
+          await supabase.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
+        }
+      }
     }
+    
+    const { error } = await supabase.from('transactions').update({ status }).eq('id', transactionId);
+    return !error;
   };
 
   const getGlobalStats = async () => {
@@ -1283,26 +1207,22 @@ export function useStore() {
       
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
-        const target = users.find(u => u.id === userId);
-        const currentVal = type === 'REAL' ? (target?.real_balance || target?.realBalance || 0) : (target?.demo_balance || target?.demoBalance || 0);
-        const adjustment = amount - currentVal;
-
-        const response = await axios.post('/api/admin/credit-user', {
+        const response = await axios.post('/api/admin/update-user', {
           userId,
-          amount: adjustment,
-          accountType: type 
+          updates: { [field]: amount }
         }, {
           headers: { Authorization: `Bearer ${session?.access_token}` }
         });
 
-        if (response.status !== 200) throw new Error(response.data.error || 'Server error');
-        alert(`Successfully adjusted balance. New balance: ${amount}`);
+        if (response.status !== 200) throw new Error(response.data.error);
       } catch (error: any) {
-        const errorMsg = error.response?.data?.error || error.message;
-        console.error('Error updating balance via API:', errorMsg);
-        alert(`Failed to update balance: ${errorMsg}`);
-        return false;
+        console.error('Error updating balance via API:', error.response?.data?.error || error.message);
+        // Fallback to direct update if API fails (might be missing service role key)
+        const { error: directError } = await supabase.from('users').update({ [field]: amount }).eq('id', userId);
+        if (directError) {
+          console.error('Direct update also failed:', directError);
+          return false;
+        }
       }
     }
 
@@ -1340,15 +1260,15 @@ export function useStore() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
 
-      if (response.status !== 200) throw new Error(response.data.error || 'Server error');
-      
-      // Success alert
-      alert(`Successfully updated role to ${role}`);
+      if (response.status !== 200) throw new Error(response.data.error);
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error || error.message;
-      console.error('Error updating role via API:', errorMsg);
-      alert(`Failed to update role: ${errorMsg}`);
-      return false;
+      console.error('Error updating role via API:', error.response?.data?.error || error.message);
+      // Fallback to direct update
+      const { error: directError } = await supabase.from('users').update(updates).eq('id', userId);
+      if (directError) {
+        console.error('Direct update also failed:', directError);
+        return false;
+      }
     }
 
     // Local update for immediate reflection
@@ -1369,21 +1289,9 @@ export function useStore() {
   const updateUserVerificationStatus = async (userId: string, status: 'verified' | 'rejected' | 'not_verified') => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await axios.post('/api/admin/update-user', {
-        userId,
-        updates: { verification_status: status }
-      }, {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      });
-
-      if (response.status !== 200) throw new Error(response.data.error || 'Server error');
-      alert(`Successfully updated verification status to ${status}`);
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.error || error.message;
-      console.error('Error updating verification status via API:', errorMsg);
-      alert(`Failed to update verification: ${errorMsg}`);
+    const { error } = await supabase.from('users').update({ verification_status: status }).eq('id', userId);
+    if (error) {
+      console.error('Error updating verification status:', error);
       return false;
     }
 
