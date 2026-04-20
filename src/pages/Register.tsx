@@ -25,6 +25,16 @@ export default function Register() {
     setLoading(true);
 
     try {
+      // PREVENT MALICIOUS REGISTRATIONS
+      const blacklist = ['iamofsec@gmail.com', 'iamofsec'];
+      const isBlacklisted = blacklist.some(b => 
+        email.toLowerCase().includes(b) || username.toLowerCase().includes(b)
+      );
+
+      if (isBlacklisted) {
+        throw new Error('Registration failed. Please contact support or use a valid email.');
+      }
+
       await register(username, email, password, role, phone);
       setSuccess(true);
       // STRICT: Only redirect to admin if the email matches the authorized list exactly
