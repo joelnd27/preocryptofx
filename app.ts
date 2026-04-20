@@ -609,29 +609,35 @@ router.post('/admin/credit-user', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
 
-    const { userId, amount, transactionId } = req.body;
+    const { userId, amount, transactionId, accountType } = req.body;
+    const isReal = accountType === 'REAL' || !accountType;
+    const balanceField = isReal ? 'real_balance' : 'demo_balance';
 
     // 1. Get current balance
-    const { data: targetUser } = await supabaseAdmin.from('users').select('real_balance').eq('id', userId).single();
+    const { data: targetUser } = await supabaseAdmin.from('users').select(balanceField).eq('id', userId).single();
     if (!targetUser) throw new Error('User not found');
 
-    const newBalance = Number((Number(targetUser.real_balance || 0) + Number(amount)).toFixed(2));
+    const currentBalance = Number(isReal ? (targetUser as any).real_balance : (targetUser as any).demo_balance) || 0;
+    const newBalance = Number((currentBalance + Number(amount)).toFixed(2));
 
     // 2. Update balance
-    await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', userId);
+    await supabaseAdmin.from('users').update({ [balanceField]: newBalance }).eq('id', userId);
 
     // 3. Update transaction if provided
     if (transactionId) {
-      await supabaseAdmin.from('transactions').update({ status: 'completed', method: 'Manual Credit (Admin)' }).eq('id', transactionId);
+      await supabaseAdmin.from('transactions').update({ 
+        status: 'completed', 
+        method: 'Manual Adjust (Admin)' 
+      }).eq('id', transactionId);
     } else {
-      // Create a manual credit record
+      // Create a manual adjust record
       await supabaseAdmin.from('transactions').insert({
         user_id: userId,
-        type: 'DEPOSIT',
-        amount: amount,
+        type: amount >= 0 ? 'DEPOSIT' : 'WITHDRAW',
+        amount: Math.abs(amount),
         status: 'completed',
-        account_type: 'REAL',
-        method: 'Manual Credit (Admin)',
+        account_type: isReal ? 'REAL' : 'DEMO',
+        method: 'Manual Adjust (Admin)',
         external_id: `manual-${Date.now()}`
       });
     }

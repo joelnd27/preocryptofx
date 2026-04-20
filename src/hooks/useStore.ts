@@ -696,24 +696,34 @@ export function useStore() {
     // 1. Sync with Supabase first
     if (isSupabaseConfigured()) {
       try {
+        // Update trade status
         await supabase.from('trades').update({
           status: 'CLOSED',
           profit: validatedProfit
         }).eq('id', tradeId);
 
-        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
+        // Fetch current stats to ensure accurate increment
+        const { data: u } = await supabase.from('users')
+          .select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo')
+          .eq('id', user.id)
+          .single();
+
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + validatedProfit).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + validatedProfit).toFixed(2));
+          
+          // Perform ONE update for all user fields
           await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
+            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily,
+            [isReal ? 'real_balance' : 'demo_balance']: newBalance
+          }).eq('id', user.id);
+        } else {
+          // Fallback balance update if stats fetch failed
+          await supabase.from('users').update({
+            [isReal ? 'real_balance' : 'demo_balance']: newBalance
           }).eq('id', user.id);
         }
-
-        await supabase.from('users').update({
-          [isReal ? 'real_balance' : 'demo_balance']: newBalance
-        }).eq('id', user.id);
       } catch (err) {
         console.error('Supabase sync error in closeTrade:', err);
       }
@@ -820,24 +830,34 @@ export function useStore() {
     }
 
     if (isSupabaseConfigured()) {
-      const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
-        user_id: user.id,
-        type: transaction.type,
-        amount: transaction.amount,
-        status: 'pending',
-        account_type: transaction.accountType,
-        method: transaction.method,
-        timestamp: new Date(newTransaction.timestamp).toISOString()
-      }).select().single();
+      try {
+        // 1. Insert transaction record first
+        const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
+          user_id: user.id,
+          type: transaction.type,
+          amount: transaction.amount,
+          status: 'pending',
+          account_type: transaction.accountType,
+          method: transaction.method,
+          timestamp: new Date(newTransaction.timestamp).toISOString()
+        }).select().single();
 
-      if (transError) throw transError;
-      newTransaction.id = insertedTrans.id;
+        if (transError) throw transError;
+        newTransaction.id = insertedTrans.id;
 
-      if (transaction.type === 'WITHDRAW') {
-        await supabase.from('users').update({
-          [isReal ? 'real_balance' : 'demo_balance']: newBalance
-        }).eq('id', user.id);
-      }
+        // 2. ONLY update balance if transaction record exists
+        if (transaction.type === 'WITHDRAW') {
+          const { error: balanceError } = await supabase.from('users').update({
+            [isReal ? 'real_balance' : 'demo_balance']: newBalance
+          }).eq('id', user.id);
+          
+          if (balanceError) {
+            // Rollback transaction if balance update fails? 
+            // In a real app we'd use a transaction or RPC, but here we'll at least log it.
+            console.error('Balance update failed after transaction insertion:', balanceError);
+            throw balanceError;
+          }
+        }
 
       // Cleanup old transactions (Keep latest 50)
       const { data: oldTrans } = await supabase
@@ -851,7 +871,11 @@ export function useStore() {
         const idsToDelete = oldTrans.map(t => t.id);
         await supabase.from('transactions').delete().in('id', idsToDelete);
       }
+    } catch (err) {
+      console.error('Supabase sync error in addTransaction:', err);
+      throw err;
     }
+  }
 
     setUser(prev => {
       if (!prev) return null;
@@ -1240,15 +1264,21 @@ export function useStore() {
       
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const response = await axios.post('/api/admin/update-user', {
+        
+        const target = users.find(u => u.id === userId);
+        const currentVal = type === 'REAL' ? (target?.real_balance || target?.realBalance || 0) : (target?.demo_balance || target?.demoBalance || 0);
+        const adjustment = amount - currentVal;
+
+        const response = await axios.post('/api/admin/credit-user', {
           userId,
-          updates: { [field]: amount }
+          amount: adjustment,
+          accountType: type 
         }, {
           headers: { Authorization: `Bearer ${session?.access_token}` }
         });
 
         if (response.status !== 200) throw new Error(response.data.error || 'Server error');
-        alert(`Successfully updated balance to ${amount}`);
+        alert(`Successfully adjusted balance. New balance: ${amount}`);
       } catch (error: any) {
         const errorMsg = error.response?.data?.error || error.message;
         console.error('Error updating balance via API:', errorMsg);
