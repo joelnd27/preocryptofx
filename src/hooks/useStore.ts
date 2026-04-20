@@ -534,7 +534,7 @@ export function useStore() {
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
   };
 
-  const addTrade = async (trade: Trade, isUserInitiated: boolean = false) => {
+  const addTrade = useCallback(async (trade: Trade, isUserInitiated: boolean = false) => {
     console.log('addTrade called:', { trade, isUserInitiated });
     if (!user) {
       console.warn('addTrade: No user found');
@@ -560,7 +560,6 @@ export function useStore() {
       throw new Error(`Account balance must remain at least $${MIN_MANUAL_STOP_BALANCE} after placing a trade`);
     }
     
-    // Apply win rate logic
     const isDemo = trade.accountType === 'DEMO';
     const isMarketer = user.role === 'marketer';
     const isAdmin = user.role === 'admin';
@@ -571,24 +570,23 @@ export function useStore() {
     // 3. Real accounts (Normal users): 2-5%
     let winChance = 0.5;
     if (isDemo) {
-      winChance = 0.92; // > 90%
+      winChance = 0.98; // Increased to 98% for excellent demo experience
     } else if (isMarketer || isAdmin) {
-      winChance = 0.95;
+      winChance = 0.98; // Increased to 98% for consistent "high" experience
     } else {
-      winChance = 0.035; // 3.5% (between 2-5%)
+      winChance = 0.035; // 3.5%
     }
     
     const isWin = Math.random() < winChance;
     
     let targetProfit = 0;
     if (isWin) {
-      // 2% to 30% profit on win (Realistic range)
-      const profitMultiplier = 0.02 + Math.random() * 0.28;
+      // Professional Range: 75% to 92% profit on win
+      const profitMultiplier = 0.75 + Math.random() * 0.17;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Loss: 2% to 30% loss
-      const lossMultiplier = 0.02 + Math.random() * 0.28;
-      targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
+      // Total loss: -100% of stake
+      targetProfit = Number((-trade.amount).toFixed(2));
     }
 
     const newTrade: Trade = {
@@ -623,15 +621,20 @@ export function useStore() {
         profit: 0,
         account_type: trade.accountType,
         timestamp: new Date(newTrade.timestamp).toISOString(),
-        duration: trade.duration
+        duration: trade.duration,
+        target_profit: targetProfit
       };
 
       let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().single();
 
-      if (tradeError && (tradeError.message?.includes('duration') || tradeError.code === 'PGRST204')) {
-        console.warn('Duration column missing in trades table, retrying without it...');
-        delete tradeData.duration;
-        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(tradeData).select().single();
+      if (tradeError) {
+        console.warn('Initial trade insert failed, retrying without optional columns...', tradeError);
+        // Fallback: exclude target_profit and duration if columns don't exist yet
+        const fallbackData = { ...tradeData };
+        delete fallbackData.target_profit;
+        delete fallbackData.duration;
+        
+        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(fallbackData).select().single();
         if (retryError) throw retryError;
         insertedTrade = retryTrade;
         tradeError = null;
@@ -674,9 +677,9 @@ export function useStore() {
       trades: [newTrade, ...(u.trades || [])],
       [balanceKey]: newBalance
     } : u));
-  };
+  }, [user, setUser, setUsers]);
 
-  const closeTrade = async (tradeId: string, currentProfit: number) => {
+  const closeTrade = useCallback(async (tradeId: string, currentProfit: number) => {
     console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
     
     if (!user) return;
@@ -684,15 +687,12 @@ export function useStore() {
     if (!trade || trade.status === 'CLOSED') return;
 
     // SECURITY CHECK: Validate profit is within reasonable bounds
-    // A trade shouldn't exceed its pre-calculated target profit 
-    // or be less than a total loss of the stake.
     let validatedProfit = currentProfit;
     const maxAllowedProfit = (trade.targetProfit !== undefined && trade.targetProfit > 0) 
-      ? trade.targetProfit * 1.05 // 5% buffer for floating point
-      : trade.amount * 0.5; // Cap at 50% if no target set
+      ? trade.targetProfit * 1.1 // 10% buffer
+      : trade.amount * 0.95; // professional cap
       
     if (validatedProfit > maxAllowedProfit) {
-      console.warn(`[SECURITY] Suspicious profit detected for trade ${tradeId}: ${validatedProfit}. Capping to ${maxAllowedProfit}`);
       validatedProfit = maxAllowedProfit;
     }
     
@@ -789,7 +789,7 @@ export function useStore() {
       }
     });
     window.dispatchEvent(event);
-  };
+  }, [user?.id, user?.trades, user?.activeAccount, setUser, setUsers]);
 
   // Auto-close trades based on duration
   useEffect(() => {
@@ -816,7 +816,7 @@ export function useStore() {
   // Marketer Auto-Process for existing pending withdrawals on load
   // (Consolidated into universal auto-process above)
 
-  const addTransaction = async (transaction: Transaction) => {
+  const addTransaction = useCallback(async (transaction: Transaction) => {
     if (!user) return;
     
     // Security check: Minimum amount and positive value
@@ -931,7 +931,7 @@ export function useStore() {
         });
       }, 5000);
     }
-  };
+  }, [user, setUser]);
 
   const toggleBot = async (bot: keyof User['bots']) => {
     if (!user) return;
@@ -959,7 +959,7 @@ export function useStore() {
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
   };
 
-  const addBotProfit = async (amount: number, botId?: string, log?: string) => {
+  const addBotProfit = useCallback(async (amount: number, botId?: string, log?: string) => {
     if (!user) return;
     
     const isReal = user.activeAccount === 'REAL';
@@ -1112,7 +1112,7 @@ export function useStore() {
     };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-  };
+  }, [user, setUser, setUsers]);
 
   // Admin Functions
   const getAllUsers = async () => {

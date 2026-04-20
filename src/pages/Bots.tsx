@@ -164,11 +164,11 @@ export default function Bots() {
         
         let winChance = 0.5;
         if (isDemo) {
-          winChance = 0.95; // Guaranteed high win rate for demo
+          winChance = 0.98; // Guaranteed high win rate for demo
         } else if (isMarketer || isAdmin) {
-          winChance = 0.95; // High win rate for markers/admins
+          winChance = 0.98; // Guaranteed high for markers/admins
         } else {
-          winChance = 0.035; // 3.5% for normal users
+          winChance = 0.035; // 3.5%
         }
         
         const isWin = Math.random() < winChance;
