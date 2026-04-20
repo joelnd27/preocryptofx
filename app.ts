@@ -541,6 +541,209 @@ router.post('/payhero/callback', async (req, res) => {
   }
 });
 
+// Hardcoded authorized admin emails and IDs for backend security
+const ADMIN_EMAILS = ['wren20688@gmail.com'];
+const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
+
+// Admin API Routes (Bypasses RLS using Service Role Key)
+router.post('/admin/update-user', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    // 1. Verify the requester is an admin
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // CRITICAL: Double-check email and ID for security
+    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
+    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    
+    if (!isAuthorizedEmail || !isAuthorizedId) {
+      console.warn(`Unauthorized admin attempt by: Email[${user.email}] ID[${user.id}]`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
+    }
+
+    // 2. Check role in DB (Optional if hardcoded check passed, but keep for consistency)
+    const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userData?.role !== 'admin' && !isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
+
+    const { userId, updates } = req.body;
+    
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Admin client not configured. Please set SUPABASE_SERVICE_ROLE_KEY in your environment variables.' });
+    }
+
+    // 3. Perform update using admin client (bypasses RLS)
+    const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', userId).select().single();
+    
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/admin/credit-user', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // CRITICAL: Double-check email and ID for security
+    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
+    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    
+    if (!isAuthorizedEmail || !isAuthorizedId) {
+      console.warn(`Unauthorized credit attempt by: Email[${user.email}] ID[${user.id}]`);
+      return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
+    }
+
+    const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userData?.role !== 'admin' && !isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
+
+    const { userId, amount, transactionId } = req.body;
+    if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+    // 1. Get current balance
+    const { data: targetUser } = await supabaseAdmin.from('users').select('real_balance').eq('id', userId).single();
+    if (!targetUser) throw new Error('User not found');
+
+    const newBalance = Number((Number(targetUser.real_balance || 0) + Number(amount)).toFixed(2));
+
+    // 2. Update balance
+    await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', userId);
+
+    // 3. Update transaction if provided
+    if (transactionId) {
+      await supabaseAdmin.from('transactions').update({ status: 'completed', method: 'Manual Credit (Admin)' }).eq('id', transactionId);
+    } else {
+      // Create a manual credit record
+      await supabaseAdmin.from('transactions').insert({
+        user_id: userId,
+        type: 'DEPOSIT',
+        amount: amount,
+        status: 'completed',
+        account_type: 'REAL',
+        method: 'Manual Credit (Admin)',
+        external_id: `manual-${Date.now()}`
+      });
+    }
+
+    res.json({ success: true, newBalance });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/health', (req, res) => {
+  const configStatus = {
+    hasSupabaseAdmin: !!supabaseAdmin,
+    hasPayheroKey: !!PAYHERO_API_KEY,
+    hasPayheroChannel: !!PAYHERO_CHANNEL_ID,
+    callbackUrl: process.env.PAYHERO_CALLBACK_URL || 'auto-generated',
+    supabaseUrl: !!supabaseUrl,
+    supabaseAnonKey: !!supabaseAnonKey
+  };
+
+  const issues = [];
+  if (!configStatus.hasSupabaseAdmin) issues.push('SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
+  if (!configStatus.hasPayheroKey) issues.push('PAYHERO_API_KEY is missing.');
+  if (!configStatus.hasPayheroChannel) issues.push('PAYHERO_CHANNEL_ID is missing.');
+
+  res.json({ 
+    status: issues.length === 0 ? 'ok' : 'degraded', 
+    environment: process.env.NODE_ENV, 
+    timestamp: new Date().toISOString(),
+    config: configStatus,
+    issues: issues,
+    path: req.path
+  });
+});
+
+// Mount the router at the root level for maximum compatibility with serverless environments
+app.use('/', router);
+app.use('/api', router);
+app.use('/.netlify/functions/api', router);
+
+// Background task to mark stale pending transactions as failed (Timeout Handling)
+// Marks transactions as failed if they remain pending for more than 15 minutes
+setInterval(async () => {
+  if (!supabaseAdmin || !supabaseUrl) {
+    console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL is not configured.');
+    return;
+  }
+
+  try {
+    // 15 minutes ago
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    
+    const { data, error } = await supabaseAdmin
+      .from('transactions')
+      .update({ status: 'rejected' })
+      .eq('status', 'pending')
+      .eq('type', 'DEPOSIT')
+      .lt('timestamp', fifteenMinutesAgo)
+      .select();
+    
+    if (error) {
+      console.error('Error cleaning up stale transactions:', error);
+    } else if (data && data.length > 0) {
+      console.log(`Cleaned up ${data.length} stale transactions (older than 15 minutes).`);
+    }
+  } catch (err) {
+    console.error('Stale transaction cleanup exception:', err);
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
+
+// Background task for Automatic Account Verification (Offline)
+// Processes pending verifications every 60 seconds
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    const now = Date.now();
+    const fiveMinutesInMs = 5 * 60 * 1000;
+    const tenMinutesInMs = 10 * 60 * 1000;
+
+    // Fetch users in pending status
+    const { data: pendingUsers, error } = await supabaseAdmin
+      .from('users')
+      .select('id, verification_status, verification_submitted_at')
+      .eq('verification_status', 'pending');
+
+    if (error) {
+      console.error('Offline Verification Sync Error:', error);
+      return;
+    }
+
+    if (!pendingUsers || pendingUsers.length === 0) return;
+
+    for (const user of pendingUsers) {
+      if (!user.verification_submitted_at) continue;
+
+      const submittedAt = Number(user.verification_submitted_at);
+      const ageInMs = now - submittedAt;
+
+      // Use same deterministic threshold as frontend
+      const seed = parseInt(user.id.slice(0, 8), 36) || 0;
+      const threshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
+
+      if (ageInMs >= threshold) {
+        console.log(`[Offline-Verify] Automatically verifying user ${user.id} (Waited: ${Math.round(ageInMs/60000)}m)`);
+        await supabaseAdmin
+          .from('users')
+          .update({ verification_status: 'verified' })
+          .eq('id', user.id);
+      }
+    }
+  } catch (err) {
+    console.error('Offline Verification Sync Exception:', err);
+  }
+}, 60 * 1000); // Check every minute
+
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));
 

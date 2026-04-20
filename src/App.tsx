@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './context/StoreContext.tsx';
 import Landing from './pages/Landing.tsx';
 import Login from './pages/Login.tsx';
@@ -19,15 +19,9 @@ import Help from './pages/Help.tsx';
 import DashboardLayout from './components/DashboardLayout.tsx';
 import AlertModal from './components/AlertModal.tsx';
 
-function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useStore();
-  
   if (!user) return <Navigate to="/login" />;
-  
-  const isAdmin = user.role === 'admin';
-  
-  if (adminOnly && !isAdmin) return <Navigate to="/dashboard" />;
-  
   return <>{children}</>;
 }
 
@@ -48,8 +42,6 @@ export default function App() {
         message: 'Your account has been successfully verified. You now have full access to all features.',
         type: 'success'
       });
-      // Optional: Force a small refresh of the user state if needed, 
-      // but useStore already updates the user state.
     };
 
     window.addEventListener('verification-success', handleVerificationSuccess);
@@ -83,4 +75,3 @@ export default function App() {
     </Router>
   );
 }
-
