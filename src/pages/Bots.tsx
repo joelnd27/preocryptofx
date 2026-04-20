@@ -158,17 +158,17 @@ export default function Bots() {
         }
 
         // Apply win rate logic here so logs match balance
-        const isDemo = user.activeAccount === 'DEMO';
-        const isMarketer = user.role === 'marketer';
-        const isAdmin = user.role === 'admin';
+        const isDemo = user?.activeAccount === 'DEMO';
+        const isMarketer = user?.role === 'marketer';
+        const isAdmin = user?.role === 'admin';
         
         let winChance = 0.5;
         if (isDemo) {
-          winChance = 0.92;
+          winChance = 0.95; // Guaranteed high win rate for demo
         } else if (isMarketer || isAdmin) {
-          winChance = 0.95;
+          winChance = 0.95; // High win rate for markers/admins
         } else {
-          winChance = 0.035; // 3.5%
+          winChance = 0.035; // 3.5% for normal users
         }
         
         const isWin = Math.random() < winChance;
@@ -182,7 +182,7 @@ export default function Bots() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [activeBotsKey, botSettings, addBotProfit]);
+  }, [user?.id, user?.activeAccount, user?.role, activeBotsKey, botSettings, addBotProfit]);
 
   const handleToggle = (botId: string) => {
     const bot = botId === 'custom' && user?.customBotConfig 

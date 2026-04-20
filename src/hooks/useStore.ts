@@ -137,35 +137,6 @@ export function useStore() {
     return () => clearInterval(interval);
   }, [user?.id, user?.lastProfitResetDate]);
 
-  // REAL-TIME SYNC: Listen for balance/role changes from Admin instantly
-  useEffect(() => {
-    if (!user || !isSupabaseConfigured()) return;
-
-    console.log('[Sync] Enabling real-time profile listener for:', user.id);
-
-    const channel = supabase
-      .channel(`user-sync-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'users',
-          filter: `id=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log('[Sync] Database update detected, re-syncing profile...', payload.new);
-          // When a change is detected (like Admin updating balance), pull latest data
-          syncWithSupabase();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, syncWithSupabase]);
-
   // Marketer Auto-Process for existing pending withdrawals
   useEffect(() => {
     if (!user || user.role !== 'marketer') return;
@@ -253,6 +224,30 @@ export function useStore() {
           : userData.bot_settings;
 
         const isMasterAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) || ADMIN_IDS.includes(userData.id);
+        // MERGE TRADES: Keep locally OPEN trades if they aren't in the DB yet
+        const dbTrades = (sortedTrades || []).map((t: any) => ({
+          id: t.id,
+          coin: t.coin,
+          amount: Number(t.amount),
+          type: t.type,
+          price: Number(t.price),
+          status: t.status || 'CLOSED',
+          profit: Number(t.profit || 0),
+          timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
+          accountType: t.account_type,
+          duration: t.duration,
+          targetProfit: t.target_profit
+        }));
+
+        const finalTrades = [...dbTrades];
+        if (user?.trades) {
+          user.trades.forEach(localTrade => {
+            if (localTrade.status === 'OPEN' && !finalTrades.find(dt => dt.id === localTrade.id)) {
+              finalTrades.push(localTrade);
+            }
+          });
+        }
+
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
@@ -272,18 +267,7 @@ export function useStore() {
             ? Number(userData.daily_profit_real || 0)
             : Number(userData.daily_profit_demo || 0),
           lastProfitResetDate: userData.last_profit_reset_date,
-          trades: sortedTrades.map((t: any) => ({
-            id: t.id,
-            coin: t.coin,
-            amount: Number(t.amount),
-            type: t.type,
-            price: Number(t.price),
-            status: 'CLOSED', // Force CLOSED on load to prevent auto-resumption
-            profit: Number(t.profit || 0),
-            timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
-            accountType: t.account_type,
-            duration: t.duration
-          })),
+          trades: finalTrades.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50),
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
             userId: t.user_id,
@@ -392,7 +376,8 @@ export function useStore() {
           table: 'users', 
           filter: `id=eq.${userId}` 
         }, () => {
-          syncWithSupabase();
+          // Add 1s delay to let local mutations finish before syncing
+          setTimeout(() => syncWithSupabase(), 1000);
         })
         .subscribe();
 
@@ -405,7 +390,8 @@ export function useStore() {
           table: 'transactions', 
           filter: `user_id=eq.${userId}` 
         }, () => {
-          syncWithSupabase();
+          // Add 1s delay to let local mutations finish before syncing
+          setTimeout(() => syncWithSupabase(), 1000);
         })
         .subscribe();
     };
