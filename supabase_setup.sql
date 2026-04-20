@@ -62,6 +62,11 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
+  -- Allow the Service Role (the backend server) to perform updates
+  IF (auth.role() = 'service_role') THEN
+    RETURN TRUE;
+  END IF;
+
   RETURN (
     EXISTS (
       SELECT 1 FROM auth.users 
@@ -124,7 +129,7 @@ END IF;
 CREATE OR REPLACE FUNCTION public.auto_process_pending()
 RETURNS void AS $$
 BEGIN
-  -- Verify users pending for > 7.5 mins
+  -- Auto-verify users pending for > 7.5 mins
   UPDATE public.users SET verification_status = 'verified'
   WHERE verification_status = 'pending' AND verification_submitted_at IS NOT NULL
     AND (EXTRACT(EPOCH FROM NOW()) * 1000) - verification_submitted_at > 450000;
@@ -136,16 +141,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. ADMIN VIEW: Consolidated financial overview for admin dashboard
-CREATE OR REPLACE VIEW public.admin_user_financials AS
-SELECT 
-  u.id, u.username, u.email, u.real_balance, u.verification_status,
-  COUNT(t.id) as total_tx,
-  SUM(CASE WHEN t.type = 'DEPOSIT' AND t.status = 'completed' THEN t.amount ELSE 0 END) as total_deposited
-FROM public.users u
-LEFT JOIN public.transactions t ON u.id = t.user_id
-GROUP BY u.id, u.username, u.email, u.real_balance, u.verification_status;
-
 -- 6. ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
@@ -153,32 +148,32 @@ ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bot_settings ENABLE ROW LEVEL SECURITY;
 
 -- 7. POLICIES
-DROP POLICY IF EXISTS "Users view self" ON public.users;
-CREATE POLICY "Users view self" ON public.users FOR SELECT USING (auth.uid() = id OR is_admin());
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.users;
+CREATE POLICY "Users can view their own profile" ON public.users FOR SELECT USING (auth.uid() = id OR is_admin());
 
-DROP POLICY IF EXISTS "Users update self" ON public.users;
-CREATE POLICY "Users update self" ON public.users FOR UPDATE USING (auth.uid() = id OR is_admin());
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.users;
+CREATE POLICY "Users can update their own profile" ON public.users FOR UPDATE USING (auth.uid() = id OR is_admin());
 
-DROP POLICY IF EXISTS "Users view tx" ON public.transactions;
-CREATE POLICY "Users view tx" ON public.transactions FOR SELECT USING (auth.uid() = user_id OR is_admin());
+DROP POLICY IF EXISTS "Users can view their own transactions" ON public.transactions;
+CREATE POLICY "Users can view their own transactions" ON public.transactions FOR SELECT USING (auth.uid() = user_id OR is_admin());
 
-DROP POLICY IF EXISTS "Users insert tx" ON public.transactions;
-CREATE POLICY "Users insert tx" ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert their own transactions" ON public.transactions;
+CREATE POLICY "Users can insert their own transactions" ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id OR is_admin());
 
-DROP POLICY IF EXISTS "Admin update tx" ON public.transactions;
-CREATE POLICY "Admin update tx" ON public.transactions FOR UPDATE USING (is_admin());
+DROP POLICY IF EXISTS "Admins can update transactions" ON public.transactions;
+CREATE POLICY "Admins can update transactions" ON public.transactions FOR UPDATE USING (is_admin());
 
-DROP POLICY IF EXISTS "Users view trades" ON public.trades;
-CREATE POLICY "Users view trades" ON public.trades FOR SELECT USING (auth.uid() = user_id OR is_admin());
+DROP POLICY IF EXISTS "Users can view their own trades" ON public.trades;
+CREATE POLICY "Users can view their own trades" ON public.trades FOR SELECT USING (auth.uid() = user_id OR is_admin());
 
-DROP POLICY IF EXISTS "Users insert trades" ON public.trades;
-CREATE POLICY "Users insert trades" ON public.trades FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert their own trades" ON public.trades;
+CREATE POLICY "Users can insert their own trades" ON public.trades FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Users update trades" ON public.trades;
-CREATE POLICY "Users update trades" ON public.trades FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update their own trades" ON public.trades;
+CREATE POLICY "Users can update their own trades" ON public.trades FOR UPDATE USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Users view bots" ON public.bot_settings;
-CREATE POLICY "Users view bots" ON public.bot_settings FOR SELECT USING (auth.uid() = user_id OR is_admin());
+DROP POLICY IF EXISTS "Users can view their own bot settings" ON public.bot_settings;
+CREATE POLICY "Users can view their own bot settings" ON public.bot_settings FOR SELECT USING (auth.uid() = user_id OR is_admin());
 
-DROP POLICY IF EXISTS "Users update bots" ON public.bot_settings;
-CREATE POLICY "Users update bots" ON public.bot_settings FOR UPDATE USING (auth.uid() = user_id OR is_admin());
+DROP POLICY IF EXISTS "Users can update their own bot settings" ON public.bot_settings;
+CREATE POLICY "Users can update their own bot settings" ON public.bot_settings FOR UPDATE USING (auth.uid() = user_id OR is_admin());
