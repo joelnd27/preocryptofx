@@ -1245,9 +1245,12 @@ export function useStore() {
           headers: { Authorization: `Bearer ${session?.access_token}` }
         });
 
-        if (response.status !== 200) throw new Error(response.data.error);
+        if (response.status !== 200) throw new Error(response.data.error || 'Server error');
+        alert(`Successfully updated balance to ${amount}`);
       } catch (error: any) {
-        console.error('Error updating balance via API:', error.response?.data?.error || error.message);
+        const errorMsg = error.response?.data?.error || error.message;
+        console.error('Error updating balance via API:', errorMsg);
+        alert(`Failed to update balance: ${errorMsg}`);
         return false;
       }
     }
@@ -1286,9 +1289,14 @@ export function useStore() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
 
-      if (response.status !== 200) throw new Error(response.data.error);
+      if (response.status !== 200) throw new Error(response.data.error || 'Server error');
+      
+      // Success alert
+      alert(`Successfully updated role to ${role}`);
     } catch (error: any) {
-      console.error('Error updating role via API:', error.response?.data?.error || error.message);
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('Error updating role via API:', errorMsg);
+      alert(`Failed to update role: ${errorMsg}`);
       return false;
     }
 
@@ -1319,9 +1327,12 @@ export function useStore() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
 
-      if (response.status !== 200) throw new Error(response.data.error);
+      if (response.status !== 200) throw new Error(response.data.error || 'Server error');
+      alert(`Successfully updated verification status to ${status}`);
     } catch (error: any) {
-      console.error('Error updating verification status via API:', error.response?.data?.error || error.message);
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('Error updating verification status via API:', errorMsg);
+      alert(`Failed to update verification: ${errorMsg}`);
       return false;
     }
 
