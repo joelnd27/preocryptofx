@@ -180,8 +180,19 @@ export function useStore() {
   const syncWithSupabase = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.warn('Session sync error:', sessionError.message);
+        if (sessionError.message.includes('Refresh Token Not Found') || sessionError.message.includes('invalid_refresh_token')) {
+          localStorage.removeItem('preocrypto_user');
+          setUser(null);
+          return;
+        }
+      }
+
+      if (session?.user) {
       const { data: userData, error } = await supabase
         .from('users')
         .select('*, transactions(*), trades(*), bot_settings(*)')
@@ -294,6 +305,9 @@ export function useStore() {
         console.error('Supabase fetch error:', error);
       }
     }
+    } catch (err) {
+      console.error('Sync check failed:', err);
+    }
   }, [setUser]);
 
   useEffect(() => {
@@ -365,8 +379,9 @@ export function useStore() {
       if (session?.user) {
         syncWithSupabase();
         setupSubscriptions(session.user.id);
-      } else if (event === 'SIGNED_OUT') {
+      } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         setUser(null);
+        localStorage.removeItem('preocrypto_user');
         supabase.removeAllChannels();
         userSubscription = null;
         transactionsSubscription = null;
@@ -390,28 +405,6 @@ export function useStore() {
   useEffect(() => {
     localStorage.setItem('preocrypto_users', JSON.stringify(users));
   }, [users]);
-
-  // Submit Verification to backend
-  const submitVerification = async (documents: any) => {
-    if (!user || !isSupabaseConfigured()) return;
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await axios.post('/api/verify/submit', { documents }, {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      });
-      
-      const updatedUser = response.data;
-      setUser(prev => prev ? { 
-        ...prev, 
-        verificationStatus: updatedUser.verification_status,
-        verificationSubmittedAt: updatedUser.verification_submitted_at ? Number(updatedUser.verification_submitted_at) : undefined,
-        verificationDocuments: updatedUser.verification_documents
-      } : null);
-    } catch (err) {
-      console.error('Verification submission error:', err);
-      throw err;
-    }
-  };
 
   const login = async (email: string, password?: string) => {
     if (isSupabaseConfigured() && password) {
@@ -596,59 +589,70 @@ export function useStore() {
       return prev;
     });
 
+    const newBalance = Number((freshBalance - trade.amount).toFixed(2));
+    
     if (isSupabaseConfigured()) {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await axios.post('/api/trade/open', {
+      const tradeData: any = {
+        user_id: user.id,
         coin: trade.coin,
         amount: trade.amount,
         type: trade.type,
         price: trade.price,
-        accountType: trade.accountType,
+        status: 'OPEN',
+        profit: 0,
+        account_type: trade.accountType,
+        timestamp: new Date(newTrade.timestamp).toISOString(),
         duration: trade.duration
-      }, {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      });
+      };
 
-      if (!response.data.success) throw new Error(response.data.error || 'Failed to open trade');
-      
-      const { trade: dbTrade, newBalance: dbBalance } = response.data;
-      newTrade.id = dbTrade.id;
+      let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().single();
 
-      setUser(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          trades: [newTrade, ...(prev.trades || [])],
-          [balanceKey]: dbBalance
-        };
-      });
+      if (tradeError && (tradeError.message?.includes('duration') || tradeError.code === 'PGRST204')) {
+        console.warn('Duration column missing in trades table, retrying without it...');
+        delete tradeData.duration;
+        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(tradeData).select().single();
+        if (retryError) throw retryError;
+        insertedTrade = retryTrade;
+        tradeError = null;
+      }
+
+      if (tradeError) throw tradeError;
+      newTrade.id = insertedTrade.id;
+
+      await supabase.from('users').update({
+        [isReal ? 'real_balance' : 'demo_balance']: newBalance
+      }).eq('id', user.id);
       
-      setUsers(prev => prev.map(u => u.id === user.id ? {
-        ...u,
-        trades: [newTrade, ...(u.trades || [])],
-        [balanceKey]: dbBalance
-      } : u));
-    } else {
-      // Local fallback
-      let finalBalance = 0;
-      setUser(prev => {
-        if (!prev) return null;
-        const currentBalance = prev[balanceKey];
-        const newBalance = Number((currentBalance - trade.amount).toFixed(2));
-        finalBalance = newBalance;
-        return {
-          ...prev,
-          trades: [newTrade, ...(prev.trades || [])],
-          [balanceKey]: newBalance
-        };
-      });
+      // Store target profit in a way we can retrieve it or just keep it in state
+      // For now, we'll rely on the state update below
+
+      // Cleanup old trades (Keep latest 50)
+      const { data: oldTrades } = await supabase
+        .from('trades')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('timestamp', { ascending: false })
+        .range(50, 1000);
       
-      setUsers(prev => prev.map(u => u.id === user.id ? {
-        ...u,
-        trades: [newTrade, ...(u.trades || [])],
-        [balanceKey]: finalBalance
-      } : u));
+      if (oldTrades && oldTrades.length > 0) {
+        const idsToDelete = oldTrades.map(t => t.id);
+        await supabase.from('trades').delete().in('id', idsToDelete);
+      }
     }
+
+    setUser(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        trades: [newTrade, ...(prev.trades || [])],
+        [balanceKey]: newBalance
+      };
+    });
+    setUsers(prev => prev.map(u => u.id === user.id ? {
+      ...u,
+      trades: [newTrade, ...(u.trades || [])],
+      [balanceKey]: newBalance
+    } : u));
   };
 
   const closeTrade = async (tradeId: string, currentProfit: number) => {
@@ -668,82 +672,64 @@ export function useStore() {
       return prev;
     });
 
-    // 1. Sync with Supabase first via secure API
+    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((freshBalance + trade.amount + currentProfit).toFixed(2)));
+
+    // 1. Sync with Supabase first
     if (isSupabaseConfigured()) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const response = await axios.post('/api/trade/close', {
-          tradeId,
+        await supabase.from('trades').update({
+          status: 'CLOSED',
           profit: currentProfit
-        }, {
-          headers: { Authorization: `Bearer ${session?.access_token}` }
-        });
+        }).eq('id', tradeId);
 
-        if (!response.data.success) throw new Error(response.data.error || 'Failed to close trade');
-        
-        const { newBalance: dbBalance } = response.data;
+        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
+        if (u) {
+          const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
+          const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
+          await supabase.from('users').update({
+            [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
+            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
+          }).eq('id', user.id);
+        }
 
-        // 2. Update local state
-        setUser(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
-            [balanceKey]: dbBalance,
-            profit: Number((prev.profit + currentProfit).toFixed(2)),
-            dailyProfit: Number((prev.dailyProfit + currentProfit).toFixed(2))
-          };
-        });
-
-        setUsers(prev => prev.map(u => {
-          if (u.id !== user?.id) return u;
-          return {
-            ...u,
-            trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
-            [balanceKey]: dbBalance,
-            profit: u.activeAccount === trade.accountType 
-              ? Number((u.profit + currentProfit).toFixed(2)) 
-              : u.profit,
-            dailyProfit: u.activeAccount === trade.accountType
-              ? Number((u.dailyProfit + currentProfit).toFixed(2))
-              : u.dailyProfit
-          };
-        }));
+        await supabase.from('users').update({
+          [isReal ? 'real_balance' : 'demo_balance']: newBalance
+        }).eq('id', user.id);
       } catch (err) {
-        console.error('API error in closeTrade:', err);
+        console.error('Supabase sync error in closeTrade:', err);
       }
-    } else {
-      // Local fallback
-      let finalBalance = 0;
-      setUser(prev => {
-        if (!prev) return null;
-        const currentBalance = prev[balanceKey];
-        const newBalance = Number((currentBalance + trade.amount + currentProfit).toFixed(2));
-        finalBalance = newBalance;
-        return {
-          ...prev,
-          trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
-          [balanceKey]: newBalance,
-          profit: Number((prev.profit + currentProfit).toFixed(2)),
-          dailyProfit: Number((prev.dailyProfit + currentProfit).toFixed(2))
-        };
-      });
-
-      setUsers(prev => prev.map(u => {
-        if (u.id !== user?.id) return u;
-        return {
-          ...u,
-          trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
-          [balanceKey]: finalBalance,
-          profit: u.activeAccount === trade.accountType 
-            ? Number((u.profit + currentProfit).toFixed(2)) 
-            : u.profit,
-          dailyProfit: u.activeAccount === trade.accountType
-            ? Number((u.dailyProfit + currentProfit).toFixed(2))
-            : u.dailyProfit
-        };
-      }));
     }
+
+    // 2. Update local state
+    setUser(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
+        [balanceKey]: newBalance,
+        profit: prev.activeAccount === trade.accountType 
+          ? Number((prev.profit + currentProfit).toFixed(2)) 
+          : prev.profit,
+        dailyProfit: prev.activeAccount === trade.accountType
+          ? Number((prev.dailyProfit + currentProfit).toFixed(2))
+          : prev.dailyProfit
+      };
+    });
+
+    setUsers(prev => prev.map(u => {
+      if (u.id !== user?.id) return u;
+      return {
+        ...u,
+        trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
+        [balanceKey]: newBalance,
+        profit: u.activeAccount === trade.accountType 
+          ? Number((u.profit + currentProfit).toFixed(2)) 
+          : u.profit,
+        dailyProfit: u.activeAccount === trade.accountType
+          ? Number((u.dailyProfit + currentProfit).toFixed(2))
+          : u.dailyProfit
+      };
+    }));
 
     // Trigger notification for closed trade
     const isWin = currentProfit > 0;
@@ -801,41 +787,73 @@ export function useStore() {
     }
 
     if (isSupabaseConfigured()) {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await axios.post('/api/withdraw/request', {
+      const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
+        user_id: user.id,
+        type: transaction.type,
         amount: transaction.amount,
+        status: 'pending',
+        account_type: transaction.accountType,
         method: transaction.method,
-        accountType: transaction.accountType
-      }, {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      });
+        timestamp: new Date(newTransaction.timestamp).toISOString()
+      }).select().single();
 
-      if (!response.data.success) throw new Error(response.data.error || 'Failed to request withdrawal');
+      if (transError) throw transError;
+      newTransaction.id = insertedTrans.id;
+
+      if (transaction.type === 'WITHDRAW') {
+        await supabase.from('users').update({
+          [isReal ? 'real_balance' : 'demo_balance']: newBalance
+        }).eq('id', user.id);
+      }
+
+      // Cleanup old transactions (Keep latest 50)
+      const { data: oldTrans } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(50, 1000);
       
-      const { transaction: dbTx, newBalance: dbBalance } = response.data;
+      if (oldTrans && oldTrans.length > 0) {
+        const idsToDelete = oldTrans.map(t => t.id);
+        await supabase.from('transactions').delete().in('id', idsToDelete);
+      }
+    }
 
-      setUser(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          transactions: [dbTx, ...(prev.transactions || [])],
-          [balanceKey]: dbBalance
-        };
-      });
-    } else {
-      // Local fallback
-      setUser(prev => {
-        if (!prev) return null;
-        let newBalance = prev[balanceKey];
-        if (transaction.type === 'WITHDRAW') {
-          newBalance = Number((prev[balanceKey] - transaction.amount).toFixed(2));
+    setUser(prev => {
+      if (!prev) return null;
+      const updatedUser = {
+        ...prev,
+        transactions: [newTransaction, ...prev.transactions]
+      };
+      if (transaction.type === 'WITHDRAW') {
+        updatedUser[balanceKey] = newBalance;
+      }
+      return updatedUser;
+    });
+
+    // Marketer Auto-Process for Withdrawals (7 Seconds)
+    if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
+      const txId = newTransaction.id;
+      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 7 seconds.`);
+      
+      setTimeout(async () => {
+        if (isSupabaseConfigured() && txId) {
+          await supabase.from('transactions')
+            .update({ status: 'completed' })
+            .eq('id', txId);
         }
-        return {
-          ...prev,
-          transactions: [newTransaction, ...(prev.transactions || [])],
-          [balanceKey]: newBalance
-        };
-      });
+
+        setUser(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            transactions: prev.transactions.map(t => 
+              t.id === txId ? { ...t, status: 'completed' } : t
+            )
+          };
+        });
+      }, 7000);
     }
   };
 
@@ -1374,6 +1392,26 @@ export function useStore() {
         )
       };
     });
+  };
+
+  const submitVerification = async (docs: User['verificationDocuments']) => {
+    if (!user) return;
+    
+    const now = Date.now();
+    if (isSupabaseConfigured()) {
+      await supabase.from('users').update({
+        verification_status: 'pending',
+        verification_documents: docs,
+        verification_submitted_at: now
+      }).eq('id', user.id);
+    }
+
+    setUser(prev => prev ? {
+      ...prev,
+      verificationStatus: 'pending',
+      verificationSubmittedAt: now,
+      verificationDocuments: docs
+    } : null);
   };
 
   const importBot = async (config: { name: string, strategy: string, risk: string, currency: string }) => {

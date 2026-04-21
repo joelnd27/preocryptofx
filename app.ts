@@ -322,343 +322,230 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
   }
 });
 
-// Payhero Callback handling
+router.get('/payhero/callback', (req, res) => {
+  res.send('PayHero Webhook Endpoint is ACTIVE. Use POST for actual callbacks.');
+});
+
 router.post('/payhero/callback', async (req, res) => {
   const payload = Array.isArray(req.body) ? req.body[0] : req.body;
-  console.log('--- PAYHERO CALLBACK RECEIVED ---', JSON.stringify(payload));
+  console.log('--- PAYHERO CALLBACK RECEIVED ---');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Payload:', JSON.stringify(payload));
 
+  if (!payload || Object.keys(payload).length === 0) {
+    console.error('Callback received empty payload.');
+    return res.status(400).json({ error: 'Empty payload' });
+  }
+  
   try {
-    const data = payload.response || payload.data || payload;
-    const isSuccess = data.ResultCode === 0 || data.ResultCode === '0' || data.Success === true || data.status?.toLowerCase() === 'success';
+    // 1. Extract success indicators (Check root and nested data)
+    const data = payload.response || payload.data || (payload.Body && payload.Body.stkCallback) || payload;
     
-    if (!isSuccess) {
-      console.log('Payment failed or cancelled.');
-      return res.status(200).json({ success: false });
+    // Check if this is just an initiation response (contains ResponseCode but not ResultCode)
+    const isInitiation = (payload.ResponseCode !== undefined || data.ResponseCode !== undefined) && 
+                         (payload.ResultCode === undefined && data.ResultCode === undefined);
+    
+    if (isInitiation) {
+      console.log('Detected PayHero initiation response. Ignoring as it is not a final callback.');
+      return res.status(200).json({ message: 'Initiation received' });
     }
 
-    const ref = data.external_reference || data.ExternalReference || data.reference;
-    const transactionId = data.MpesaReceiptNumber || data.mpesa_code || data.TransID;
+    const status = payload.status !== undefined ? payload.status : (data.status || data.Status || payload.Status);
+    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : data.ResultCode;
+    const resultDesc = data.ResultDesc || data.ResultDescription || data.status_reason || payload.ResultDesc || payload.ResultDescription || payload.status_reason;
     
-    if (!ref) {
-      return res.status(400).json({ error: 'Missing reference' });
+    // IMPORTANT: ResponseCode '0' means "Request Accepted", NOT "Payment Successful".
+    // We only count it as success if status is explicitly "success" or ResultCode is 0.
+    const isSuccess = 
+      (typeof status === 'string' && (status.toLowerCase() === 'success' || status.toLowerCase() === 'successful')) || 
+      resultCode === 0 || 
+      resultCode === '0' ||
+      data.Success === true;
+
+    // 2. Extract identifiers (Check root, nested 'data', 'response', and 'Body.stkCallback')
+    
+    // Standard Safaricom Metadata extraction if available
+    let metadataAmount = 0;
+    let metadataReceipt = '';
+    if (data.CallbackMetadata && Array.isArray(data.CallbackMetadata.Item)) {
+      const items = data.CallbackMetadata.Item;
+      const amountItem = items.find((i: any) => i.Name === 'Amount');
+      const receiptItem = items.find((i: any) => i.Name === 'MpesaReceiptNumber');
+      if (amountItem) metadataAmount = Number(amountItem.Value);
+      if (receiptItem) metadataReceipt = receiptItem.Value;
     }
 
+    const ref = data.external_reference || data.ExternalReference || data.BillRefNumber || data.Reference || data.reference || payload.external_reference || payload.ExternalReference || payload.BillRefNumber || payload.Reference;
+    const checkoutId = data.CheckoutRequestID || data.checkout_request_id || data.CheckoutID || data.MerchantRequestID || payload.CheckoutRequestID || payload.checkout_request_id || payload.CheckoutID;
+    const transactionId = data.transaction_id || data.TransactionID || data.mpesa_code || data.MpesaReceiptNumber || data.TransID || payload.transaction_id || payload.MpesaReceiptNumber || metadataReceipt;
+    const amountKes = Number(data.amount || data.Amount || data.TransAmount || payload.amount || metadataAmount || 0);
+
+    console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}, TxID=${transactionId}`);
+
+    if (isSuccess && !transactionId) {
+      console.log('Callback indicates success but missing M-Pesa Receipt (transactionId). Treating as pending/initiation.');
+      return res.status(200).json({ message: 'Request accepted, waiting for payment completion' });
+    }
+
+    if (!ref && !checkoutId) {
+      console.error('Callback missing identifiers (ref/checkoutId). Cannot process.');
+      console.log('Available keys in payload:', Object.keys(payload));
+      if (payload.data) console.log('Available keys in payload.data:', Object.keys(payload.data));
+      return res.status(400).json({ error: 'Missing identifiers' });
+    }
+
+    const client = supabaseAdmin || supabase;
     if (!supabaseAdmin) {
-      console.error('CRITICAL: Service Role Key missing. Cannot update balance.');
-      return res.status(500).json({ error: 'Server configuration error' });
+      console.warn('WARNING: supabaseAdmin is NOT initialized. Using anon client. RLS may block updates.');
     }
 
-    // 1. Find transaction
-    const { data: tx, error: txErr } = await supabaseAdmin
-      .from('transactions')
-      .select('*')
-      .eq('external_id', ref)
-      .eq('status', 'pending')
-      .single();
+    if (isSuccess) {
+      // 1. Find the transaction in our DB to get the correct user_id and expected amount
+      // We search by external_id (our ref), id, or checkoutId (Payhero's ref)
+      let query = client.from('transactions').select('user_id, amount, status, id, external_id');
+      const orConditions = [];
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-    if (txErr || !tx) {
-      console.error('Transaction not found or already processed:', ref);
-      return res.status(200).json({ success: true, message: 'Already processed or not found' });
+      if (ref) {
+        orConditions.push(`external_id.eq."${ref}"`);
+        if (isUUID(ref)) {
+          orConditions.push(`id.eq."${ref}"`);
+        }
+      }
+      if (checkoutId) {
+        orConditions.push(`external_id.eq."${checkoutId}"`);
+        orConditions.push(`method.ilike."%${checkoutId}%"`);
+      }
+      
+      if (orConditions.length > 0) {
+        query = query.or(orConditions.join(','));
+      } else {
+        console.error('No identifiers found in callback payload.');
+        return res.status(400).json({ error: 'Missing identifiers' });
+      }
+
+      let { data: tx, error: fetchError } = await query.maybeSingle();
+
+      if (fetchError) {
+        console.error('Error fetching transaction for callback:', fetchError);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      // Fallback: If not found by ref, try to extract userId from ref and find latest pending
+      if (!tx && ref && ref.includes('-')) {
+        try {
+          const parts = ref.split('-');
+          // A UUID has 5 parts. Our ref is uuid-timestamp.
+          if (parts.length >= 5) {
+            const potentialUserId = parts.slice(0, 5).join('-');
+            if (potentialUserId.length === 36) {
+              console.log(`Attempting fallback search for user: ${potentialUserId}`);
+              const { data: fallbackTx } = await client
+                .from('transactions')
+                .select('user_id, amount, status, id, external_id')
+                .eq('user_id', potentialUserId)
+                .eq('status', 'pending')
+                .eq('type', 'DEPOSIT')
+                .order('timestamp', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              if (fallbackTx) {
+                console.log(`Fallback match successful! Using transaction ${fallbackTx.id}`);
+                tx = fallbackTx;
+              }
+            }
+          }
+        } catch (fallbackErr) {
+          console.error('Fallback matching error:', fallbackErr);
+        }
+      }
+
+      if (!tx) {
+        console.error(`No transaction found for Ref: ${ref} or CheckoutID: ${checkoutId}`);
+        // Log all pending transactions to help debug
+        const { data: pendingTxs } = await client.from('transactions').select('id, external_id, amount').eq('status', 'pending').limit(5);
+        console.log('Recent pending transactions:', JSON.stringify(pendingTxs));
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+
+      if (tx.status === 'completed') {
+        console.log(`Transaction ${tx.id} already marked as completed. Skipping balance update.`);
+        return res.json({ success: true, message: 'Already processed' });
+      }
+
+      const userId = tx.user_id;
+      const amountUsd = tx.amount; 
+
+      console.log(`Processing success for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
+
+      // 2. Update balance
+      const { data: userData, error: userError } = await client
+        .from('users')
+        .select('real_balance, username')
+        .eq('id', userId)
+        .single();
+
+      if (userError || !userData) {
+        console.error(`User ${userId} fetch error:`, userError);
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const currentBalance = Number(userData.real_balance || 0);
+      const newBalance = Number((currentBalance + amountUsd).toFixed(2));
+      
+      console.log(`Updating balance for ${userData.username} (${userId}): ${currentBalance} -> ${newBalance}`);
+      
+      const { error: balanceError } = await client
+        .from('users')
+        .update({ real_balance: newBalance })
+        .eq('id', userId);
+      
+      if (balanceError) {
+        console.error('CRITICAL: Balance update error:', balanceError);
+        return res.status(500).json({ error: 'Failed to update balance' });
+      } 
+      
+      console.log(`Balance successfully updated for ${userId}`);
+
+      // 3. Update transaction
+      const { error: txError } = await client.from('transactions').update({
+        status: 'completed',
+        method: `Payhero (${transactionId || checkoutId || 'M-Pesa'})`
+      })
+      .eq('id', tx.id);
+
+      if (txError) {
+        console.error('Transaction status update error:', txError);
+      } else {
+        console.log(`Transaction ${tx.id} marked as completed.`);
+      }
+
+      if (txError) console.error('Transaction update error:', txError);
+      else console.log(`Transaction ${ref || checkoutId} marked as completed.`);
+
+    } else {
+      console.log(`Payment failed/cancelled. Reason: ${resultDesc}`);
+      
+      // Mark as rejected
+      await client.from('transactions')
+        .update({ status: 'rejected' })
+        .eq('status', 'pending')
+        .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`);
     }
 
-    // 2. Atomic Update Using RPC or direct admin update
-    const { data: user, error: userErr } = await supabaseAdmin
-      .from('users')
-      .select('real_balance')
-      .eq('id', tx.user_id)
-      .single();
-
-    if (userErr || !user) throw new Error('User not found');
-
-    const newBalance = Number(user.real_balance || 0) + Number(tx.amount);
-
-    await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-    await supabaseAdmin.from('transactions').update({ 
-      status: 'completed', 
-      method: `PayHero (${transactionId || 'M-Pesa'})` 
-    }).eq('id', tx.id);
-
-    console.log(`Successfully credited ${tx.amount} to user ${tx.user_id}`);
     res.json({ success: true });
   } catch (error: any) {
-    console.error('Callback error:', error);
-    res.status(500).json({ error: 'Internal error' });
+    console.error('Callback processing exception:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// BACKGROUND TASKS (Server-Side Logic)
-
-// 1. User Auto-Verification (5-10 minute delay)
-setInterval(async () => {
-  if (!supabaseAdmin) return;
-  try {
-    const { data: pendingUsers } = await supabaseAdmin
-      .from('users')
-      .select('id, verification_submitted_at, role')
-      .eq('verification_status', 'pending');
-
-    if (!pendingUsers) return;
-
-    for (const user of pendingUsers) {
-      // Marketers are auto-verified (should have been handled on signup or via this sweep)
-      if (user.role === 'marketer') {
-        await supabaseAdmin.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
-        continue;
-      }
-
-      if (user.verification_submitted_at) {
-        const now = Date.now();
-        const waitTime = now - Number(user.verification_submitted_at);
-        const fiveMinutes = 5 * 60 * 1000;
-        
-        if (waitTime >= fiveMinutes) {
-          console.log(`Auto-verifying user ${user.id}`);
-          await supabaseAdmin.from('users').update({ verification_status: 'verified' }).eq('id', user.id);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Auto-verify sweep failed:', err);
-  }
-}, 60 * 1000); // Check every minute
-
-// 2. Marketer Auto-Withdraw Approval (Few seconds delay)
-setInterval(async () => {
-  if (!supabaseAdmin) return;
-  try {
-    const { data: pendingWithdrawals } = await supabaseAdmin
-      .from('transactions')
-      .select('*, user:users(role)')
-      .eq('type', 'WITHDRAW')
-      .eq('status', 'pending');
-
-    if (!pendingWithdrawals) return;
-
-    for (const tx of pendingWithdrawals) {
-      const userRole = (tx.user as any)?.role;
-      
-      if (userRole === 'marketer') {
-        const txAge = Date.now() - new Date(tx.timestamp).getTime();
-        const tenSeconds = 10 * 1000;
-
-        if (txAge >= tenSeconds) {
-          console.log(`Auto-approving withdrawal for marketer ${tx.user_id}`);
-          await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Auto-withdraw sweep failed:', err);
-  }
-}, 5 * 1000); // Check every 5 seconds
-
-// Trade & Withdrawal Endpoints
-router.post('/trade/open', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { coin, amount, type, price, accountType, duration } = req.body;
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
-
-    // 1. Get current balance
-    const { data: userData } = await supabaseAdmin.from('users').select(balanceField).eq('id', user.id).single();
-    if (!userData) throw new Error('User not found');
-
-    const currentBalance = Number(userData[balanceField] || 0);
-    if (currentBalance < amount) return res.status(400).json({ error: 'Insufficient balance' });
-
-    const newBalance = Number((currentBalance - amount).toFixed(2));
-
-    // 2. Atomic Update: Create trade and update balance
-    const { data: trade, error: tradeErr } = await supabaseAdmin.from('trades').insert({
-      user_id: user.id,
-      coin,
-      amount,
-      type,
-      price,
-      status: 'OPEN',
-      account_type: accountType,
-      duration
-    }).select().single();
-
-    if (tradeErr) throw tradeErr;
-
-    await supabaseAdmin.from('users').update({ [balanceField]: newBalance }).eq('id', user.id);
-
-    res.json({ success: true, trade, newBalance });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/trade/close', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { tradeId, profit } = req.body;
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    // 1. Get trade and current balance
-    const { data: trade } = await supabaseAdmin.from('trades').select('*').eq('id', tradeId).eq('user_id', user.id).single();
-    if (!trade || trade.status === 'CLOSED') throw new Error('Trade not found or already closed');
-
-    const isReal = trade.account_type === 'REAL';
-    const balanceField = isReal ? 'real_balance' : 'demo_balance';
-    const profitField = isReal ? 'total_profit_real' : 'total_profit_demo';
-    const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
-
-    const { data: userData } = await supabaseAdmin.from('users').select(`${balanceField}, ${profitField}, ${dailyProfitField}`).eq('id', user.id).single();
-    if (!userData) throw new Error('User not found');
-
-    const currentBalance = Number(userData[balanceField] || 0);
-    const newBalance = Number((currentBalance + trade.amount + profit).toFixed(2));
-    const newTotalProfit = Number((Number(userData[profitField] || 0) + profit).toFixed(2));
-    const newDailyProfit = Number((Number(userData[dailyProfitField] || 0) + profit).toFixed(2));
-
-    // 2. Update trade and user
-    await supabaseAdmin.from('trades').update({ status: 'CLOSED', profit }).eq('id', tradeId);
-    await supabaseAdmin.from('users').update({ 
-      [balanceField]: newBalance,
-      [profitField]: newTotalProfit,
-      [dailyProfitField]: newDailyProfit
-    }).eq('id', user.id);
-
-    res.json({ success: true, newBalance, profit });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/withdraw/request', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { amount, method, accountType } = req.body;
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    // 1. Check verification
-    const { data: user } = await supabaseAdmin.from('users').select('*, real_balance, demo_balance').eq('id', authUser.id).single();
-    if (!user) throw new Error('User not found');
-    
-    if (user.role !== 'marketer' && user.verification_status !== 'verified') {
-      return res.status(403).json({ error: 'Account must be verified before withdrawal' });
-    }
-
-    const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
-    const currentBalance = Number(user[balanceField] || 0);
-    if (currentBalance < amount) return res.status(400).json({ error: 'Insufficient balance' });
-
-    const newBalance = Number((currentBalance - amount).toFixed(2));
-
-    // 2. Create transaction and deduct balance
-    const { data: tx, error: txErr } = await supabaseAdmin.from('transactions').insert({
-      user_id: user.id,
-      type: 'WITHDRAW',
-      amount,
-      status: 'pending',
-      account_type: accountType,
-      method
-    }).select().single();
-
-    if (txErr) throw txErr;
-
-    await supabaseAdmin.from('users').update({ [balanceField]: newBalance }).eq('id', user.id);
-
-    res.json({ success: true, transaction: tx, newBalance });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/verify/submit', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { documents } = req.body;
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    const { data: userData } = await supabaseAdmin.from('users').select('role').eq('id', user.id).single();
-    
-    // Marketers are auto-verified
-    const status = userData?.role === 'marketer' ? 'verified' : 'pending';
-    const submittedAt = status === 'pending' ? Date.now() : null;
-
-    const { data, error } = await supabaseAdmin.from('users').update({
-      verification_status: status,
-      verification_documents: documents,
-      verification_submitted_at: submittedAt
-    }).eq('id', user.id).select().single();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// Hardcoded authorized admin emails and IDs for backend security
+const ADMIN_EMAILS = ['wren20688@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
-const ADMIN_EMAILS = ['josphatndungu1022@gmail.com'];
 
 // Admin API Routes (Bypasses RLS using Service Role Key)
-router.get('/admin/users', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
-
-    const isAuthorizedId = ADMIN_IDS.includes(user.id);
-    if (!isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
-
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    const { data, error } = await supabaseAdmin.from('users').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
-    res.json(data);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/admin/transactions', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
-
-    const isAuthorizedId = ADMIN_IDS.includes(user.id);
-    if (!isAuthorizedId) return res.status(403).json({ error: 'Forbidden' });
-
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    const { data, error } = await supabaseAdmin.from('transactions').select('*, user:users(username, email)').eq('status', 'pending').order('timestamp', { ascending: false });
-    if (error) throw error;
-    res.json(data);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 router.post('/admin/update-user', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
@@ -777,7 +664,7 @@ router.get('/health', (req, res) => {
 });
 
 // Mount the router at the root level for maximum compatibility with serverless environments
-app.use('/', router);
+// app.use('/', router);
 app.use('/api', router);
 app.use('/.netlify/functions/api', router);
 
@@ -860,9 +747,9 @@ setInterval(async () => {
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));
 
-// 404 Handler for API with detailed debugging
-app.use((req, res) => {
-  console.log(`404 Not Found: ${req.method} ${req.url}`);
+// 404 Handler for API - Only handles paths starting with /api
+router.use((req, res) => {
+  console.log(`API 404 Not Found: ${req.method} ${req.url}`);
   res.status(404).json({ 
     error: 'Not Found', 
     message: `The requested endpoint ${req.method} ${req.url} was not found on this server.`,

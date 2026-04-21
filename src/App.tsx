@@ -65,6 +65,8 @@ export default function App() {
         message: 'Your account has been successfully verified. You now have full access to all features.',
         type: 'success'
       });
+      // Optional: Force a small refresh of the user state if needed, 
+      // but useStore already updates the user state.
     };
 
     window.addEventListener('verification-success', handleVerificationSuccess);
@@ -102,3 +104,4 @@ export default function App() {
     </Router>
   );
 }
+
