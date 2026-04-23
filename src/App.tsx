@@ -48,7 +48,7 @@ function AdminRedirector({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { user } = useStore();
+  const { user, resetDemoBalance } = useStore();
   const isAdmin = user?.role === 'admin';
   const [alertConfig, setAlertConfig] = React.useState({
     isOpen: false,
@@ -58,6 +58,15 @@ export default function App() {
   });
 
   useEffect(() => {
+    const handleBalanceReset = (e: any) => {
+      setAlertConfig({
+        isOpen: true,
+        title: e.detail.title,
+        message: e.detail.message,
+        type: e.detail.type
+      });
+    };
+
     const handleVerificationSuccess = () => {
       setAlertConfig({
         isOpen: true,
@@ -69,8 +78,12 @@ export default function App() {
       // but useStore already updates the user state.
     };
 
+    window.addEventListener('balance-reset', handleBalanceReset);
     window.addEventListener('verification-success', handleVerificationSuccess);
-    return () => window.removeEventListener('verification-success', handleVerificationSuccess);
+    return () => {
+      window.removeEventListener('balance-reset', handleBalanceReset);
+      window.removeEventListener('verification-success', handleVerificationSuccess);
+    };
   }, []);
 
   return (

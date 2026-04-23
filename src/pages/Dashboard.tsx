@@ -14,7 +14,8 @@ import {
   BarChart3,
   History as HistoryIcon,
   Wallet,
-  ArrowRight
+  ArrowRight,
+  RotateCcw
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
@@ -33,7 +34,7 @@ import {
 } from 'recharts';
 
 export default function Dashboard() {
-  const { user } = useStore();
+  const { user, resetDemoBalance } = useStore();
   const navigate = useNavigate();
   const [marketActivity, setMarketActivity] = useState<{
     coin: string, 
@@ -136,6 +137,15 @@ export default function Dashboard() {
           <p className="text-sm text-slate-500 font-medium">Welcome back, {user?.username}. Here's your portfolio summary.</p>
         </div>
         <div className="flex items-center gap-3">
+          {user?.activeAccount === 'DEMO' && (
+            <button 
+              onClick={resetDemoBalance}
+              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center gap-2 text-xs border border-slate-200 dark:border-slate-700"
+              title="Reset balance to $10,000"
+            >
+              <RotateCcw size={14} /> Reset Demo
+            </button>
+          )}
           <button 
             onClick={() => navigate('/trade')}
             className="px-5 py-2.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center gap-2 text-sm"

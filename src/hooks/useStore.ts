@@ -513,6 +513,28 @@ export function useStore() {
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
   };
 
+  const resetDemoBalance = async () => {
+    if (!user) return;
+    
+    if (isSupabaseConfigured()) {
+      await supabase.from('users').update({ demo_balance: 10000 }).eq('id', user.id);
+    }
+
+    const updatedUser = { ...user, demoBalance: 10000 };
+    setUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    
+    // Trigger notification
+    const event = new CustomEvent('balance-reset', {
+      detail: {
+        title: 'Balance Reset',
+        message: 'Your demo balance has been reset to $10,000.00',
+        type: 'success'
+      }
+    });
+    window.dispatchEvent(event);
+  };
+
   const addTrade = async (trade: Trade, isUserInitiated: boolean = false) => {
     console.log('addTrade called:', { trade, isUserInitiated });
     if (!user) {
@@ -1540,6 +1562,7 @@ export function useStore() {
     register,
     logout,
     switchAccount,
+    resetDemoBalance,
     addTrade,
     closeTrade,
     addTransaction,
