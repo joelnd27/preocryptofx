@@ -125,65 +125,6 @@ export default function Bots() {
 
   const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
 
-  useEffect(() => {
-    const activeBots = Object.entries(user?.bots || {}).filter(([_, active]) => active);
-    if (activeBots.length === 0) return;
-
-    const interval = setInterval(async () => {
-      const botsToSimulate = Object.entries(user?.bots || {}).filter(([_, active]) => active);
-      if (botsToSimulate.length > 0) {
-        const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
-        let botName = '';
-        let coin = 'BTC';
-        let baseAmount = 0;
-
-        if (botId === 'custom' && user?.customBotConfig) {
-          botName = user.customBotConfig.name;
-          coin = user.customBotConfig.currency || 'BTC';
-          
-          // Scale profit based on risk level
-          const risk = user.customBotConfig.risk || 'Medium';
-          const riskMultiplier = 
-            risk === 'Low' ? 0.5 :
-            risk === 'High' ? 2.0 :
-            risk === 'Aggressive' ? 5.0 : 1.0;
-          
-          baseAmount = (1 + Math.random() * 4) * riskMultiplier;
-        } else {
-          const bot = BOTS.find(b => b.id === botId);
-          if (!bot) return;
-          botName = bot.name;
-          coin = botSettings[botId].coin;
-          baseAmount = (1 + Math.random() * 4);
-        }
-
-        // Apply win rate logic here so logs match balance
-        const isDemo = user.activeAccount === 'DEMO';
-        const isMarketer = user.role === 'marketer';
-        const isAdmin = user.role === 'admin';
-        
-        let winChance = 0.5;
-        if (isDemo) {
-          winChance = 0.92;
-        } else if (isMarketer || isAdmin) {
-          winChance = 0.95;
-        } else {
-          winChance = 0.035; // 3.5%
-        }
-        
-        const isWin = Math.random() < winChance;
-        const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
-        const profitStr = profitVal.toFixed(2);
-        
-        const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed ${Math.random() > 0.5 ? 'BUY' : 'SELL'} on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
-
-        // Update user balance and global stats/logs
-        await addBotProfit(parseFloat(profitStr), botId, newLog);
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [activeBotsKey, botSettings, addBotProfit]);
-
   const handleToggle = (botId: string) => {
     const bot = botId === 'custom' && user?.customBotConfig 
       ? { id: 'custom', name: user.customBotConfig.name, minDeposit: 10, type: 'ai' as const }

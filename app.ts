@@ -742,7 +742,141 @@ setInterval(async () => {
   } catch (err) {
     console.error('Offline Verification Sync Exception:', err);
   }
-}, 60 * 1000); // Check every minute
+}, 60 * 1000); 
+
+// Background Task: Global Trade Reconciliation & Bot Simulation
+// Ensures trades close on time and bots generate profit even when users are offline
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    const now = new Date();
+    
+    // 1. Reconcile Expired Trades
+    const { data: openTrades, error: tradesError } = await supabaseAdmin
+      .from('trades')
+      .select('*, users(role, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo)')
+      .eq('status', 'OPEN');
+
+    if (!tradesError && openTrades) {
+      for (const trade of openTrades) {
+        const expiryTime = new Date(new Date(trade.timestamp).getTime() + (trade.duration || 0) * 1000);
+        if (now >= expiryTime) {
+          console.log(`[Reconcile] Closing expired trade ${trade.id} for user ${trade.user_id}`);
+          
+          const user = trade.users;
+          const isReal = trade.account_type === 'REAL';
+          const isDemo = trade.account_type === 'DEMO';
+          const isMarketer = user.role === 'marketer';
+          const isAdmin = user.role === 'admin';
+          
+          let winChance = 0.5;
+          if (isDemo) winChance = 0.92;
+          else if (isMarketer || isAdmin) winChance = 0.95;
+          else winChance = 0.035;
+
+          // Prefer stored target_profit if available, otherwise calculate it
+          let profit = trade.target_profit !== undefined ? Number(trade.target_profit) : 0;
+          
+          if (trade.target_profit === undefined) {
+             const isWin = Math.random() < winChance;
+             if (isWin) {
+               profit = Number((trade.amount * (0.02 + Math.random() * 0.28)).toFixed(2));
+             } else {
+               profit = Number((-trade.amount * (0.02 + Math.random() * 0.28)).toFixed(2));
+             }
+          }
+
+          const balanceField = isReal ? 'real_balance' : 'demo_balance';
+          const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
+          const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
+          
+          const currentBalance = Number(user[balanceField] || 0);
+          const newBalance = Number((currentBalance + trade.amount + profit).toFixed(2));
+          const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
+          const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+
+          // Update Trade
+          await supabaseAdmin.from('trades').update({
+            status: 'CLOSED',
+            profit: profit
+          }).eq('id', trade.id);
+
+          // Update User
+          await supabaseAdmin.from('users').update({
+            [balanceField]: newBalance,
+            [totalProfitField]: newTotalProfit,
+            [dailyProfitField]: newDailyProfit
+          }).eq('id', trade.user_id);
+        }
+      }
+    }
+
+    // 2. Offline Bot Simulation (Every 5 minutes for anyone with active bots)
+    // We only process if now's minutes are divisible by 5 to stick to a 5-min schedule
+    if (now.getMinutes() % 5 === 0) {
+      const { data: botUsers, error: botError } = await supabaseAdmin
+        .from('bot_settings')
+        .select('*, users(role, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo)')
+        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
+
+      if (!botError && botUsers) {
+        for (const setting of botUsers) {
+          const user = setting.users;
+          if (!user) continue;
+
+          console.log(`[Bot-Offline] Simulating bot profit for user ${setting.user_id}`);
+          
+          const isReal = user.active_account === 'REAL';
+          const isDemo = user.active_account === 'DEMO';
+          const isMarketer = user.role === 'marketer';
+          const isAdmin = user.role === 'admin';
+
+          let winChance = 0.5;
+          if (isDemo) winChance = 0.92;
+          else if (isMarketer || isAdmin) winChance = 0.95;
+          else winChance = 0.035;
+
+          const baseAmount = (10 + Math.random() * 40); // Larger amount for 5-min intervals
+          const isWin = Math.random() < winChance;
+          const profit = isWin ? Number(baseAmount.toFixed(2)) : Number((-baseAmount).toFixed(2));
+
+          const balanceField = isReal ? 'real_balance' : 'demo_balance';
+          const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
+          const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
+
+          const currentBalance = Number(user[balanceField] || 0);
+          const newBalance = Math.max(0, Number((currentBalance + profit).toFixed(2)));
+          const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
+          const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+
+          // Create bot trade record
+          await supabaseAdmin.from('trades').insert({
+            user_id: setting.user_id,
+            coin: 'OFFLINE_BOT',
+            amount: Math.abs(profit),
+            type: profit >= 0 ? 'BUY' : 'SELL',
+            price: 50000, // Dummy price
+            status: 'CLOSED',
+            profit: profit,
+            account_type: user.active_account,
+            timestamp: new Date().toISOString(),
+            duration: 0
+          });
+
+          // Update User
+          await supabaseAdmin.from('users').update({
+            [balanceField]: newBalance,
+            [totalProfitField]: newTotalProfit,
+            [dailyProfitField]: newDailyProfit
+          }).eq('id', setting.user_id);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Background-Task] Task Exception:', err);
+  }
+}, 60 * 1000); 
 
 // Final fallback health check at the app level
 app.get('/ping', (req, res) => res.send('pong'));

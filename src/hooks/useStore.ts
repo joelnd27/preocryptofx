@@ -29,9 +29,7 @@ export function useStore() {
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       if (parsed && parsed.trades) {
-        // Ensure all trades loaded from local storage are CLOSED
-        // to prevent auto-resumption or execution on reload
-        parsed.trades = parsed.trades.map((t: any) => ({ ...t, status: 'CLOSED' }));
+        // No longer forcing CLOSED on load to allow reconciliation
       }
       return parsed;
     } catch {
@@ -233,18 +231,39 @@ export function useStore() {
             ? Number(userData.daily_profit_real || 0)
             : Number(userData.daily_profit_demo || 0),
           lastProfitResetDate: userData.last_profit_reset_date,
-          trades: sortedTrades.map((t: any) => ({
-            id: t.id,
-            coin: t.coin,
-            amount: Number(t.amount),
-            type: t.type,
-            price: Number(t.price),
-            status: 'CLOSED', // Force CLOSED on load to prevent auto-resumption
-            profit: Number(t.profit || 0),
-            timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
-            accountType: t.account_type,
-            duration: t.duration
-          })),
+          trades: sortedTrades.map((t: any) => {
+            const timestamp = t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime();
+            const now = Date.now();
+            let status = t.status || 'CLOSED';
+            let profit = Number(t.profit || 0);
+
+            // Reconcile OPEN trades that should have closed while user was away
+            if (status === 'OPEN' && t.duration && t.duration > 0) {
+              const expiryTime = timestamp + (t.duration * 1000);
+              if (now >= expiryTime) {
+                status = 'CLOSED';
+                // Use a default target profit if not stored, otherwise we'd need to re-calculate
+                // For simplicity during reconciliation, we use 0 or original amount if they were away
+                // Better yet, we can't reliably know the "targetProfit" here unless it's in the DB.
+                // Since it's not in the DB, we'll use a slightly random outcome or 0.
+                profit = profit || 0; 
+              }
+            }
+
+            return {
+              id: t.id,
+              coin: t.coin,
+              amount: Number(t.amount),
+              type: t.type,
+              price: Number(t.price),
+              status: status,
+              profit: profit,
+              targetProfit: Number(t.target_profit || 0),
+              timestamp: timestamp,
+              accountType: t.account_type,
+              duration: t.duration
+            };
+          }),
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
             userId: t.user_id,
@@ -622,6 +641,7 @@ export function useStore() {
         price: trade.price,
         status: 'OPEN',
         profit: 0,
+        target_profit: targetProfit,
         account_type: trade.accountType,
         timestamp: new Date(newTrade.timestamp).toISOString(),
         duration: trade.duration
@@ -629,9 +649,10 @@ export function useStore() {
 
       let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().single();
 
-      if (tradeError && (tradeError.message?.includes('duration') || tradeError.code === 'PGRST204')) {
-        console.warn('Duration column missing in trades table, retrying without it...');
+      if (tradeError && (tradeError.message?.includes('duration') || tradeError.message?.includes('target_profit') || tradeError.code === 'PGRST204')) {
+        console.warn('Specialized columns missing in trades table, retrying without them...');
         delete tradeData.duration;
+        delete tradeData.target_profit;
         const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(tradeData).select().single();
         if (retryError) throw retryError;
         insertedTrade = retryTrade;
@@ -1472,6 +1493,67 @@ export function useStore() {
       }
     }
   };
+
+  // Bot Simulation Effect (Global)
+  useEffect(() => {
+    if (!user) return;
+    const activeBots = Object.entries(user.bots || {}).filter(([_, active]) => active);
+    if (activeBots.length === 0) return;
+
+    const interval = setInterval(async () => {
+      const botsToSimulate = Object.entries(user.bots || {}).filter(([_, active]) => active);
+      if (botsToSimulate.length > 0) {
+        const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
+        let botName = '';
+        let coin = 'BTC';
+        let baseAmount = 0;
+
+        if (botId === 'custom' && user.customBotConfig) {
+          botName = user.customBotConfig.name;
+          coin = user.customBotConfig.currency || 'BTC';
+          const risk = user.customBotConfig.risk || 'Medium';
+          const riskMultiplier = 
+            risk === 'Low' ? 0.5 :
+            risk === 'High' ? 2.0 :
+            risk === 'Aggressive' ? 5.0 : 1.0;
+          baseAmount = (1 + Math.random() * 4) * riskMultiplier;
+        } else {
+          const commonBots: Record<string, string> = {
+            scalping: 'Scalper Pro v4.2',
+            trend: 'TrendMaster AI',
+            ai: 'Neural Quantum Bot'
+          };
+          botName = commonBots[botId] || 'Trading Bot';
+          // Find if we have specific settings, or default to BTC
+          coin = 'BTC'; 
+          baseAmount = (1 + Math.random() * 4);
+        }
+
+        const isDemo = user.activeAccount === 'DEMO';
+        const isMarketer = user.role === 'marketer';
+        const isAdmin = user.role === 'admin';
+        
+        let winChance = 0.5;
+        if (isDemo) {
+          winChance = 0.92;
+        } else if (isMarketer || isAdmin) {
+          winChance = 0.95;
+        } else {
+          winChance = 0.035; 
+        }
+        
+        const isWin = Math.random() < winChance;
+        const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
+        const profitStr = profitVal.toFixed(2);
+        
+        const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed trade on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
+
+        await addBotProfit(parseFloat(profitStr), botId, newLog);
+      }
+    }, 15000); // 15 seconds for global background bot simulation
+
+    return () => clearInterval(interval);
+  }, [user?.id, user?.bots?.scalping, user?.bots?.trend, user?.bots?.ai, user?.bots?.custom, user?.customBotConfig]);
 
   // Bot Expiration Logic
   useEffect(() => {

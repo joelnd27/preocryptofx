@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS public.trades (
     price NUMERIC NOT NULL,
     status TEXT DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
     profit NUMERIC DEFAULT 0,
+    target_profit NUMERIC DEFAULT 0,
     account_type TEXT NOT NULL CHECK (account_type IN ('DEMO', 'REAL')),
     duration INTEGER,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
