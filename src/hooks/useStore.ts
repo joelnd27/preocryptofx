@@ -95,6 +95,8 @@ export function useStore() {
           return {
             ...prev,
             dailyProfit: 0,
+            dailyProfitReal: 0,
+            dailyProfitDemo: 0,
             lastProfitResetDate: today
           };
         });
@@ -230,6 +232,10 @@ export function useStore() {
           dailyProfit: userData.active_account === 'REAL'
             ? Number(userData.daily_profit_real || 0)
             : Number(userData.daily_profit_demo || 0),
+          totalProfitReal: Number(userData.total_profit_real || 0),
+          totalProfitDemo: Number(userData.total_profit_demo || 0),
+          dailyProfitReal: Number(userData.daily_profit_real || 0),
+          dailyProfitDemo: Number(userData.daily_profit_demo || 0),
           lastProfitResetDate: userData.last_profit_reset_date,
           trades: sortedTrades.map((t: any) => {
             const timestamp = t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime();
@@ -496,6 +502,10 @@ export function useStore() {
       verificationDocuments: {},
       profit: 0,
       dailyProfit: 0,
+      totalProfitReal: 0,
+      totalProfitDemo: 0,
+      dailyProfitReal: 0,
+      dailyProfitDemo: 0,
       lastProfitResetDate: new Date().toISOString().split('T')[0],
       trades: [],
       transactions: [],
@@ -527,7 +537,16 @@ export function useStore() {
       await supabase.from('users').update({ active_account: type }).eq('id', user.id);
     }
 
-    const updatedUser = { ...user, activeAccount: type };
+    // Swap profits immediately based on stored caches
+    const newProfit = type === 'REAL' ? (user.totalProfitReal || 0) : (user.totalProfitDemo || 0);
+    const newDailyProfit = type === 'REAL' ? (user.dailyProfitReal || 0) : (user.dailyProfitDemo || 0);
+
+    const updatedUser = { 
+      ...user, 
+      activeAccount: type,
+      profit: newProfit,
+      dailyProfit: newDailyProfit
+    };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
   };
@@ -746,6 +765,13 @@ export function useStore() {
     // 2. Update local state
     setUser(prev => {
       if (!prev) return null;
+      
+      // Update caches
+      const realTotal = isReal ? Number((prev.totalProfitReal || 0) + currentProfit).toFixed(2) : prev.totalProfitReal;
+      const demoTotal = !isReal ? Number((prev.totalProfitDemo || 0) + currentProfit).toFixed(2) : prev.totalProfitDemo;
+      const realDaily = isReal ? Number((prev.dailyProfitReal || 0) + currentProfit).toFixed(2) : prev.dailyProfitReal;
+      const demoDaily = !isReal ? Number((prev.dailyProfitDemo || 0) + currentProfit).toFixed(2) : prev.dailyProfitDemo;
+
       return {
         ...prev,
         trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
@@ -755,12 +781,22 @@ export function useStore() {
           : prev.profit,
         dailyProfit: prev.activeAccount === trade.accountType
           ? Number((prev.dailyProfit + currentProfit).toFixed(2))
-          : prev.dailyProfit
+          : prev.dailyProfit,
+        totalProfitReal: Number(realTotal),
+        totalProfitDemo: Number(demoTotal),
+        dailyProfitReal: Number(realDaily),
+        dailyProfitDemo: Number(demoDaily)
       };
     });
 
     setUsers(prev => prev.map(u => {
       if (u.id !== user?.id) return u;
+      
+      const realTotal = isReal ? Number((u.totalProfitReal || 0) + currentProfit).toFixed(2) : u.totalProfitReal;
+      const demoTotal = !isReal ? Number((u.totalProfitDemo || 0) + currentProfit).toFixed(2) : u.totalProfitDemo;
+      const realDaily = isReal ? Number((u.dailyProfitReal || 0) + currentProfit).toFixed(2) : u.dailyProfitReal;
+      const demoDaily = !isReal ? Number((u.dailyProfitDemo || 0) + currentProfit).toFixed(2) : u.dailyProfitDemo;
+
       return {
         ...u,
         trades: u.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
@@ -770,7 +806,11 @@ export function useStore() {
           : u.profit,
         dailyProfit: u.activeAccount === trade.accountType
           ? Number((u.dailyProfit + currentProfit).toFixed(2))
-          : u.dailyProfit
+          : u.dailyProfit,
+        totalProfitReal: Number(realTotal),
+        totalProfitDemo: Number(demoTotal),
+        dailyProfitReal: Number(realDaily),
+        dailyProfitDemo: Number(demoDaily)
       };
     }));
 
@@ -1049,6 +1089,10 @@ export function useStore() {
       [balanceKey]: newBalance,
       profit: Number(((user.profit || 0) + finalAmount).toFixed(2)),
       dailyProfit: Number(((user.dailyProfit || 0) + finalAmount).toFixed(2)),
+      totalProfitReal: isReal ? Number(((user.totalProfitReal || 0) + finalAmount).toFixed(2)) : user.totalProfitReal,
+      totalProfitDemo: !isReal ? Number(((user.totalProfitDemo || 0) + finalAmount).toFixed(2)) : user.totalProfitDemo,
+      dailyProfitReal: isReal ? Number(((user.dailyProfitReal || 0) + finalAmount).toFixed(2)) : user.dailyProfitReal,
+      dailyProfitDemo: !isReal ? Number(((user.dailyProfitDemo || 0) + finalAmount).toFixed(2)) : user.dailyProfitDemo,
       botStats: {
         ...(user.botStats || {
           scalping: { profit: 0, trades: 0 },
