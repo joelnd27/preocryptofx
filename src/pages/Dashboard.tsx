@@ -400,14 +400,20 @@ export default function Dashboard() {
                 <div key={i} className="flex gap-3">
                   <div className={cn(
                     "w-1 h-1 mt-2 rounded-full shrink-0",
-                    notif.type === 'DEPOSIT' ? "bg-green-500" : "bg-red-500"
+                    notif.status === 'completed' ? "bg-green-500" : 
+                    notif.status === 'pending' ? "bg-yellow-500 animate-pulse" : 
+                    "bg-red-500"
                   )}></div>
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                      {notif.type} {notif.status === 'pending' ? 'PENDING' : 'SUCCESSFUL'}
+                      {notif.type} {notif.status.toUpperCase()}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5">
-                      Your {notif.type.toLowerCase()} of {formatCurrency(notif.amount)} {notif.status === 'pending' ? 'is currently pending' : 'has been completed successfully'}.
+                      {notif.status === 'completed' 
+                        ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} has been completed successfully.`
+                        : notif.status === 'pending'
+                        ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} is currently pending.`
+                        : `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} was ${notif.status}.`}
                     </p>
                   </div>
                 </div>

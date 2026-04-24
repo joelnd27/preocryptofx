@@ -465,11 +465,15 @@ export default function Transactions() {
                           <div className="flex items-center gap-1.5">
                             <div className={cn(
                               "w-1.5 h-1.5 rounded-full",
-                              tx.status === 'completed' ? "bg-green-500" : tx.status === 'failed' ? "bg-red-500" : "bg-yellow-500 animate-pulse"
+                              tx.status === 'completed' ? "bg-green-500" : 
+                              (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500" : 
+                              "bg-yellow-500 animate-pulse"
                             )} />
                             <span className={cn(
                               "text-[10px] font-bold uppercase tracking-tighter",
-                              tx.status === 'completed' ? "text-green-500" : tx.status === 'failed' ? "text-red-500" : "text-yellow-500"
+                              tx.status === 'completed' ? "text-green-500" : 
+                              (tx.status === 'failed' || tx.status === 'rejected') ? "text-red-500" : 
+                              "text-yellow-500"
                             )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                           </div>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
@@ -591,14 +595,16 @@ export default function Transactions() {
                       <div className="flex items-center gap-1.5">
                         {tx.status === 'completed' ? (
                           <CheckCircle2 size={12} className="text-green-500" />
-                        ) : tx.status === 'failed' ? (
+                        ) : (tx.status === 'failed' || tx.status === 'rejected') ? (
                           <XCircle size={12} className="text-red-500" />
                         ) : (
                           <Clock size={12} className="text-yellow-500 animate-pulse" />
                         )}
                         <span className={cn(
                           "text-[10px] font-bold uppercase tracking-tighter",
-                          tx.status === 'completed' ? "text-green-500" : tx.status === 'failed' ? "text-red-500" : "text-yellow-500"
+                          tx.status === 'completed' ? "text-green-500" : 
+                          (tx.status === 'failed' || tx.status === 'rejected') ? "text-red-500" : 
+                          "text-yellow-500"
                         )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
                       </div>
                       {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
