@@ -46,7 +46,7 @@ export default function Landing() {
       <nav className="fixed top-0 w-full z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-xl flex items-center justify-center font-bold text-lg sm:text-xl">P</div>
+            <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-8 h-8 sm:w-10 sm:h-10" />
             <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent">
               PreoCryptoFX
             </span>
@@ -236,7 +236,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 sm:gap-12">
           <div className="sm:col-span-2">
             <div className="flex items-center gap-2 mb-6">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold">P</div>
+              <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-10 h-10" />
               <span className="text-xl font-bold">PreoCryptoFX</span>
             </div>
             <p className="text-sm text-slate-400 max-w-sm mb-8">

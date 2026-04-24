@@ -24,7 +24,7 @@ import { useNavigate } from 'react-router-dom';
 import AlertModal from '../components/AlertModal';
 
 export default function Profile() {
-  const { user, setUser, logout, submitVerification } = useStore();
+  const { user, updateProfile, logout, submitVerification } = useStore();
   const navigate = useNavigate();
   const [username, setUsername] = useState(user?.username || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -51,10 +51,10 @@ export default function Profile() {
     addressProofType: 'KRA' as 'KRA' | 'DL'
   });
 
-  const handleUpdate = (e: React.FormEvent) => {
+  const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    setUser({ ...user, username, email, phone });
+    await updateProfile({ username, email, phone });
     setIsEditing(false);
     setAlertConfig({
       isOpen: true,

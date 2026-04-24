@@ -1456,6 +1456,22 @@ export function useStore() {
       bots: { ...prev.bots, custom: false } // Require manual start
     } : null);
   };
+  
+  const updateProfile = async (updates: Partial<Pick<User, 'username' | 'email' | 'phone'>>) => {
+    if (!user) return;
+    
+    const updatedUser = { ...user, ...updates };
+    setUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('users').update(updates).eq('id', user.id);
+      } catch (err) {
+        console.error('Failed to update profile in Supabase:', err);
+      }
+    }
+  };
 
   // Bot Expiration Logic
   useEffect(() => {
@@ -1574,6 +1590,7 @@ export function useStore() {
     submitVerification,
     refreshData,
     importBot,
+    updateProfile,
     getAllUsers,
     getGlobalStats,
     updateUserBalance,

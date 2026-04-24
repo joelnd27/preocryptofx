@@ -67,7 +67,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       )}>
         <div className="h-16 flex items-center px-6 border-b border-transparent shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-black shrink-0">P</div>
+            <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg shrink-0" />
             {isSidebarOpen && <span className="text-xl font-black tracking-tight whitespace-nowrap">PreoCryptoFX</span>}
           </div>
         </div>
@@ -127,7 +127,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             >
               <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-black">P</div>
+                  <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg" />
                   <span className="text-xl font-black tracking-tight">PreoCryptoFX</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-2">

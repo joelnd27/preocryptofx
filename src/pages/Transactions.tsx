@@ -155,18 +155,6 @@ export default function Transactions() {
     if (isNaN(val) || val <= 0) return;
 
     if (modalType === 'DEPOSIT') {
-      if (user?.verificationStatus !== 'verified') {
-        setAlertConfig({
-          isOpen: true,
-          title: 'Identity Verification Required',
-          message: user?.verificationStatus === 'pending' 
-            ? 'Your account verification is currently being processed. You will be able to deposit funds once approved.'
-            : 'Access to deposits is restricted until your identity is verified. Please visit the Profile section to complete verification.',
-          type: 'warning'
-        });
-        return;
-      }
-
       if (paymentMethod !== 'MPESA') {
         setAlertConfig({
           isOpen: true,
@@ -227,18 +215,6 @@ export default function Transactions() {
       }
     } else {
       // Withdrawal Logic
-      if (user?.verificationStatus !== 'verified') {
-        setAlertConfig({
-          isOpen: true,
-          title: 'Identity Verification Required',
-          message: user?.verificationStatus === 'pending'
-            ? 'Your account verification is currently being processed. You will be able to withdraw funds once approved.'
-            : 'Access to withdrawals is restricted until your identity is verified. Please visit the Profile section to complete verification.',
-          type: 'warning'
-        });
-        return;
-      }
-
       if (user?.activeAccount === 'DEMO') {
         setAlertConfig({
           isOpen: true,
@@ -247,6 +223,35 @@ export default function Transactions() {
           type: 'warning'
         });
         return;
+      }
+
+      // Check limits for unverified users
+      if (user?.verificationStatus !== 'verified') {
+        if (val > 100) {
+          setAlertConfig({
+            isOpen: true,
+            title: 'Verification Required',
+            message: 'Unverified accounts are limited to withdrawals of $100 or less. Please verify your identity to unlock higher limits.',
+            type: 'warning'
+          });
+          return;
+        }
+
+        const today = new Date().setHours(0, 0, 0, 0);
+        const withdrawalsToday = user.transactions?.filter(t => 
+          t.type === 'WITHDRAW' && 
+          new Date(t.timestamp).setHours(0, 0, 0, 0) === today
+        ).length || 0;
+
+        if (withdrawalsToday >= 5) {
+          setAlertConfig({
+            isOpen: true,
+            title: 'Daily Limit Reached',
+            message: 'Unverified accounts are limited to 5 withdrawals per day. Please verify your identity to unlock unlimited transactions.',
+            type: 'warning'
+          });
+          return;
+        }
       }
 
       if (phone !== user?.phone) {
@@ -336,7 +341,7 @@ export default function Transactions() {
                 "w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all",
                 user?.activeAccount === 'DEMO'
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
-                  : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm"
               )}
             >
               <ArrowUpRight size={18} /> <span className="text-sm sm:text-base">Withdraw</span>
@@ -361,12 +366,12 @@ export default function Transactions() {
           </div>
           <div className="space-y-1">
             <h3 className="text-sm sm:text-base font-bold text-amber-900 dark:text-amber-500">
-              Identity Verification Required
+              Identity Verification Benefits
             </h3>
             <p className="text-xs sm:text-sm text-amber-800/80 dark:text-amber-400/80 leading-relaxed">
               {user?.verificationStatus === 'pending' 
-                ? "Your document verification is currently in progress. Deposits and withdrawals will be enabled as soon as our team completes the review (usually within 24 hours)."
-                : "To ensure the security of your funds and comply with financial regulations, you must verify your identity before making deposits or withdrawals. Please head to the Profile section to submit your documents."}
+                ? "Your document verification is currently in progress. While waiting, you can still withdraw up to $100 per transaction. Fully verified accounts get unlimited limits."
+                : "Verify your account to unlock all features, including withdrawals over $100 and more than 5 transactions per day. Head to the Profile section to submit your documents."}
             </p>
           </div>
         </motion.div>
