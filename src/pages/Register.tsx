@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 
@@ -10,6 +10,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('+254');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
   const [role, setRole] = useState<'user' | 'marketer'>('user');
   const [error, setError] = useState('');
@@ -98,7 +99,7 @@ export default function Register() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
-                  placeholder="John Doe"
+                  placeholder="Enter your full name"
                 />
               </div>
             </div>
@@ -140,14 +141,21 @@ export default function Register() {
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onFocus={() => setShowPasswordRequirements(true)}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-12 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
               </div>
 
               {/* Password Strength Meter & Requirements */}
@@ -182,10 +190,10 @@ export default function Register() {
                     </div>
                     
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                      <RequirementItem met={password.length >= 8} text="8+ characters" />
-                      <RequirementItem met={/[A-Z]/.test(password)} text="1 capital letter" />
-                      <RequirementItem met={/[0-9]/.test(password)} text="1 number" />
-                      <RequirementItem met={/[^A-Za-z0-9]/.test(password)} text="1 symbol" />
+                      <RequirementItem met={password.length >= 8} text="At least 8 characters" />
+                      <RequirementItem met={/[A-Z]/.test(password)} text="One uppercase letter" />
+                      <RequirementItem met={/[0-9]/.test(password)} text="1 Number" />
+                      <RequirementItem met={/[^A-Za-z0-9]/.test(password)} text="1 Symbol" />
                     </div>
                   </motion.div>
                 )}
@@ -237,7 +245,7 @@ function RequirementItem({ met, text }: { met: boolean; text: string }) {
         <CheckCircle2 size={10} />
       </div>
       <span className={cn(
-        "text-[10px] font-bold uppercase tracking-wider transition-colors",
+        "text-[10px] font-bold tracking-wider transition-colors",
         met ? "text-slate-300" : "text-slate-500"
       )}>
         {text}
