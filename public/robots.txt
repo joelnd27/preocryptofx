@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /profile
+Disallow: /trade
+
+Sitemap: https://preocryptofx.com/sitemap.xml
