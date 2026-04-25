@@ -33,7 +33,9 @@ export default function Transactions() {
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
   const [amount, setAmount] = useState('');
   const [phone, setPhone] = useState(user?.phone || '');
-  const [paymentMethod, setPaymentMethod] = useState<'MPESA'>('MPESA');
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'MPESA' | 'CRYPTO'>('MPESA');
   const [withdrawalMethod, setWithdrawalMethod] = useState<'MPESA' | 'BANK'>('MPESA');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
@@ -149,22 +151,11 @@ export default function Transactions() {
 
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (paymentMethod !== 'MPESA' && modalType === 'DEPOSIT') return;
     
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) return;
 
     if (modalType === 'DEPOSIT') {
-      if (paymentMethod !== 'MPESA') {
-        setAlertConfig({
-          isOpen: true,
-          title: 'Method Not Supported',
-          message: 'Currently only M-Pesa is supported for deposits.',
-          type: 'info'
-        });
-        return;
-      }
-      
       if (user?.activeAccount === 'DEMO') {
         setAlertConfig({
           isOpen: true,
@@ -175,11 +166,23 @@ export default function Transactions() {
         return;
       }
 
-      if (val < MIN_DEPOSIT_USD) {
+      const minDeposit = paymentMethod === 'CRYPTO' ? 29 : 17;
+      if (val < minDeposit) {
         setAlertConfig({
           isOpen: true,
           title: 'Minimum Deposit',
-          message: `The minimum deposit amount is $${MIN_DEPOSIT_USD}.`,
+          message: `The minimum deposit amount for ${paymentMethod === 'MPESA' ? 'M-Pesa' : 'Crypto'} is $${minDeposit}.`,
+          type: 'info'
+        });
+        return;
+      }
+
+      if (paymentMethod === 'CRYPTO') {
+        // Crypto deposits are handled manually via the displayed addresses
+        setAlertConfig({
+          isOpen: true,
+          title: 'Manual Verification',
+          message: 'Please send the exact amount to the displayed address. Your balance will be updated once the transaction is confirmed on the blockchain (usually 10-30 mins).',
           type: 'info'
         });
         return;
@@ -264,11 +267,12 @@ export default function Transactions() {
         return;
       }
 
-      if (val < MIN_WITHDRAWAL_USD) {
+      const minWithdrawal = withdrawalMethod === 'BANK' || withdrawalMethod === 'MPESA' ? 17 : 54;
+      if (val < minWithdrawal) {
         setAlertConfig({
           isOpen: true,
           title: 'Minimum Withdrawal',
-          message: `The minimum withdrawal amount is $${MIN_WITHDRAWAL_USD}.`,
+          message: `The minimum withdrawal amount for ${withdrawalMethod} is $${minWithdrawal}.`,
           type: 'info'
         });
         return;
@@ -292,7 +296,9 @@ export default function Transactions() {
         status: 'pending',
         timestamp: Date.now(),
         accountType: user?.activeAccount || 'DEMO',
-        method: withdrawalMethod
+        method: withdrawalMethod,
+        bankName: withdrawalMethod === 'BANK' ? bankName : undefined,
+        accountNumber: withdrawalMethod === 'BANK' ? accountNumber : phone
       });
       
       setAlertConfig({
@@ -354,28 +360,6 @@ export default function Transactions() {
           </div>
         </div>
       </div>
-
-      {user?.verificationStatus !== 'verified' && (
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-4 sm:p-6 bg-amber-500/10 border border-amber-500/20 rounded-3xl flex items-start gap-4"
-        >
-          <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-500 shrink-0">
-            <ShieldCheck size={24} />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-sm sm:text-base font-bold text-amber-900 dark:text-amber-500">
-              Identity Verification Benefits
-            </h3>
-            <p className="text-xs sm:text-sm text-amber-800/80 dark:text-amber-400/80 leading-relaxed">
-              {user?.verificationStatus === 'pending' 
-                ? "Your document verification is currently in progress. While waiting, you can still withdraw up to $100 per transaction. Fully verified accounts get unlimited limits."
-                : "Verify your account to unlock all features, including withdrawals over $100 and more than 5 transactions per day. Head to the Profile section to submit your documents."}
-            </p>
-          </div>
-        </motion.div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
@@ -803,14 +787,14 @@ export default function Transactions() {
                     <form onSubmit={handleTransaction} className="space-y-4">
                       <div className="space-y-2">
                         <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Method</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           {modalType === 'DEPOSIT' ? (
                             <>
                               <button
                                 type="button"
                                 onClick={() => setPaymentMethod('MPESA')}
                                 className={cn(
-                                  "p-2.5 rounded-xl border flex items-center gap-2 transition-all",
+                                  "p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all",
                                   paymentMethod === 'MPESA' ? "bg-blue-600 border-blue-600 text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
                                 )}
                               >
@@ -819,7 +803,18 @@ export default function Transactions() {
                               </button>
                               <button
                                 type="button"
-                                className="p-2.5 rounded-xl border flex items-center gap-2 bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed relative overflow-hidden"
+                                onClick={() => setPaymentMethod('CRYPTO')}
+                                className={cn(
+                                  "p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all",
+                                  paymentMethod === 'CRYPTO' ? "bg-blue-600 border-blue-600 text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
+                                )}
+                              >
+                                <Wallet size={14} />
+                                <span className="text-[10px] font-bold">Crypto</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed relative overflow-hidden"
                               >
                                 <CreditCard size={14} />
                                 <span className="text-[10px] font-bold">Card</span>
@@ -832,7 +827,7 @@ export default function Transactions() {
                                 type="button"
                                 onClick={() => setWithdrawalMethod('MPESA')}
                                 className={cn(
-                                  "p-2.5 rounded-xl border flex items-center gap-2 transition-all",
+                                  "p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all",
                                   withdrawalMethod === 'MPESA' ? "bg-blue-600 border-blue-600 text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
                                 )}
                               >
@@ -843,18 +838,38 @@ export default function Transactions() {
                                 type="button"
                                 onClick={() => setWithdrawalMethod('BANK')}
                                 className={cn(
-                                  "p-2.5 rounded-xl border flex items-center gap-2 transition-all",
+                                  "p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all",
                                   withdrawalMethod === 'BANK' ? "bg-blue-600 border-blue-600 text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
                                 )}
                               >
                                 <Wallet size={14} />
                                 <span className="text-[10px] font-bold">Bank</span>
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => setWithdrawalMethod('CRYPTO')}
+                                className={cn(
+                                  "p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all",
+                                  withdrawalMethod === 'CRYPTO' ? "bg-blue-600 border-blue-600 text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
+                                )}
+                              >
+                                <RefreshCw size={14} />
+                                <span className="text-[10px] font-bold">Crypto</span>
+                              </button>
                             </>
                           )}
                         </div>
                       </div>
  
+                      {modalType === 'WITHDRAW' && user?.verificationStatus !== 'verified' && (
+                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-start gap-3">
+                          <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                          <p className="text-[10px] text-blue-700 dark:text-blue-400 font-medium">
+                            Verify your account to withdraw more than $100. Unverified accounts have a $100 daily limit.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="space-y-2">
                         <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Amount (USD)</label>
                         <div className="relative">
@@ -862,7 +877,9 @@ export default function Transactions() {
                           <input
                             type="number"
                             required
-                            min={modalType === 'DEPOSIT' ? MIN_DEPOSIT_USD : MIN_WITHDRAWAL_USD}
+                            min={modalType === 'DEPOSIT' 
+                              ? (paymentMethod === 'CRYPTO' ? 29 : 17) 
+                              : (withdrawalMethod === 'CRYPTO' ? 54 : 17)}
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
                             className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white"
@@ -870,7 +887,9 @@ export default function Transactions() {
                           />
                         </div>
                         <p className="text-[9px] text-slate-500 flex items-center justify-between px-1">
-                          <span>Min: ${modalType === 'DEPOSIT' ? MIN_DEPOSIT_USD : MIN_WITHDRAWAL_USD}</span>
+                          <span>Min: ${modalType === 'DEPOSIT' 
+                            ? (paymentMethod === 'CRYPTO' ? 29 : 17) 
+                            : (withdrawalMethod === 'CRYPTO' ? 54 : 17)}</span>
                           <span className="text-blue-500 font-bold">
                             ≈ {(parseFloat(amount || '0') * (modalType === 'DEPOSIT' ? USD_TO_KES : currentWithdrawalRate)).toLocaleString()} KES
                           </span>
@@ -882,26 +901,124 @@ export default function Transactions() {
                         )}
                       </div>
  
-                      <div className="space-y-2">
-                        <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          {modalType === 'DEPOSIT' ? 'M-Pesa Number' : 'Registered Phone'}
-                        </label>
-                        <div className="relative">
-                          <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                          <input
-                            type="tel"
-                            required
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            className={cn(
-                              "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
-                              modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"
-                            )}
-                            placeholder="2547XXXXXXXX"
-                            readOnly={modalType === 'WITHDRAW'}
-                          />
+                      {modalType === 'DEPOSIT' && paymentMethod === 'CRYPTO' ? (
+                        <div className="space-y-4 pt-2">
+                          <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                            <div className="space-y-2">
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">BTC Address</label>
+                              <div className="flex items-center gap-2">
+                                <input readOnly value="bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
+                                <button type="button" onClick={() => { navigator.clipboard.writeText('bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">ETH (ERC20) Address</label>
+                              <div className="flex items-center gap-2">
+                                <input readOnly value="0x71C7656EC7ab88b098defB751B7401B5f6d8976F" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
+                                <button type="button" onClick={() => { navigator.clipboard.writeText('0x71C7656EC7ab88b098defB751B7401B5f6d8976F'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">USDT (TRC20) Address</label>
+                              <div className="flex items-center gap-2">
+                                <input readOnly value="TR7NHqjuS2p3yAfEnZddP7F9vW55m5fD6m" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
+                                <button type="button" onClick={() => { navigator.clipboard.writeText('TR7NHqjuS2p3yAfEnZddP7F9vW55m5fD6m'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-[9px] text-amber-600 dark:text-amber-500 font-bold italic text-center">
+                            * Send only the specified asset to these addresses. Deposits update within 10-30 mins.
+                          </p>
                         </div>
-                      </div>
+                      ) : (
+                        <>
+                          <div className={cn("space-y-2", modalType === 'WITHDRAW' && (withdrawalMethod === 'BANK' || withdrawalMethod === 'CRYPTO') && "hidden")}>
+                            <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                              {modalType === 'DEPOSIT' ? 'M-Pesa Number' : 'Registered Phone'}
+                            </label>
+                            <div className="relative">
+                              <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                              <input
+                                type="tel"
+                                required={modalType === 'DEPOSIT' || (modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA')}
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                className={cn(
+                                  "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
+                                  modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"
+                                )}
+                                placeholder="2547XXXXXXXX"
+                                readOnly={modalType === 'WITHDRAW'}
+                              />
+                            </div>
+                          </div>
+
+                          {modalType === 'WITHDRAW' && withdrawalMethod === 'BANK' && (
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Bank Name</label>
+                                <select 
+                                  required
+                                  value={bankName}
+                                  onChange={(e) => setBankName(e.target.value)}
+                                  className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-4 text-sm font-bold focus:outline-none focus:border-blue-500 transition-all text-slate-900 dark:text-white"
+                                >
+                                  <option value="">Select Bank</option>
+                                  <option value="KCB">KCB Bank</option>
+                                  <option value="EQUITY">Equity Bank</option>
+                                  <option value="COOP">Co-operative Bank</option>
+                                  <option value="ABSA">Absa Bank</option>
+                                  <option value="NCBA">NCBA Bank</option>
+                                  <option value="STANBIC">Stanbic Bank</option>
+                                  <option value="I&M">I&M Bank</option>
+                                  <option value="KINGDOM">Kingdom Bank</option>
+                                  <option value="DTB">Diamond Trust Bank (DTB)</option>
+                                  <option value="STANCHART">Standard Chartered</option>
+                                  <option value="FAMILY">Family Bank</option>
+                                  <option value="NATIONAL">National Bank</option>
+                                  <option value="OTHER">Other Bank</option>
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Account Number</label>
+                                <div className="relative">
+                                  <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                  <input
+                                    type="text"
+                                    required
+                                    value={accountNumber}
+                                    onChange={(e) => setAccountNumber(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white"
+                                    placeholder="Enter account number"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {modalType === 'WITHDRAW' && withdrawalMethod === 'CRYPTO' && (
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Crypto Wallet Address</label>
+                                <div className="relative">
+                                  <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                  <input
+                                    type="text"
+                                    required
+                                    value={accountNumber}
+                                    onChange={(e) => setAccountNumber(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white"
+                                    placeholder="Enter your BTC/ETH/USDT address"
+                                  />
+                                </div>
+                              </div>
+                              <p className="text-[9px] text-blue-500 font-bold italic">
+                                * Ensure you enter the correct address. We are not responsible for funds sent to wrong wallets.
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      )}
  
                       <button
                         type="submit"
