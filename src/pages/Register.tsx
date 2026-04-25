@@ -9,7 +9,32 @@ export default function Register() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('+254');
+  const [countryFlag, setCountryFlag] = useState('🇰🇪');
   const [password, setPassword] = useState('');
+
+  // Detect country on mount
+  React.useEffect(() => {
+    const detectCountry = async () => {
+      try {
+        const response = await fetch('https://ipapi.co/json/');
+        const data = await response.json();
+        if (data.country_calling_code) {
+          setPhone(data.country_calling_code);
+          // Try to get country flag emoji if available
+          if (data.country_code) {
+            const codePoints = data.country_code
+              .toUpperCase()
+              .split('')
+              .map((char: string) => 127397 + char.charCodeAt(0));
+            setCountryFlag(String.fromCodePoint(...codePoints));
+          }
+        }
+      } catch (err) {
+        console.error('Country detection failed:', err);
+      }
+    };
+    detectCountry();
+  }, []);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
   const [role, setRole] = useState<'user' | 'marketer'>('user');
@@ -123,7 +148,7 @@ export default function Register() {
               <label className="text-sm font-medium text-slate-300 ml-1">Phone Number</label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
-                  <span className="flex items-center gap-1">🇰🇪</span>
+                  <span className="flex items-center gap-1">{countryFlag}</span>
                 </div>
                 <input
                   type="tel"
@@ -131,7 +156,7 @@ export default function Register() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
-                  placeholder="+254 700 000 000"
+                  placeholder="Enter phone number"
                 />
               </div>
             </div>
