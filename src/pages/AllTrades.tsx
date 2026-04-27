@@ -39,7 +39,11 @@ export default function AllTrades() {
       const matchesFilter = filter === 'ALL' || t.status === filter;
       return matchesSearch && matchesFilter;
     })
-    .sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+    .sort((a, b) => {
+      const timeA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+      const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
 
   return (
     <div className="space-y-8">

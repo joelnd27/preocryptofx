@@ -427,6 +427,37 @@ export default function Trade() {
     return Number((trade.amount * percentChange * 1.5).toFixed(2));
   };
 
+  const handleUseSignal = async () => {
+    if (!aiSignal) return;
+    
+    const coin = CRYPTO_LIST.find(c => c.symbol === aiSignal.coin);
+    if (coin) setSelectedCoin(coin);
+    setSelectedType(aiSignal.type);
+
+    const tradeAmount = parseFloat(amount);
+    if (isNaN(tradeAmount) || tradeAmount < MIN_STAKE_USD) {
+      // If no valid amount, just scroll to panel and focus amount
+      const element = document.getElementById('trading-panel');
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      setAlertConfig({
+        isOpen: true,
+        title: 'Signal Ready',
+        message: 'The signal has been pre-filled. Please enter a trade amount and confirm.',
+        type: 'info'
+      });
+      return;
+    }
+
+    // High confidence signals give users confidence to auto-execute
+    try {
+      await handleTrade(aiSignal.type);
+    } catch (error) {
+      console.error('Signal trade failed:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] gap-6">
       {/* Top Bar for Mobile Asset Selection */}
@@ -893,15 +924,7 @@ export default function Trade() {
                 </div>
 
                 <button
-                  onClick={() => {
-                    const coin = CRYPTO_LIST.find(c => c.symbol === aiSignal.coin);
-                    if (coin) setSelectedCoin(coin);
-                    setSelectedType(aiSignal.type);
-                    const element = document.getElementById('trading-panel');
-                    if (element) {
-                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                  }}
+                  onClick={handleUseSignal}
                   className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-600/20"
                 >
                   Use Signal

@@ -272,7 +272,11 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {(user?.trades || [])
-                    .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
+                    .sort((a, b) => {
+                      const timeA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+                      const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+                      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+                    })
                     .slice(0, 5)
                     .map((trade) => (
                     <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">

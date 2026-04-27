@@ -686,21 +686,43 @@ export function useStore() {
         duration: trade.duration
       };
 
-      let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().single();
+      console.log('[Supabase] Inserting trade:', tradeData);
 
-      if (tradeError && (tradeError.message?.includes('duration') || tradeError.message?.includes('target_profit') || tradeError.code === 'PGRST204')) {
-        console.warn('Specialized columns missing in trades table, retrying without them...');
-        delete tradeData.duration;
-        delete tradeData.target_profit;
-        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(tradeData).select().single();
-        if (retryError) throw retryError;
+      let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().maybeSingle();
+
+      if (tradeError && (tradeError.message?.includes('duration') || tradeError.message?.includes('target_profit') || tradeError.code === 'PGRST204' || tradeError.code === '42703')) {
+        console.warn('Specialized columns missing or schema mismatch in trades table, retrying simpler insert...');
+        const simplifiedTrade = {
+          user_id: user.id,
+          coin: trade.coin,
+          amount: trade.amount,
+          type: trade.type,
+          price: trade.price,
+          status: 'OPEN',
+          profit: 0,
+          account_type: trade.accountType,
+          timestamp: new Date(newTrade.timestamp).toISOString()
+        };
+        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(simplifiedTrade).select().maybeSingle();
+        if (retryError) {
+          console.error('[Supabase] Retry failed:', retryError);
+          throw retryError;
+        }
         insertedTrade = retryTrade;
         tradeError = null;
       }
 
-      if (tradeError) throw tradeError;
-      newTrade.id = insertedTrade.id;
+      if (tradeError) {
+        console.error('[Supabase] Trade insert error:', tradeError);
+        throw tradeError;
+      }
 
+      if (insertedTrade) {
+        newTrade.id = insertedTrade.id;
+        console.log('[Supabase] Trade confirmed in DB:', insertedTrade.id);
+      }
+
+      console.log(`[Supabase] Updating balance for ${user.id} to ${newBalance}`);
       await supabase.from('users').update({
         [isReal ? 'real_balance' : 'demo_balance']: newBalance
       }).eq('id', user.id);
@@ -759,26 +781,38 @@ export function useStore() {
     // 1. Sync with Supabase first
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('trades').update({
+        console.log(`[Supabase] Closing trade ${tradeId} with profit ${currentProfit}`);
+        const { error: tradeUpdateError } = await supabase.from('trades').update({
           status: 'CLOSED',
           profit: currentProfit
         }).eq('id', tradeId);
 
-        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).single();
+        if (tradeUpdateError) throw tradeUpdateError;
+
+        const { data: u, error: userFetchError } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).maybeSingle();
+        if (userFetchError) throw userFetchError;
+        
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
-          await supabase.from('users').update({
+          
+          console.log(`[Supabase] Updating profits for ${user.id}: Total=${newTotal}, Daily=${newDaily}`);
+          const { error: profitUpdateError } = await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
             [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
           }).eq('id', user.id);
+          
+          if (profitUpdateError) throw profitUpdateError;
         }
 
-        await supabase.from('users').update({
+        console.log(`[Supabase] Updating balance for ${user.id} to ${newBalance}`);
+        const { error: balanceUpdateError } = await supabase.from('users').update({
           [isReal ? 'real_balance' : 'demo_balance']: newBalance
         }).eq('id', user.id);
+        
+        if (balanceUpdateError) throw balanceUpdateError;
       } catch (err) {
-        console.error('Supabase sync error in closeTrade:', err);
+        console.error('CRITICAL: Supabase sync error in closeTrade:', err);
       }
     }
 
@@ -851,8 +885,11 @@ export function useStore() {
     if (!user || user.trades.length === 0) return;
 
     const interval = setInterval(() => {
+      const currentUser = userRef.current;
+      if (!currentUser) return;
+
       const now = Date.now();
-      const openTradesWithDuration = user.trades.filter(t => 
+      const openTradesWithDuration = (currentUser.trades || []).filter(t => 
         t.status === 'OPEN' && t.duration && t.duration > 0
       );
 
@@ -866,7 +903,7 @@ export function useStore() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [user?.trades, user?.id]);
+  }, [user?.id]); // Only depend on user.id, userRef will handle the rest
 
   // Marketer Auto-Process for existing pending withdrawals on load
   // (Consolidated into universal auto-process above)
