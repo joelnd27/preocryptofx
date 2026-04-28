@@ -585,11 +585,13 @@ export function useStore() {
   };
 
   const addTrade = async (trade: Trade, isUserInitiated: boolean = false) => {
-    console.log('addTrade called:', { trade, isUserInitiated });
-    if (!user) {
+    const currentUser = userRef.current;
+    if (!currentUser) {
       console.warn('addTrade: No user found');
       return;
     }
+    
+    console.log('addTrade called:', { trade, isUserInitiated });
     
     // Strict check: trades must be user-initiated
     if (!isUserInitiated) {
@@ -597,7 +599,7 @@ export function useStore() {
       return;
     }
 
-    const currentBalance = trade.accountType === 'REAL' ? user.realBalance : user.demoBalance;
+    const currentBalance = trade.accountType === 'REAL' ? currentUser.realBalance : currentUser.demoBalance;
     
     // Constraints
     if (trade.amount < MIN_STAKE_USD) {
@@ -612,18 +614,18 @@ export function useStore() {
     
     // Apply win rate logic
     const isDemo = trade.accountType === 'DEMO';
-    const isMarketer = user.role === 'marketer';
-    const isAdmin = user.role === 'admin';
+    const isMarketer = currentUser.role === 'marketer';
+    const isAdmin = currentUser.role === 'admin';
     
     // Win rate logic:
     // 1. Demo accounts: ~92% (ensure 9 wins out of 10)
-    // 2. Real accounts (Marketers/Admins): 95%
+    // 2. Real accounts (Marketers/Admins): 98%
     // 3. Real accounts (Normal users): 0.5% - 2% (Extremely tight)
     let winChance = 0.5;
     if (isDemo) {
       winChance = 0.92; 
     } else if (isMarketer || isAdmin) {
-      winChance = 0.95;
+      winChance = 0.98;
     } else {
       // Normal user: extremely hard to grow small balance
       if (currentBalance < 50) {
@@ -662,18 +664,11 @@ export function useStore() {
     const isReal = trade.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
-    // Ensure we use the latest balance
-    let freshBalance = user[balanceKey];
-    setUser(prev => {
-      if (prev) freshBalance = prev[balanceKey];
-      return prev;
-    });
-
-    const newBalance = Number((freshBalance - trade.amount).toFixed(2));
+    const newBalance = Number((currentBalance - trade.amount).toFixed(2));
     
     if (isSupabaseConfigured()) {
       const tradeData: any = {
-        user_id: user.id,
+        user_id: currentUser.id,
         coin: trade.coin,
         amount: trade.amount,
         type: trade.type,
@@ -693,7 +688,7 @@ export function useStore() {
       if (tradeError && (tradeError.message?.includes('duration') || tradeError.message?.includes('target_profit') || tradeError.code === 'PGRST204' || tradeError.code === '42703')) {
         console.warn('Specialized columns missing or schema mismatch in trades table, retrying simpler insert...');
         const simplifiedTrade = {
-          user_id: user.id,
+          user_id: currentUser.id,
           coin: trade.coin,
           amount: trade.amount,
           type: trade.type,
@@ -722,19 +717,16 @@ export function useStore() {
         console.log('[Supabase] Trade confirmed in DB:', insertedTrade.id);
       }
 
-      console.log(`[Supabase] Updating balance for ${user.id} to ${newBalance}`);
+      console.log(`[Supabase] Updating balance for ${currentUser.id} to ${newBalance}`);
       await supabase.from('users').update({
         [isReal ? 'real_balance' : 'demo_balance']: newBalance
-      }).eq('id', user.id);
+      }).eq('id', currentUser.id);
       
-      // Store target profit in a way we can retrieve it or just keep it in state
-      // For now, we'll rely on the state update below
-
       // Cleanup old trades (Keep latest 50)
       const { data: oldTrades } = await supabase
         .from('trades')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', currentUser.id)
         .order('timestamp', { ascending: false })
         .range(50, 1000);
       
@@ -752,7 +744,7 @@ export function useStore() {
         [balanceKey]: newBalance
       };
     });
-    setUsers(prev => prev.map(u => u.id === user.id ? {
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? {
       ...u,
       trades: [newTrade, ...(u.trades || [])],
       [balanceKey]: newBalance
@@ -760,23 +752,19 @@ export function useStore() {
   };
 
   const closeTrade = async (tradeId: string, currentProfit: number) => {
+    const currentUser = userRef.current;
+    if (!currentUser) return;
+    
     console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
     
-    if (!user) return;
-    const trade = user.trades.find(t => t.id === tradeId);
+    const trade = (currentUser.trades || []).find(t => t.id === tradeId);
     if (!trade || trade.status === 'CLOSED') return;
 
     const isReal = trade.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
-    // Ensure we use the latest balance for calculation to avoid race conditions
-    let freshBalance = user[balanceKey];
-    setUser(prev => {
-      if (prev) freshBalance = prev[balanceKey];
-      return prev;
-    });
-
-    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((freshBalance + trade.amount + currentProfit).toFixed(2)));
+    const currentBalance = currentUser[balanceKey];
+    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((currentBalance + trade.amount + currentProfit).toFixed(2)));
 
     // 1. Sync with Supabase first
     if (isSupabaseConfigured()) {
@@ -789,26 +777,26 @@ export function useStore() {
 
         if (tradeUpdateError) throw tradeUpdateError;
 
-        const { data: u, error: userFetchError } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', user.id).maybeSingle();
+        const { data: u, error: userFetchError } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', currentUser.id).maybeSingle();
         if (userFetchError) throw userFetchError;
         
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
           
-          console.log(`[Supabase] Updating profits for ${user.id}: Total=${newTotal}, Daily=${newDaily}`);
+          console.log(`[Supabase] Updating profits for ${currentUser.id}: Total=${newTotal}, Daily=${newDaily}`);
           const { error: profitUpdateError } = await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
             [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
-          }).eq('id', user.id);
+          }).eq('id', currentUser.id);
           
           if (profitUpdateError) throw profitUpdateError;
         }
 
-        console.log(`[Supabase] Updating balance for ${user.id} to ${newBalance}`);
+        console.log(`[Supabase] Updating balance for ${currentUser.id} to ${newBalance}`);
         const { error: balanceUpdateError } = await supabase.from('users').update({
           [isReal ? 'real_balance' : 'demo_balance']: newBalance
-        }).eq('id', user.id);
+        }).eq('id', currentUser.id);
         
         if (balanceUpdateError) throw balanceUpdateError;
       } catch (err) {
@@ -844,7 +832,7 @@ export function useStore() {
     });
 
     setUsers(prev => prev.map(u => {
-      if (u.id !== user?.id) return u;
+      if (u.id !== currentUser.id) return u;
       
       const realTotal = isReal ? Number((u.totalProfitReal || 0) + currentProfit).toFixed(2) : u.totalProfitReal;
       const demoTotal = !isReal ? Number((u.totalProfitDemo || 0) + currentProfit).toFixed(2) : u.totalProfitDemo;
@@ -1685,7 +1673,7 @@ export function useStore() {
         if (isDemo) {
           winChance = 0.92;
         } else if (isMarketer || isAdmin) {
-          winChance = 0.95;
+          winChance = 0.98;
         } else {
           // Normal user: Extremely tight win chance
           winChance = 0.02; 

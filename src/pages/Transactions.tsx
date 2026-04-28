@@ -147,7 +147,11 @@ export default function Transactions() {
       const matchesFilter = filter === 'ALL' || tx.type === filter;
       return matchesSearch && matchesFilter;
     })
-    .sort((a, b) => b.timestamp - a.timestamp);
+    .sort((a, b) => {
+      const timeA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+      const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
 
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
