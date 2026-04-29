@@ -271,7 +271,7 @@ export default function Transactions() {
         return;
       }
 
-      const minWithdrawal = withdrawalMethod === 'BANK' || withdrawalMethod === 'MPESA' ? 17 : 54;
+      const minWithdrawal = withdrawalMethod === 'BANK' ? 34 : (withdrawalMethod === 'MPESA' ? 17 : 54);
       if (val < minWithdrawal) {
         setAlertConfig({
           isOpen: true,
@@ -883,7 +883,7 @@ export default function Transactions() {
                             required
                             min={modalType === 'DEPOSIT' 
                               ? (paymentMethod === 'CRYPTO' ? 29 : 17) 
-                              : (withdrawalMethod === 'CRYPTO' ? 54 : 17)}
+                              : (withdrawalMethod === 'CRYPTO' ? 54 : (withdrawalMethod === 'BANK' ? 34 : 17))}
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
                             className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white"
@@ -893,7 +893,7 @@ export default function Transactions() {
                         <p className="text-[9px] text-slate-500 flex items-center justify-between px-1">
                           <span>Min: ${modalType === 'DEPOSIT' 
                             ? (paymentMethod === 'CRYPTO' ? 29 : 17) 
-                            : (withdrawalMethod === 'CRYPTO' ? 54 : 17)}</span>
+                            : (withdrawalMethod === 'CRYPTO' ? 54 : (withdrawalMethod === 'BANK' ? 34 : 17))}</span>
                           <span className="text-blue-500 font-bold">
                             ≈ {(parseFloat(amount || '0') * (modalType === 'DEPOSIT' ? USD_TO_KES : currentWithdrawalRate)).toLocaleString()} KES
                           </span>
