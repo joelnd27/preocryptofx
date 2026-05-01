@@ -151,7 +151,8 @@ export default function Transactions() {
       const timeA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
       const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
       return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
-    });
+    })
+    .slice(0, 20);
 
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
