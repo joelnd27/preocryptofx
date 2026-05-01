@@ -91,29 +91,34 @@ export function useStore() {
     if (!user) return;
 
     const checkReset = async () => {
-      const today = new Date().toISOString().split('T')[0];
-      if (user.lastProfitResetDate !== today) {
-        console.log('Resetting daily profit for new day:', today);
-        
-        setUser(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            dailyProfit: 0,
-            dailyProfitReal: 0,
-            dailyProfitDemo: 0,
-            lastProfitResetDate: today
-          };
-        });
+        const today = new Date().toISOString().split('T')[0];
+        if (user.lastProfitResetDate !== today) {
+          console.log('Resetting daily statistics for new day:', today);
+          
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              dailyProfit: 0,
+              dailyProfitReal: 0,
+              dailyProfitDemo: 0,
+              dailyTrades: 0,
+              dailyTradesReal: 0,
+              dailyTradesDemo: 0,
+              lastProfitResetDate: today
+            };
+          });
 
-        if (isSupabaseConfigured()) {
-          await supabase.from('users').update({
-            daily_profit_real: 0,
-            daily_profit_demo: 0,
-            last_profit_reset_date: today
-          }).eq('id', user.id);
+          if (isSupabaseConfigured()) {
+            await supabase.from('users').update({
+              daily_profit_real: 0,
+              daily_profit_demo: 0,
+              daily_trades_real: 0,
+              daily_trades_demo: 0,
+              last_profit_reset_date: today
+            }).eq('id', user.id);
+          }
         }
-      }
     };
 
     checkReset();
@@ -237,10 +242,15 @@ export function useStore() {
           dailyProfit: userData.active_account === 'REAL'
             ? Number(userData.daily_profit_real || 0)
             : Number(userData.daily_profit_demo || 0),
+          dailyTrades: userData.active_account === 'REAL'
+            ? Number(userData.daily_trades_real || 0)
+            : Number(userData.daily_trades_demo || 0),
           totalProfitReal: Number(userData.total_profit_real || 0),
           totalProfitDemo: Number(userData.total_profit_demo || 0),
           dailyProfitReal: Number(userData.daily_profit_real || 0),
           dailyProfitDemo: Number(userData.daily_profit_demo || 0),
+          dailyTradesReal: Number(userData.daily_trades_real || 0),
+          dailyTradesDemo: Number(userData.daily_trades_demo || 0),
           lastProfitResetDate: userData.last_profit_reset_date,
           trades: sortedTrades.map((t: any) => {
             const timestamp = t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime();
@@ -330,7 +340,12 @@ export function useStore() {
             role: (ADMIN_EMAILS.includes(session.user.email?.toLowerCase() || '') && ADMIN_IDS.includes(session.user.id)) ? 'admin' : 'user',
             demo_balance: 10000,
             real_balance: 0,
-            active_account: 'DEMO'
+            active_account: 'DEMO',
+            daily_profit_real: 0,
+            daily_profit_demo: 0,
+            daily_trades_real: 0,
+            daily_trades_demo: 0,
+            last_profit_reset_date: new Date().toISOString().split('T')[0]
           })
           .select()
           .single();
@@ -514,10 +529,13 @@ export function useStore() {
       verificationDocuments: {},
       profit: 0,
       dailyProfit: 0,
+      dailyTrades: 0,
       totalProfitReal: 0,
       totalProfitDemo: 0,
       dailyProfitReal: 0,
       dailyProfitDemo: 0,
+      dailyTradesReal: 0,
+      dailyTradesDemo: 0,
       lastProfitResetDate: new Date().toISOString().split('T')[0],
       trades: [],
       transactions: [],
@@ -549,15 +567,17 @@ export function useStore() {
       await supabase.from('users').update({ active_account: type }).eq('id', user.id);
     }
 
-    // Swap profits immediately based on stored caches
+    // Swap profits and trades immediately based on stored caches
     const newProfit = type === 'REAL' ? (user.totalProfitReal || 0) : (user.totalProfitDemo || 0);
     const newDailyProfit = type === 'REAL' ? (user.dailyProfitReal || 0) : (user.dailyProfitDemo || 0);
-
+    const newDailyTrades = type === 'REAL' ? (user.dailyTradesReal || 0) : (user.dailyTradesDemo || 0);
+    
     const updatedUser = { 
       ...user, 
       activeAccount: type,
       profit: newProfit,
-      dailyProfit: newDailyProfit
+      dailyProfit: newDailyProfit,
+      dailyTrades: newDailyTrades
     };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
@@ -769,17 +789,19 @@ export function useStore() {
 
         if (tradeUpdateError) throw tradeUpdateError;
 
-        const { data: u, error: userFetchError } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', currentUser.id).maybeSingle();
+        const { data: u, error: userFetchError } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo').eq('id', currentUser.id).maybeSingle();
         if (userFetchError) throw userFetchError;
         
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
+          const newDailyTrades = (Number(isReal ? u.daily_trades_real : u.daily_trades_demo) || 0) + 1;
           
-          console.log(`[Supabase] Updating profits for ${currentUser.id}: Total=${newTotal}, Daily=${newDaily}`);
+          console.log(`[Supabase] Updating profits for ${currentUser.id}: Total=${newTotal}, Daily=${newDaily}, Trades=${newDailyTrades}`);
           const { error: profitUpdateError } = await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
+            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily,
+            [isReal ? 'daily_trades_real' : 'daily_trades_demo']: newDailyTrades
           }).eq('id', currentUser.id);
           
           if (profitUpdateError) throw profitUpdateError;
@@ -816,10 +838,15 @@ export function useStore() {
         dailyProfit: prev.activeAccount === trade.accountType
           ? Number((prev.dailyProfit + currentProfit).toFixed(2))
           : prev.dailyProfit,
+        dailyTrades: prev.activeAccount === trade.accountType
+          ? (prev.dailyTrades || 0) + 1
+          : prev.dailyTrades,
         totalProfitReal: Number(realTotal),
         totalProfitDemo: Number(demoTotal),
         dailyProfitReal: Number(realDaily),
-        dailyProfitDemo: Number(demoDaily)
+        dailyProfitDemo: Number(demoDaily),
+        dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
+        dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
       };
     });
 
@@ -1073,13 +1100,15 @@ export function useStore() {
       }).eq('user_id', currentUser.id);
 
       try {
-        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo').eq('id', currentUser.id).single();
+        const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo').eq('id', currentUser.id).single();
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + finalAmount).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + finalAmount).toFixed(2));
+          const newDailyTrades = (Number(isReal ? u.daily_trades_real : u.daily_trades_demo) || 0) + 1;
           await supabase.from('users').update({
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily
+            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily,
+            [isReal ? 'daily_trades_real' : 'daily_trades_demo']: newDailyTrades
           }).eq('id', currentUser.id);
         }
         
@@ -1146,10 +1175,13 @@ export function useStore() {
         [bKey]: finalBalance,
         profit: Number(((prev.profit || 0) + finalAmount).toFixed(2)),
         dailyProfit: Number(((prev.dailyProfit || 0) + finalAmount).toFixed(2)),
+        dailyTrades: (prev.dailyTrades || 0) + 1,
         totalProfitReal: isRealAccount ? Number(((prev.totalProfitReal || 0) + finalAmount).toFixed(2)) : prev.totalProfitReal,
         totalProfitDemo: !isRealAccount ? Number(((prev.totalProfitDemo || 0) + finalAmount).toFixed(2)) : prev.totalProfitDemo,
         dailyProfitReal: isRealAccount ? Number(((prev.dailyProfitReal || 0) + finalAmount).toFixed(2)) : prev.dailyProfitReal,
         dailyProfitDemo: !isRealAccount ? Number(((prev.dailyProfitDemo || 0) + finalAmount).toFixed(2)) : prev.dailyProfitDemo,
+        dailyTradesReal: isRealAccount ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
+        dailyTradesDemo: !isRealAccount ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo,
         botStats: newStats,
         botLogs: log ? [log, ...(prev.botLogs || [])].slice(0, 50) : (prev.botLogs || []),
         trades: [newTradeEntry, ...(prev.trades || [])].slice(0, 50)

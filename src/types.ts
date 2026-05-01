@@ -21,10 +21,13 @@ export interface User {
   };
   profit: number;
   dailyProfit: number;
+  dailyTrades: number;
   totalProfitReal?: number;
   totalProfitDemo?: number;
   dailyProfitReal?: number;
   dailyProfitDemo?: number;
+  dailyTradesReal?: number;
+  dailyTradesDemo?: number;
   lastProfitResetDate?: string;
   trades: Trade[];
   transactions: Transaction[];

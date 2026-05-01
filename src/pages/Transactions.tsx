@@ -1114,7 +1114,7 @@ export default function Transactions() {
                             <span className="text-xs font-bold uppercase tracking-wider">STK Push Sent</span>
                           </div>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 text-left">
-                            Your balance will update automatically once confirmed. If you've already entered your PIN, you can click "Check Status" below.
+                            Your balance will update automatically once confirmed.
                           </p>
                         </div>
                         <div className="flex flex-col gap-3 w-full">

@@ -111,12 +111,12 @@ export default function Dashboard() {
       trend: `${(user?.profit || 0) >= 0 ? '+' : ''}${profitPercentage.toFixed(1)}%`
     },
     { 
-      label: 'Total Trades', 
-      value: (user?.trades?.length || 0), 
+      label: 'Daily Trades', 
+      value: (user?.dailyTrades || 0), 
       icon: HistoryIcon, 
       color: 'text-amber-500', 
       bg: 'bg-amber-500/10',
-      trend: 'History'
+      trend: 'Today'
     },
     { 
       label: 'Active Trades', 
