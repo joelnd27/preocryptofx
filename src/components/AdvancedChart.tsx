@@ -47,7 +47,7 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
           horzLines: { color: isDarkMode ? '#1e293b' : '#f1f5f9' },
         },
         width: chartContainerRef.current.clientWidth || 800,
-        height: 400,
+        height: chartContainerRef.current.clientHeight || 480,
         timeScale: {
           timeVisible: true,
           secondsVisible: timeframe === '1S' || timeframe === '1M',
@@ -96,7 +96,10 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
 
       const handleResize = () => {
         if (chartContainerRef.current && chartRef.current) {
-          chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+          chartRef.current.applyOptions({ 
+            width: chartContainerRef.current.clientWidth,
+            height: chartContainerRef.current.clientHeight
+          });
         }
       };
 
@@ -344,7 +347,7 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
   }, [data, type, indicators, isDarkMode]);
 
   return (
-    <div className="w-full h-full min-h-[400px] relative font-sans">
+    <div className="w-full h-full min-h-[300px] relative font-sans">
       <div ref={chartContainerRef} className="w-full h-full" />
       
       {/* Indicator Legend Overlay */}

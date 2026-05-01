@@ -560,7 +560,7 @@ export default function Trade() {
 
       <div className="flex-1 flex flex-col gap-6 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
         {/* Main Chart Area */}
-        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm h-[400px] sm:h-[500px] flex flex-col overflow-hidden shrink-0">
+        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm h-[480px] sm:h-[580px] flex flex-col overflow-hidden shrink-0">
           <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
             <div className="hidden lg:flex items-center gap-3">
               <div className="flex items-center gap-2">
