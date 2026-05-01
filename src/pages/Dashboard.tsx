@@ -133,8 +133,8 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white tracking-tight">Trading Dashboard</h1>
-          <p className="text-sm text-slate-500 font-medium">Welcome, {user?.username}. Here's your real-time performance summary.</p>
+          <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Trading Dashboard</h1>
+          <p className="text-[10px] text-slate-500 font-medium">Welcome, {user?.username}. Here's your performance summary.</p>
         </div>
         <div className="flex items-center gap-3">
           {user?.activeAccount === 'DEMO' && (
@@ -181,7 +181,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">{stat.label}</p>
-              <h3 className="text-2xl font-mono font-bold text-slate-900 dark:text-white tabular-nums">{stat.value}</h3>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{stat.value}</h3>
             </div>
           </motion.div>
         ))}
@@ -251,7 +251,7 @@ export default function Dashboard() {
           {/* Recent Trades Table */}
           <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
             <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="font-display font-bold text-slate-900 dark:text-white uppercase tracking-wide">Recent Activity</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white">Recent Activity</h3>
               <button 
                 onClick={() => navigate('/trades')}
                 className="text-xs font-bold text-primary hover:underline"
@@ -296,7 +296,7 @@ export default function Dashboard() {
                           {trade.type}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-mono font-bold text-sm text-slate-900 dark:text-white tabular-nums">${trade.amount.toLocaleString()}</td>
+                      <td className="px-6 py-4 font-bold text-sm text-slate-900 dark:text-white tabular-nums">${trade.amount.toLocaleString()}</td>
                       <td className="px-6 py-4">
                         <span className={cn(
                           "font-mono font-bold text-sm tabular-nums",
@@ -323,7 +323,7 @@ export default function Dashboard() {
           {/* Live AI Feed */}
           <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-display font-bold text-slate-900 dark:text-white uppercase tracking-wide">Market Pulse</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Market Pulse</h3>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Live</span>
                 <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
@@ -381,7 +381,7 @@ export default function Dashboard() {
           {/* AI Bot Promo */}
           <div className="bg-primary p-8 rounded-3xl text-white shadow-xl shadow-primary/20 relative overflow-hidden group">
             <div className="relative z-10">
-              <h3 className="text-xl font-display font-black mb-2 tracking-tight">AI Trading Bots</h3>
+              <h3 className="text-xl font-bold mb-2 tracking-tight">AI Trading Bots</h3>
               <p className="text-white/80 text-xs font-medium mb-6">Automate your portfolio with institutional-grade neural strategies.</p>
               <button 
                 onClick={() => navigate('/bots')}
@@ -395,7 +395,7 @@ export default function Dashboard() {
 
           {/* Notifications */}
           <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-            <h3 className="text-sm font-display font-bold text-slate-900 dark:text-white mb-6 uppercase tracking-wide">Recent Alerts</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-6">Recent Alerts</h3>
             <div className="space-y-4">
               {(user?.transactions || [])
                 .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))

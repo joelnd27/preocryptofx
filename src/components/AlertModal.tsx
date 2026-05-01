@@ -61,7 +61,7 @@ export default function AlertModal({
 
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold text-slate-900 dark:text-white leading-tight">
-                <span className="font-black uppercase tracking-wider mr-2">{title}:</span>
+                <span className="font-bold uppercase tracking-wider mr-2">{title}:</span>
                 <span className="text-slate-500 dark:text-slate-400">{message}</span>
               </p>
             </div>

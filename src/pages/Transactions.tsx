@@ -321,8 +321,8 @@ export default function Transactions() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-slate-900 dark:text-white uppercase tracking-tight">Financial Ledger</h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-mono uppercase tracking-widest">Transaction History & Asset Management</p>
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white">Financial Ledger</h2>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">Transaction History & Asset Management</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative group flex-1 sm:flex-none">
@@ -370,8 +370,8 @@ export default function Transactions() {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm dark:shadow-none">
             <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/20">
-              <h3 className="text-base font-display font-bold uppercase tracking-wide flex items-center gap-2 text-slate-900 dark:text-white">
-                <History size={18} className="text-blue-500" /> Activity Log
+              <h3 className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                <History size={16} className="text-blue-500" /> Activity Log
               </h3>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="relative">

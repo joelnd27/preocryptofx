@@ -352,25 +352,25 @@ export default function AdvancedChart({ data, type, timeframe, isDarkMode, symbo
         {indicators?.rsi && (
           <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 px-2 py-1 rounded backdrop-blur-sm border border-slate-100 dark:border-slate-800">
             <div className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400">RSI (14)</span>
+            <span className="text-[10px] font-bold uppercase text-slate-600 dark:text-slate-400">RSI (14)</span>
           </div>
         )}
         {indicators?.ma && (
           <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 px-2 py-1 rounded backdrop-blur-sm border border-slate-100 dark:border-slate-800">
             <div className="w-2 h-2 rounded-full bg-amber-500" />
-            <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400">MA (10)</span>
+            <span className="text-[10px] font-bold uppercase text-slate-600 dark:text-slate-400">MA (10)</span>
           </div>
         )}
         {indicators?.ema && (
           <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 px-2 py-1 rounded backdrop-blur-sm border border-slate-100 dark:border-slate-800">
             <div className="w-2 h-2 rounded-full bg-purple-500" />
-            <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400">EMA (20)</span>
+            <span className="text-[10px] font-bold uppercase text-slate-600 dark:text-slate-400">EMA (20)</span>
           </div>
         )}
         {indicators?.fibonacci && (
           <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 px-2 py-1 rounded backdrop-blur-sm border border-slate-100 dark:border-slate-800">
             <div className="w-2 h-2 rounded-full bg-slate-400" />
-            <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400">Fibonacci Levels</span>
+            <span className="text-[10px] font-bold uppercase text-slate-600 dark:text-slate-400">Fibonacci Levels</span>
           </div>
         )}
       </div>

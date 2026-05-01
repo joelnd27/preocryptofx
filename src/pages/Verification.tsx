@@ -93,8 +93,8 @@ export default function Verification() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600/10 rounded-2xl text-blue-600 mb-4">
             <Shield size={32} />
           </div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Account Verification</h1>
-          <p className="text-slate-500 dark:text-slate-400">Complete your profile to unlock full trading features</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2">Account Verification</h1>
+          <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">Complete your profile to unlock full trading features</p>
         </div>
 
         <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[32px] p-8 shadow-sm">

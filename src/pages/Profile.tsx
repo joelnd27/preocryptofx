@@ -131,7 +131,7 @@ export default function Profile() {
           
           <div className="text-center md:text-left flex-1">
             <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-white">{user?.username}</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{user?.username}</h2>
               <span className={cn(
                 "px-3 py-1 text-[10px] font-bold rounded-full border flex items-center gap-1 uppercase",
                 user?.verificationStatus === 'verified' ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20" :

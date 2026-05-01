@@ -116,8 +116,8 @@ export default function AdminPanel() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Admin Dashboard</h1>
-          <p className="text-sm text-slate-500 font-medium">Manage users and platform deposits</p>
+          <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Admin Dashboard</h1>
+          <p className="text-[10px] text-slate-500 font-medium">Manage users and platform deposits</p>
         </div>
         <button 
           onClick={loadData}
@@ -139,7 +139,7 @@ export default function AdminPanel() {
             <Users size={20} />
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Users</p>
-          <h3 className="text-xl font-black text-slate-900 dark:text-white">{stats.userCount}</h3>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white">{stats.userCount}</h3>
         </motion.div>
 
         <motion.div 
@@ -152,7 +152,7 @@ export default function AdminPanel() {
             <DollarSign size={20} />
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Money In</p>
-          <h3 className="text-xl font-black text-slate-900 dark:text-white">{formatCurrency(stats.totalDeposited)}</h3>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(stats.totalDeposited)}</h3>
         </motion.div>
       </div>
 

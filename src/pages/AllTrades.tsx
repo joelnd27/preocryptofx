@@ -57,8 +57,8 @@ export default function AllTrades() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h2 className="text-3xl font-bold">Trade History</h2>
-            <p className="text-slate-500 dark:text-slate-400">View and manage all your trading activity</p>
+            <h2 className="text-lg sm:text-xl font-bold">Trade History</h2>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">View and manage all your trading activity</p>
           </div>
         </div>
 

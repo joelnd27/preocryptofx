@@ -221,8 +221,8 @@ export default function Bots() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-slate-900 dark:text-white uppercase tracking-tight">Trading Bots</h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-mono uppercase tracking-widest">Automated Execution & Algorithmic Trading</p>
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white">Trading Bots</h2>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">Automated Execution & Algorithmic Trading</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <button

@@ -47,7 +47,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-8 h-8 sm:w-10 sm:h-10" />
-            <span className="text-xl sm:text-2xl font-display font-black bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent tracking-tighter">
+            <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent tracking-tighter">
               PreoCryptoFX
             </span>
           </div>
@@ -106,16 +106,16 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <span className="px-3 py-1 sm:px-4 sm:py-2 rounded-full bg-blue-500/10 text-blue-400 text-[10px] sm:text-xs font-mono font-bold border border-blue-500/20 mb-6 inline-block uppercase tracking-widest">
+            <span className="px-3 py-1 sm:px-4 sm:py-2 rounded-full bg-blue-500/10 text-blue-400 text-[9px] sm:text-[10px] font-bold border border-blue-500/20 mb-6 inline-block uppercase tracking-widest">
               AI-Powered Financial Intelligence
             </span>
-            <h1 className="text-4xl sm:text-6xl md:text-8xl font-display font-black tracking-tight mb-6 sm:mb-8 leading-[0.95]">
+            <h1 className="text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-6 sm:mb-8 leading-[0.95]">
               The Future of <br className="hidden sm:block" />
               <span className="bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600 bg-clip-text text-transparent">
                 Crypto Trading
               </span>
             </h1>
-            <p className="text-base sm:text-xl text-slate-400 max-w-2xl mx-auto mb-8 sm:mb-12 px-4">
+            <p className="text-sm sm:text-lg text-slate-400 max-w-2xl mx-auto mb-8 sm:mb-12 px-4">
               Experience the next generation of crypto trading. Our AI bots analyze market trends 24/7 to maximize your profits while you sleep.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 px-4">
@@ -200,7 +200,7 @@ export default function Landing() {
       <section id="features" className="py-20 sm:py-32 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12 sm:mb-20">
-            <h2 className="text-3xl sm:text-5xl font-display font-black mb-4 tracking-tight">Why Choose PreoCryptoFX?</h2>
+            <h2 className="text-3xl sm:text-5xl font-bold mb-4 tracking-tight">Why Choose PreoCryptoFX?</h2>
             <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto px-4">
               We combine advanced machine learning with high-frequency trading infrastructure to give you an unfair advantage in the markets.
             </p>
