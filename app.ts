@@ -269,50 +269,18 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
       
       console.log(`Manual status check success for ${external_reference}. Ref: ${ref}`);
 
-      // Check if already completed to avoid double crediting
-      let query = client.from('transactions').select('status, amount, user_id, id');
-      
-      if (ref) {
-        query = query.or(`external_id.eq."${ref}",id.eq."${ref}"`);
-      } else {
-        console.error('No reference available for status check update.');
-        return res.json(response.data);
-      }
-      
-      const { data: currentTx, error: txFetchError } = await query.maybeSingle();
+      const { data: currentTx } = await client.from('transactions').select('status, amount, user_id, id').or(`external_id.eq."${ref}",id.eq."${ref}"`).maybeSingle();
 
-      if (txFetchError) {
-        console.error('Error fetching transaction for status check:', txFetchError);
-      } else if (currentTx && currentTx.status !== 'completed') {
-        const userId = currentTx.user_id;
-        const amountUsd = currentTx.amount;
-        
-        const { data: user, error: userFetchError } = await client
-          .from('users')
-          .select('real_balance, username')
-          .eq('id', userId)
-          .single();
-        
-        if (userFetchError) {
-          console.error('Error fetching user for status check:', userFetchError);
-        } else if (user) {
-          const currentBalance = Number(user.real_balance || 0);
-          const newBalance = Number((currentBalance + amountUsd).toFixed(2));
-          console.log(`Manual status check success for ${user.username}. Updating balance: ${currentBalance} -> ${newBalance}`);
-          
-          const { error: balanceUpdateError } = await client.from('users').update({ real_balance: newBalance }).eq('id', userId);
-          if (balanceUpdateError) {
-            console.error('Error updating balance during status check:', balanceUpdateError);
-          } else {
-            await client.from('transactions')
-              .update({ status: 'completed' })
-              .eq('id', currentTx.id);
-            console.log(`Transaction ${currentTx.id} marked as completed via status check.`);
-          }
+      if (currentTx && currentTx.status !== 'completed') {
+        const { error: txUpdateError } = await client.from('transactions').update({ status: 'completed', method: `Payhero (${paymentId || 'M-Pesa'})` }).eq('id', currentTx.id);
+        if (!txUpdateError) {
+          console.log(`Transaction ${currentTx.id} marked as completed.`);
         }
-      } else if (currentTx?.status === 'completed') {
-        console.log(`Transaction ${currentTx.id} already completed. No update needed.`);
       }
+    } else if (payment && (payment.status === 'failed' || payment.ResultCode === 1032)) {
+      // 1032 is Request Cancelled by User
+      await client.from('transactions').update({ status: 'rejected' }).or(`external_id.eq."${external_reference}",method.ilike."%${external_reference}%"`).eq('status', 'pending');
+      console.log(`Transaction ${external_reference} marked as rejected via status check.`);
     }
     
     res.json(response.data);
