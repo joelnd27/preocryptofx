@@ -320,7 +320,7 @@ export default function Transactions() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Financial Ledger</h2>
+          <h2 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-slate-900 dark:text-white uppercase tracking-tight">Financial Ledger</h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-mono uppercase tracking-widest">Transaction History & Asset Management</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -369,7 +369,7 @@ export default function Transactions() {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm dark:shadow-none">
             <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/20">
-              <h3 className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+              <h3 className="text-base font-display font-bold uppercase tracking-wide flex items-center gap-2 text-slate-900 dark:text-white">
                 <History size={18} className="text-blue-500" /> Activity Log
               </h3>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -680,14 +680,14 @@ export default function Transactions() {
                   {user?.activeAccount} Account
                 </div>
               </div>
-              <p className="text-blue-100 text-xs mb-1 opacity-80">Total Balance</p>
-              <h3 className="text-3xl sm:text-4xl font-bold mb-6 sm:mb-8 font-mono tracking-tight">
+              <p className="text-blue-100 text-xs mb-1 font-mono uppercase tracking-wider opacity-80">Total Balance</p>
+              <h3 className="text-3xl sm:text-4xl font-bold mb-6 sm:mb-8 font-mono tracking-tight tabular-nums">
                 {formatCurrency(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)}
               </h3>
               <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 <div className="p-3 bg-white/10 rounded-xl sm:rounded-2xl">
-                  <p className="text-[9px] text-blue-100 uppercase font-bold mb-1 opacity-60">Deposits</p>
-                  <p className="text-base sm:text-lg font-bold font-mono">
+                  <p className="text-[9px] text-blue-100 uppercase font-mono font-bold mb-1 opacity-60">Deposits</p>
+                  <p className="text-base sm:text-lg font-bold font-mono tabular-nums">
                     {formatCurrency(
                       (user?.transactions?.filter(t => t.type === 'DEPOSIT' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0) || 0) +
                       (user?.role === 'marketer' ? getMarketerDeposit(user.id) : 0)
@@ -695,8 +695,8 @@ export default function Transactions() {
                   </p>
                 </div>
                 <div className="p-3 bg-white/10 rounded-xl sm:rounded-2xl">
-                  <p className="text-[9px] text-blue-100 uppercase font-bold mb-1 opacity-60">Withdrawals</p>
-                  <p className="text-base sm:text-lg font-bold font-mono">
+                  <p className="text-[9px] text-blue-100 uppercase font-mono font-bold mb-1 opacity-60">Withdrawals</p>
+                  <p className="text-base sm:text-lg font-bold font-mono tabular-nums">
                     {formatCurrency(user?.transactions?.filter(t => t.type === 'WITHDRAW').reduce((acc, t) => acc + t.amount, 0) || 0)}
                   </p>
                 </div>

@@ -467,9 +467,9 @@ export default function Trade() {
             {selectedCoin.symbol[0]}
           </div>
           <div>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">{selectedCoin.symbol}/USDT</p>
+            <p className="text-sm font-display font-black text-slate-900 dark:text-white">{selectedCoin.symbol}/USDT</p>
             <div className="flex items-center gap-2">
-              <p className="text-[10px] text-green-500 font-bold">${prices[selectedCoin.symbol]?.toLocaleString()}</p>
+              <p className="text-[10px] text-green-500 font-mono font-bold tabular-nums">${prices[selectedCoin.symbol]?.toLocaleString()}</p>
               <span className="text-[8px] text-slate-400 font-mono">{currentTime.toLocaleTimeString([], { hour12: false })}</span>
             </div>
           </div>
@@ -563,8 +563,8 @@ export default function Trade() {
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
             <div className="hidden lg:flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-black">{selectedCoin.symbol}/USDT</span>
-                <span className="text-green-500 font-bold text-sm">${prices[selectedCoin.symbol]?.toLocaleString()}</span>
+                <span className="text-lg font-display font-black">{selectedCoin.symbol}/USDT</span>
+                <span className="text-green-500 font-mono font-bold text-sm tracking-tight tabular-nums">${prices[selectedCoin.symbol]?.toLocaleString()}</span>
                 <span className="ml-4 text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
                   {currentTime.toLocaleTimeString([], { hour12: false })}
                 </span>
@@ -694,7 +694,7 @@ export default function Trade() {
                       type="number"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-9 pr-4 text-sm font-black focus:outline-none focus:border-primary transition-all"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-9 pr-4 text-sm font-mono font-bold focus:outline-none focus:border-primary transition-all tabular-nums"
                       placeholder="0.00"
                     />
                   </div>
@@ -728,7 +728,7 @@ export default function Trade() {
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm font-black focus:outline-none focus:border-primary appearance-none"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm font-mono font-bold focus:outline-none focus:border-primary appearance-none tabular-nums"
                   >
                     <option value="5">5 Seconds</option>
                     <option value="10">10 Seconds</option>
@@ -805,8 +805,8 @@ export default function Trade() {
         {/* Active Trades Section */}
         <div id="active-trades" className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Trades</h3>
-            <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">
+            <h3 className="text-sm font-display font-bold uppercase tracking-wide text-slate-900 dark:text-white">Active Positions</h3>
+            <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
               {activeTrades.length}
             </span>
           </div>
@@ -837,17 +837,17 @@ export default function Trade() {
                     
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Profit/Loss</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Net P/L</p>
                         <p className={cn(
-                          "text-lg font-black",
+                          "text-xl font-mono font-bold tabular-nums",
                           liveProfit >= 0 ? "text-green-500" : "text-red-500"
                         )}>
                           {liveProfit >= 0 ? '+' : ''}{liveProfit.toFixed(2)} USDT
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Investment</p>
-                        <p className="text-lg font-black">{trade.amount} USDT</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Principal</p>
+                        <p className="text-xl font-mono font-bold tabular-nums">{trade.amount} USDT</p>
                       </div>
                     </div>
 
@@ -879,8 +879,8 @@ export default function Trade() {
               <BrainCircuit size={20} />
             </div>
             <div>
-              <h3 className="text-sm font-black uppercase tracking-widest">AI Trade Signal</h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase">Real-time market analysis</p>
+              <h3 className="text-sm font-display font-bold uppercase tracking-wide text-slate-900 dark:text-white">Market Analysis</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Real-time Technical Insight</p>
             </div>
           </div>
 
@@ -910,7 +910,7 @@ export default function Trade() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Confidence</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-widest">Confidence Score</p>
                     <div className="flex items-center gap-2">
                       <div className="w-24 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                         <div 
@@ -918,7 +918,7 @@ export default function Trade() {
                           style={{ width: `${aiSignal.confidence}%` }}
                         />
                       </div>
-                      <span className="text-sm font-black text-purple-500">{aiSignal.confidence}%</span>
+                      <span className="text-sm font-mono font-bold text-purple-500 tabular-nums">{aiSignal.confidence}%</span>
                     </div>
                   </div>
                 </div>

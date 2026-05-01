@@ -1039,9 +1039,9 @@ export function useStore() {
       const isAI = botId === 'ai' || botId === 'custom';
       window.dispatchEvent(new CustomEvent('trade-closed', {
         detail: {
-          title: isAI ? 'AI Bot Closed' : 'Manual Bot Closed',
+          title: isAI ? 'Trading Bot Suspended' : 'Manual Bot Closed',
           message: isAI 
-            ? 'Neural processing has been suspended due to reaching the minimum safety limit. Kindly deposit funds to resume AI bot operations.'
+            ? 'Trading bots have been suspended due to reaching the minimum safety limit. Kindly deposit funds to resume operations.'
             : 'The minimum balance limit has been reached. Please top up your account to reactivate manual trading bots.',
           type: 'warning'
         }

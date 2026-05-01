@@ -42,7 +42,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   ] : [
     { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
     { icon: TrendingUp, label: 'Trade', path: '/trade' },
-    { icon: Bot, label: 'AI Bots', path: '/bots' },
+    { icon: Bot, label: 'Bots', path: '/bots' },
     { icon: Wallet, label: 'Finances', path: '/transactions' },
     { icon: History, label: 'History', path: '/trades' },
     { icon: UserIcon, label: 'Profile', path: '/profile' },
@@ -68,7 +68,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="h-16 flex items-center px-6 border-b border-transparent shrink-0">
           <div className="flex items-center gap-3">
             <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg shrink-0" />
-            {isSidebarOpen && <span className="text-xl font-black tracking-tight whitespace-nowrap">PreoCryptoFX</span>}
+            {isSidebarOpen && <span className="text-xl font-display font-black tracking-tight whitespace-nowrap">PreoCryptoFX</span>}
           </div>
         </div>
 
@@ -128,7 +128,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
                 <div className="flex items-center gap-3">
                   <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg" />
-                  <span className="text-xl font-black tracking-tight">PreoCryptoFX</span>
+                  <span className="text-xl font-display font-black tracking-tight">PreoCryptoFX</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-2">
                   <X size={20} />
@@ -231,7 +231,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             {/* Balance */}
             <div className="hidden sm:block text-right">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Balance</p>
-              <p className="text-sm font-black text-primary">
+              <p className="text-sm font-mono font-bold text-primary tabular-nums">
                 ${(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             </div>

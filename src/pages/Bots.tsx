@@ -137,9 +137,9 @@ export default function Bots() {
       const isAI = bot.type === 'ai' || botId === 'custom';
       setAlertConfig({
         isOpen: true,
-        title: isAI ? 'AI Bot Limit' : 'Manual Bot Limit',
+        title: isAI ? 'Trading Bot Limit' : 'Manual Bot Limit',
         message: isAI 
-          ? `Neural processing requires a minimum of $${bot.minDeposit}. Your current balance is below this limit.`
+          ? `Trading bots require a minimum of $${bot.minDeposit}. Your current balance is below this limit.`
           : `This manual bot requires at least $${bot.minDeposit} to operate. Please increase your balance.`,
         type: 'warning'
       });
@@ -221,7 +221,7 @@ export default function Bots() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Neural Processing Units</h2>
+          <h2 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-slate-900 dark:text-white uppercase tracking-tight">Trading Bots</h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-mono uppercase tracking-widest">Automated Execution & Algorithmic Trading</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -358,7 +358,7 @@ export default function Bots() {
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{selectedBot.name}</h2>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                  Quantum Neural Processing <ChevronRight size={12} /> 
+                  Institutional Algorithmic Bot <ChevronRight size={12} /> 
                   <span className="text-blue-500 font-bold">v4.2.0-stable</span>
                 </p>
               </div>
@@ -613,7 +613,7 @@ export default function Bots() {
                       <Shield size={20} />
                     </div>
                     <p className="text-[10px] text-slate-500 leading-relaxed">
-                      Custom bots use advanced Neural Processing to execute trades. 
+                      Trading bots use advanced algorithmic logic to execute trades. 
                       Ensure your strategy is backtested before running on a REAL account.
                     </p>
                   </div>
