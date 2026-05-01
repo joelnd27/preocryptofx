@@ -318,28 +318,28 @@ export default function Transactions() {
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white">Financial Ledger</h2>
-          <p className="text-[10px] text-slate-500 dark:text-slate-400">Transaction History & Asset Management</p>
+          <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white">Financial Ledger</h2>
+          <p className="text-[9px] text-slate-500 dark:text-slate-400">Transaction History & Asset Management</p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2">
           <div className="relative group flex-1 sm:flex-none">
             <button
               onClick={() => { setModalType('DEPOSIT'); setIsModalOpen(true); }}
               disabled={user?.activeAccount === 'DEMO'}
               className={cn(
-                "w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all shadow-sm",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-bold transition-all shadow-sm",
                 (user?.activeAccount === 'DEMO')
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed" 
                   : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10"
               )}
             >
-              <Plus size={18} /> <span className="text-sm sm:text-base">Deposit</span>
+              <Plus size={16} /> <span className="text-xs sm:text-sm">Deposit</span>
             </button>
             {user?.activeAccount === 'DEMO' && (
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
+              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
                 Deposits disabled for Demo
               </div>
             )}
@@ -349,16 +349,16 @@ export default function Transactions() {
               onClick={() => { setModalType('WITHDRAW'); setIsModalOpen(true); }}
               disabled={user?.activeAccount === 'DEMO'}
               className={cn(
-                "w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-bold transition-all",
                 user?.activeAccount === 'DEMO'
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                   : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm"
               )}
             >
-              <ArrowUpRight size={18} /> <span className="text-sm sm:text-base">Withdraw</span>
+              <ArrowUpRight size={16} /> <span className="text-xs sm:text-sm">Withdraw</span>
             </button>
             {user?.activeAccount === 'DEMO' && (
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
+              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
                 Withdrawals disabled for Demo
               </div>
             )}
@@ -366,25 +366,25 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm dark:shadow-none">
-            <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/20">
-              <h3 className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-white">
-                <History size={16} className="text-blue-500" /> Activity Log
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none">
+            <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/20">
+              <h3 className="text-xs font-bold flex items-center gap-2 text-slate-900 dark:text-white uppercase tracking-wider">
+                <History size={14} className="text-blue-500" /> Activity Log
               </h3>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input 
                     type="text" 
                     placeholder="Search hash..." 
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="w-full sm:w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 pl-9 pr-4 text-xs focus:outline-none focus:border-blue-500 transition-all shadow-sm"
+                    className="w-full sm:w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-[10px] focus:outline-none focus:border-blue-500 transition-all shadow-sm"
                   />
                 </div>
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg overflow-x-auto no-scrollbar border border-slate-200 dark:border-slate-700">
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg overflow-x-auto no-scrollbar border border-slate-200 dark:border-slate-700 shrink-0">
                   {['ALL', 'DEPOSIT', 'WITHDRAW'].map((f) => (
                     <button
                       key={f}
@@ -408,62 +408,62 @@ export default function Transactions() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                    <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Timestamp</th>
-                    <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Operation</th>
-                    <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Asset Value</th>
-                    <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Account</th>
-                    <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Status</th>
-                    <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Reference Hash</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Timestamp</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Type</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Amount</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Alias</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Status</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">ID</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredTransactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-                      <td className="px-6 py-4">
-                        <span className="text-xs font-mono text-slate-600 dark:text-slate-400">{formatDate(tx.timestamp)}</span>
+                      <td className="px-4 py-2.5">
+                        <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400">{formatDate(tx.timestamp)}</span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-1.5">
                           <div className={cn(
-                            "p-1.5 rounded-lg",
+                            "p-1 rounded-md",
                             tx.type === 'DEPOSIT' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
                           )}>
-                            {tx.type === 'DEPOSIT' ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
+                            {tx.type === 'DEPOSIT' ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
                           </div>
-                          <span className="text-xs font-bold text-slate-900 dark:text-white">{tx.type}</span>
+                          <span className="text-[10px] font-bold text-slate-900 dark:text-white">{tx.type}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         <span className={cn(
-                          "text-xs font-bold font-mono",
+                          "text-[10px] font-bold font-mono",
                           tx.type === 'DEPOSIT' ? "text-green-500" : "text-red-500"
                         )}>
                           {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         <span className={cn(
-                          "px-2 py-0.5 rounded text-[9px] font-bold uppercase border",
+                          "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border",
                           tx.accountType === 'REAL' ? "bg-green-500/5 border-green-500/20 text-green-500" : "bg-blue-500/5 border-blue-500/20 text-blue-500"
                         )}>
                           {tx.accountType}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1.5">
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <div className={cn(
-                              "w-1.5 h-1.5 rounded-full",
+                              "w-1 h-1 rounded-full",
                               tx.status === 'completed' ? "bg-green-500" : 
                               (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500" : 
                               "bg-yellow-500 animate-pulse"
                             )} />
                             <span className={cn(
-                              "text-[10px] font-bold uppercase tracking-tighter",
+                              "text-[8px] font-bold uppercase tracking-tighter",
                               tx.status === 'completed' ? "text-green-500" : 
                               (tx.status === 'failed' || tx.status === 'rejected') ? "text-red-500" : 
                               "text-yellow-500"
-                            )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
+                            )}>{tx.status === 'pending' ? 'pending' : tx.status}</span>
                           </div>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                             <div className="flex items-center gap-1">
@@ -671,33 +671,33 @@ export default function Transactions() {
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] text-white shadow-xl shadow-blue-600/10 relative overflow-hidden group">
-            <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-white/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-500"></div>
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-5 sm:p-6 rounded-2xl text-white shadow-lg shadow-blue-600/10 relative overflow-hidden group">
+            <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:scale-110 transition-transform duration-500"></div>
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-6 sm:mb-8">
-                <Wallet size={28} />
-                <div className="px-3 py-1 bg-white/20 rounded-full text-[9px] font-bold uppercase tracking-wider">
+              <div className="flex items-center justify-between mb-4">
+                <Wallet size={20} />
+                <div className="px-2 py-0.5 bg-white/20 rounded-full text-[8px] font-bold uppercase tracking-wider">
                   {user?.activeAccount} Account
                 </div>
               </div>
-              <p className="text-blue-100 text-xs mb-1 font-mono uppercase tracking-wider opacity-80">Total Balance</p>
-              <h3 className="text-3xl sm:text-4xl font-bold mb-6 sm:mb-8 font-mono tracking-tight tabular-nums">
+              <p className="text-blue-100 text-[10px] mb-0.5 font-mono uppercase tracking-wider opacity-80">Total Balance</p>
+              <h3 className="text-2xl sm:text-3xl font-bold mb-4 font-mono tracking-tight tabular-nums">
                 {formatCurrency(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)}
               </h3>
-              <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                <div className="p-3 bg-white/10 rounded-xl sm:rounded-2xl">
-                  <p className="text-[9px] text-blue-100 uppercase font-mono font-bold mb-1 opacity-60">Deposits</p>
-                  <p className="text-base sm:text-lg font-bold font-mono tabular-nums">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2 sm:p-3 bg-white/10 rounded-xl">
+                  <p className="text-[8px] text-blue-100 uppercase font-mono font-bold mb-0.5 opacity-60">Inflow</p>
+                  <p className="text-sm font-bold font-mono tabular-nums text-ellipsis overflow-hidden">
                     {formatCurrency(
                       (user?.transactions?.filter(t => t.type === 'DEPOSIT' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0) || 0) +
                       (user?.role === 'marketer' ? getMarketerDeposit(user.id) : 0)
                     )}
                   </p>
                 </div>
-                <div className="p-3 bg-white/10 rounded-xl sm:rounded-2xl">
-                  <p className="text-[9px] text-blue-100 uppercase font-mono font-bold mb-1 opacity-60">Withdrawals</p>
-                  <p className="text-base sm:text-lg font-bold font-mono tabular-nums">
+                <div className="p-2 sm:p-3 bg-white/10 rounded-xl">
+                  <p className="text-[8px] text-blue-100 uppercase font-mono font-bold mb-0.5 opacity-60">Outflow</p>
+                  <p className="text-sm font-bold font-mono tabular-nums text-ellipsis overflow-hidden">
                     {formatCurrency(user?.transactions?.filter(t => t.type === 'WITHDRAW').reduce((acc, t) => acc + t.amount, 0) || 0)}
                   </p>
                 </div>
@@ -705,27 +705,27 @@ export default function Transactions() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-            <h4 className="font-bold mb-4 flex items-center gap-2">
-              <Info size={18} className="text-blue-500" /> Payment Information
+          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-sm">
+            <h4 className="text-[10px] font-bold mb-3 flex items-center gap-2 uppercase tracking-widest text-slate-400">
+              <Info size={14} className="text-blue-500" /> Information
             </h4>
-            <div className="space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-green-500/10 rounded-lg flex items-center justify-center text-green-500 shrink-0">
-                  <Smartphone size={16} />
+            <div className="space-y-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-7 h-7 bg-green-500/10 rounded-lg flex items-center justify-center text-green-500 shrink-0">
+                  <Smartphone size={14} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold">M-Pesa (Payhero)</p>
-                  <p className="text-[10px] text-slate-500">Instant deposits via STK Push. $1 = {USD_TO_KES} KES.</p>
+                  <p className="text-[10px] font-bold">M-Pesa (Mobile)</p>
+                  <p className="text-[9px] text-slate-500">$1 = {USD_TO_KES} KES.</p>
                 </div>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 shrink-0">
-                  <CreditCard size={16} />
+              <div className="flex items-start gap-2.5">
+                <div className="w-7 h-7 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 shrink-0">
+                  <CreditCard size={14} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">Bank Transfer</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Processing time: 1-3 business days.</p>
+                  <p className="text-[10px] font-bold text-slate-900 dark:text-white">Bank Settelment</p>
+                  <p className="text-[9px] text-slate-500 dark:text-slate-400">ETA: 1-3 business days.</p>
                 </div>
               </div>
             </div>

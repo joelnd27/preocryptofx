@@ -559,13 +559,13 @@ export default function Trade() {
 
       <div className="flex-1 flex flex-col gap-6 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
         {/* Main Chart Area */}
-        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm h-[500px] flex flex-col overflow-hidden shrink-0">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
-            <div className="hidden lg:flex items-center gap-4">
+        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm h-[400px] sm:h-[500px] flex flex-col overflow-hidden shrink-0">
+          <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+            <div className="hidden lg:flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-base sm:text-lg font-bold">{selectedCoin.symbol}/USDT</span>
-                <span className="text-green-500 font-bold text-xs sm:text-sm tracking-tight tabular-nums">${prices[selectedCoin.symbol]?.toLocaleString()}</span>
-                <span className="ml-4 text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
+                <span className="text-sm sm:text-base font-bold">{selectedCoin.symbol}/USDT</span>
+                <span className="text-green-500 font-bold text-[10px] sm:text-xs tracking-tight tabular-nums">${prices[selectedCoin.symbol]?.toLocaleString()}</span>
+                <span className="ml-2 text-[9px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                   {currentTime.toLocaleTimeString([], { hour12: false })}
                 </span>
               </div>
@@ -681,20 +681,20 @@ export default function Trade() {
         </div>
 
         {/* Trading Panel - Moved below chart */}
-        <div id="trading-panel" className="grid grid-cols-1 lg:grid-cols-3 gap-6 shrink-0">
+        <div id="trading-panel" className="grid grid-cols-1 lg:grid-cols-3 gap-4 shrink-0">
           {/* Order Form */}
-          <div className="lg:col-span-2 bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amount (USDT)</label>
+          <div className="lg:col-span-2 bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Amount (USDT)</label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
                     <input
                       type="number"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-9 pr-4 text-sm font-bold focus:outline-none focus:border-primary transition-all tabular-nums"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-2 pl-8 pr-3 text-xs font-bold focus:outline-none focus:border-primary transition-all tabular-nums"
                       placeholder="0.00"
                     />
                   </div>
@@ -714,7 +714,7 @@ export default function Trade() {
                           setAmount((balance * 0.5).toString());
                         }
                       }}
-                      className="py-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
+                      className="py-1.5 bg-slate-100 dark:bg-slate-800 rounded text-[9px] font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
                     >
                       {p}
                     </button>
@@ -722,13 +722,13 @@ export default function Trade() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Duration</label>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Duration</label>
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm font-bold focus:outline-none focus:border-primary appearance-none tabular-nums"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-2 px-3 text-xs font-bold focus:outline-none focus:border-primary appearance-none tabular-nums"
                   >
                     <option value="5">5 Seconds</option>
                     <option value="10">10 Seconds</option>
@@ -739,11 +739,11 @@ export default function Trade() {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleTrade('BUY')}
                     className={cn(
-                      "py-4 rounded-xl font-bold text-white transition-all shadow-lg uppercase tracking-widest text-[10px]",
+                      "py-2.5 rounded-lg font-bold text-white transition-all shadow-md uppercase tracking-widest text-[9px]",
                       selectedType === 'BUY' ? "bg-green-500 ring-4 ring-green-500/20" : "bg-green-600 hover:bg-green-700 shadow-green-600/20"
                     )}
                   >
@@ -752,7 +752,7 @@ export default function Trade() {
                   <button
                     onClick={() => handleTrade('SELL')}
                     className={cn(
-                      "py-4 rounded-xl font-bold text-white transition-all shadow-lg uppercase tracking-widest text-[10px]",
+                      "py-2.5 rounded-lg font-bold text-white transition-all shadow-md uppercase tracking-widest text-[9px]",
                       selectedType === 'SELL' ? "bg-red-500 ring-4 ring-red-500/20" : "bg-red-600 hover:bg-red-700 shadow-red-600/20"
                     )}
                   >
@@ -764,38 +764,38 @@ export default function Trade() {
           </div>
 
           {/* Asset Selection - Desktop */}
-          <div className="hidden lg:flex flex-col bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="hidden lg:flex flex-col bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-3 border-b border-slate-200 dark:border-slate-800">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
                 <input
                   type="text"
                   placeholder="Search..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-9 pr-4 text-[10px] font-bold focus:outline-none focus:border-primary"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1.5 pl-8 pr-3 text-[9px] font-bold focus:outline-none focus:border-primary"
                 />
               </div>
             </div>
-            <div className="h-[140px] overflow-y-auto custom-scrollbar">
+            <div className="h-[120px] overflow-y-auto custom-scrollbar">
               {filteredCoins.map((coin) => (
                 <button
                   key={coin.symbol}
                   onClick={() => setSelectedCoin(coin)}
                   className={cn(
-                    "w-full p-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all border-b border-slate-100 dark:border-slate-800 last:border-0",
+                    "w-full p-2.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all border-b border-slate-100 dark:border-slate-800 last:border-0",
                     selectedCoin.symbol === coin.symbol && "bg-primary/5 dark:bg-primary/10"
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center font-black text-[8px]">
+                    <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center font-black text-[7px]">
                       {coin.symbol[0]}
                     </div>
                     <div className="text-left">
-                      <p className="text-[10px] font-black text-slate-900 dark:text-white">{coin.symbol}/USDT</p>
+                      <p className="text-[9px] font-black text-slate-900 dark:text-white">{coin.symbol}/USDT</p>
                     </div>
                   </div>
-                  <p className="text-[10px] font-black text-slate-900 dark:text-white">${prices[coin.symbol]?.toLocaleString()}</p>
+                  <p className="text-[9px] font-black text-slate-900 dark:text-white tabular-nums">${prices[coin.symbol]?.toLocaleString(undefined, { maximumFractionDigits: 1 })}</p>
                 </button>
               ))}
             </div>
@@ -803,57 +803,57 @@ export default function Trade() {
         </div>
 
         {/* Active Trades Section */}
-        <div id="active-trades" className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Active Positions</h3>
-            <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">
+        <div id="active-trades" className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white">Active Positions</h3>
+            <span className="bg-primary/10 text-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold">
               {activeTrades.length}
             </span>
           </div>
           
           {activeTrades.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {activeTrades.map(trade => {
                 const liveProfit = calculateLiveProfit(trade);
                 const timeLeft = Math.max(0, Math.ceil((trade.timestamp + (trade.duration || 0) * 1000 - Date.now()) / 1000));
                 
                 return (
-                  <div key={trade.id} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
+                  <div key={trade.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
                         <span className={cn(
-                          "text-[10px] font-black px-2 py-1 rounded",
+                          "text-[8px] font-black px-1.5 py-0.5 rounded",
                           trade.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
                         )}>
                           {trade.type}
                         </span>
-                        <span className="text-sm font-black">{trade.coin}/USDT</span>
+                        <span className="text-xs font-black">{trade.coin}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <Activity size={14} />
-                        <span className="text-xs font-mono font-bold">{timeLeft}s</span>
+                      <div className="flex items-center gap-1.5 text-slate-400">
+                        <Activity size={12} />
+                        <span className="text-[10px] font-mono font-bold">{timeLeft}s</span>
                       </div>
                     </div>
                     
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Net P/L</p>
+                        <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-wider">Net P/L</p>
                         <p className={cn(
-                          "text-lg font-bold tabular-nums",
+                          "text-base font-bold tabular-nums",
                           liveProfit >= 0 ? "text-green-500" : "text-red-500"
                         )}>
-                          {liveProfit >= 0 ? '+' : ''}{liveProfit.toFixed(2)} USDT
+                          {liveProfit >= 0 ? '+' : ''}{liveProfit.toFixed(2)}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Principal</p>
-                        <p className="text-xl font-mono font-bold tabular-nums">{trade.amount} USDT</p>
+                        <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-wider">Stake</p>
+                        <p className="text-base font-mono font-bold tabular-nums">{trade.amount}</p>
                       </div>
                     </div>
 
                     <button
                       onClick={() => closeTrade(trade.id, liveProfit)}
-                      className="w-full py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                      className="w-full py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all"
                     >
                       Close Early
                     </button>
@@ -862,46 +862,38 @@ export default function Trade() {
               })}
             </div>
           ) : (
-            <div className="py-12 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
-              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
-                <Activity size={24} />
-              </div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No Active Trades</p>
-              <p className="text-[10px] text-slate-500 mt-1">Your running trades will appear here</p>
+            <div className="py-8 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+              <Activity size={20} className="mx-auto mb-2 text-slate-300" />
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">No Active Positions</p>
             </div>
           )}
         </div>
 
         {/* AI Signal Section */}
-        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-500">
-              <BrainCircuit size={20} />
+        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-purple-500/10 rounded-lg flex items-center justify-center text-purple-500">
+              <BrainCircuit size={16} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Market Analysis</h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Real-time Technical Insight</p>
+              <h3 className="text-xs font-bold text-slate-900 dark:text-white">Market Analysis</h3>
+              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">AI Technical Insight</p>
             </div>
           </div>
 
           {aiSignal ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-xl flex items-center justify-center font-black text-sm shadow-sm text-slate-900 dark:text-white">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-white dark:bg-slate-900 rounded-lg flex items-center justify-center font-black text-xs shadow-sm text-slate-900 dark:text-white">
                       {aiSignal.coin[0]}
                     </div>
                     <div>
-                      <p className="text-lg font-black text-slate-900 dark:text-white">{aiSignal.coin}/USDT</p>
+                      <p className="text-sm font-black text-slate-900 dark:text-white">{aiSignal.coin}/USDT</p>
                       <div className="flex items-center gap-1">
-                        {aiSignal.type === 'BUY' ? (
-                          <TrendingUp size={14} className="text-green-500" />
-                        ) : (
-                          <TrendingDown size={14} className="text-red-500" />
-                        )}
                         <span className={cn(
-                          "text-xs font-black uppercase",
+                          "text-[9px] font-black uppercase",
                           aiSignal.type === 'BUY' ? "text-green-500" : "text-red-500"
                         )}>
                           {aiSignal.type} Signal
@@ -910,44 +902,34 @@ export default function Trade() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-widest">Confidence Score</p>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-purple-500 rounded-full" 
-                          style={{ width: `${aiSignal.confidence}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-mono font-bold text-purple-500 tabular-nums">{aiSignal.confidence}%</span>
-                    </div>
+                    <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-widest">Confidence</p>
+                    <span className="text-xs font-mono font-bold text-purple-500 tabular-nums">{aiSignal.confidence}%</span>
                   </div>
                 </div>
 
                 <button
                   onClick={handleUseSignal}
-                  className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-600/20"
+                  className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-600/20"
                 >
                   Use Signal
                 </button>
               </div>
 
-              <div className="p-6 bg-purple-500/5 border border-purple-500/10 rounded-2xl flex items-start gap-4">
-                <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-500 shrink-0">
-                  <Lightbulb size={20} />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-black text-purple-500 uppercase tracking-wider">Analysis Reason</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+              <div className="p-4 bg-purple-500/5 border border-purple-500/10 rounded-xl flex items-start gap-3">
+                <Lightbulb size={16} className="text-purple-500 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[9px] font-black text-purple-500 uppercase tracking-wider">Analysis</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-normal">
                     {aiSignal.reason}
                   </p>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="py-12 text-center">
-              <div className="animate-pulse flex flex-col items-center gap-3">
-                <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl" />
-                <div className="h-3 w-32 bg-slate-100 dark:bg-slate-800 rounded-full" />
+            <div className="py-6 text-center">
+              <div className="animate-pulse flex flex-col items-center gap-2">
+                <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded-lg" />
+                <div className="h-2 w-24 bg-slate-100 dark:bg-slate-800 rounded-full" />
               </div>
             </div>
           )}

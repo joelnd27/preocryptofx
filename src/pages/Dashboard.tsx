@@ -156,54 +156,54 @@ export default function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-4">
         {stats.map((stat, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm relative overflow-hidden group"
+            transition={{ delay: i * 0.05 }}
+            className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-2.5 sm:p-4 rounded-xl shadow-sm relative overflow-hidden group hover:border-primary/50 transition-colors"
           >
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-4">
-                <div className={cn(stat.bg, "p-2.5 rounded-xl", stat.color)}>
-                  <stat.icon size={20} />
+              <div className="flex items-center justify-between mb-1.5">
+                <div className={cn(stat.bg, "p-1.5 rounded-lg", stat.color)}>
+                  <stat.icon size={14} />
                 </div>
                 <div className={cn(
-                  "flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full",
-                  stat.trend.startsWith('+') || stat.trend === 'Live' || stat.trend === 'Auto' 
+                  "flex items-center gap-0.5 font-bold text-[7px] sm:text-[9px] px-1.5 py-0.5 rounded-full",
+                  stat.trend.startsWith('+') || stat.trend === 'Live' || stat.trend === 'Auto' || stat.trend === 'Today'
                     ? "text-green-500 bg-green-500/10" 
                     : "text-red-500 bg-red-500/10"
                 )}>
-                  {stat.trend.startsWith('+') ? <ArrowUpRight size={12} /> : (stat.trend.startsWith('-') ? <ArrowDownRight size={12} /> : null)}
+                  {stat.trend.startsWith('+') ? <ArrowUpRight size={10} /> : (stat.trend.startsWith('-') ? <ArrowDownRight size={10} /> : null)}
                   {stat.trend}
                 </div>
               </div>
-              <p className="text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">{stat.label}</p>
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{stat.value}</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-[8px] sm:text-[9px] font-bold uppercase tracking-tight mb-0.5">{stat.label}</p>
+              <h3 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white tabular-nums leading-tight">{stat.value}</h3>
             </div>
           </motion.div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Market Analysis (Pie & Bar) */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-8 rounded-3xl shadow-sm">
-              <h3 className="text-sm font-display font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2 uppercase tracking-wide">
-                <PieIcon size={16} className="text-primary" /> Market Distribution
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-3.5 sm:p-6 rounded-2xl shadow-sm">
+              <h3 className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 uppercase tracking-wide">
+                <PieIcon size={14} className="text-primary" /> Market Dist.
               </h3>
-              <div className="h-[250px]">
+              <div className="h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={marketShareData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={90}
+                      innerRadius={45}
+                      outerRadius={65}
                       paddingAngle={5}
                       dataKey="value"
                     >
@@ -212,36 +212,36 @@ export default function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff' }}
+                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '9px' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex flex-wrap justify-center gap-4 mt-6">
+              <div className="flex flex-wrap justify-center gap-2 mt-3">
                 {marketShareData.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{item.name}</span>
+                  <div key={i} className="flex items-center gap-1">
+                    <div className="w-1 h-1 rounded-full" style={{ backgroundColor: item.color }}></div>
+                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tight">{item.name}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-8 rounded-3xl shadow-sm">
-              <h3 className="text-sm font-display font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2 uppercase tracking-wide">
-                <BarChart3 size={16} className="text-primary" /> 24h Trading Volume
+            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-3.5 sm:p-6 rounded-2xl shadow-sm">
+              <h3 className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 uppercase tracking-wide">
+                <BarChart3 size={14} className="text-primary" /> Trading Vol.
               </h3>
-              <div className="h-[250px]">
+              <div className="h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={volumeData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#33415510" vertical={false} />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 8, fontWeight: 600 }} />
                     <YAxis hide />
                     <Tooltip 
                       cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff' }}
+                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '9px' }}
                     />
-                    <Bar dataKey="volume" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="volume" fill="var(--color-primary)" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -249,25 +249,25 @@ export default function Dashboard() {
           </div>
 
           {/* Recent Trades Table */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="font-bold text-slate-900 dark:text-white">Recent Activity</h3>
+          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Recent Activity</h3>
               <button 
                 onClick={() => navigate('/trades')}
-                className="text-xs font-bold text-primary hover:underline"
+                className="text-[10px] font-bold text-primary hover:underline"
               >
-                View Analytics
+                View All
               </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-slate-50/50 dark:bg-slate-800/30">
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Asset</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Type</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amount</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">P/L (Profit/Loss)</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                    <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Asset</th>
+                    <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Type</th>
+                    <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Amount</th>
+                    <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Result</th>
+                    <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -280,33 +280,33 @@ export default function Dashboard() {
                     .slice(0, 5)
                     .map((trade) => (
                     <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center font-bold text-xs">
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center font-bold text-[9px]">
                             {trade.coin[0]}
                           </div>
-                          <span className="font-bold text-slate-900 dark:text-white text-sm">{trade.coin}</span>
+                          <span className="font-bold text-slate-900 dark:text-white text-[10px]">{trade.coin}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-2.5">
                         <span className={cn(
-                          "px-2 py-0.5 rounded-md text-[10px] font-bold",
+                          "px-1 py-0.5 rounded-[4px] text-[7px] font-bold",
                           trade.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
                         )}>
                           {trade.type}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-bold text-sm text-slate-900 dark:text-white tabular-nums">${trade.amount.toLocaleString()}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-2.5 font-bold text-[10px] text-slate-900 dark:text-white tabular-nums">${trade.amount.toLocaleString()}</td>
+                      <td className="px-3 py-2.5">
                         <span className={cn(
-                          "font-mono font-bold text-sm tabular-nums",
+                          "font-bold text-[10px] tabular-nums",
                           trade.profit >= 0 ? "text-green-500" : "text-red-500"
                         )}>
                           {trade.profit >= 0 ? '+' : ''}{formatCurrency(trade.profit)}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[10px] font-bold">
+                      <td className="px-3 py-2.5">
+                        <span className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[7px] font-bold">
                           {trade.status}
                         </span>
                       </td>
@@ -319,59 +319,57 @@ export default function Dashboard() {
         </div>
 
         {/* Sidebar Info */}
-        <div className="space-y-8">
+        <div className="space-y-4 sm:space-y-6">
           {/* Live AI Feed */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Market Pulse</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Live</span>
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-3.5 sm:p-5 rounded-2xl shadow-sm">
+            <div className="flex items-center justify-between mb-2.5">
+              <h3 className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Market Pulse</h3>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[7px] font-bold text-green-500 uppercase tracking-widest">Live</span>
+                <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></div>
               </div>
             </div>
-            <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl mb-6">
-              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-medium leading-relaxed">
-                This feed displays real-time activity from all users across the platform. These are <span className="font-bold underline">not</span> your personal trades. Check your <span className="font-bold">Active Trades</span> in the Trading section.
+            <div className="p-2 bg-blue-500/5 border border-blue-500/10 rounded-lg mb-3">
+              <p className="text-[8px] text-blue-600 dark:text-blue-400 font-medium leading-normal">
+                Real-time global trading feed.
               </p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               {marketActivity.map((activity, i) => (
                 <motion.div
                   key={i}
-                  initial={{ opacity: 0, x: 20 }}
+                  initial={{ opacity: 0, x: 10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800/50"
+                  className="p-2 bg-slate-50 dark:bg-slate-800/30 rounded-lg border border-slate-100 dark:border-slate-800/50"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{activity.accountId}</span>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">{activity.accountId}</span>
                     <span className={cn(
-                      "text-[10px] font-bold",
+                      "text-[7px] font-bold",
                       activity.status === 'WON' ? "text-green-500" : "text-red-500"
                     )}>
                       {activity.status}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
                       <div className={cn(
-                        "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs",
+                        "w-5 h-5 rounded-md flex items-center justify-center font-bold text-[8px]",
                         activity.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
                       )}>
                         {activity.coin[0]}
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white">{activity.coin}</p>
-                        <p className="text-[10px] text-slate-500">{activity.type} • {activity.time}</p>
+                        <p className="text-[9px] font-bold text-slate-900 dark:text-white leading-none">{activity.coin}</p>
+                        <p className="text-[7px] text-slate-500 mt-0.5">{activity.type}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={cn(
-                        "text-xs font-bold",
-                        activity.status === 'WON' ? "text-green-500" : "text-red-500"
-                      )}>
-                        {activity.status === 'WON' ? '+' : '-'}{(Math.random() * 50).toFixed(2)}
-                      </p>
-                    </div>
+                    <span className={cn(
+                      "text-[9px] font-bold",
+                      activity.status === 'WON' ? "text-green-500" : "text-red-500"
+                    )}>
+                      {activity.status === 'WON' ? '+' : '-'}{(Math.random() * 50).toFixed(2)}
+                    </span>
                   </div>
                 </motion.div>
               ))}
@@ -379,44 +377,44 @@ export default function Dashboard() {
           </div>
 
           {/* AI Bot Promo */}
-          <div className="bg-primary p-8 rounded-3xl text-white shadow-xl shadow-primary/20 relative overflow-hidden group">
+          <div className="bg-primary p-6 rounded-2xl text-white shadow-xl shadow-primary/20 relative overflow-hidden group">
             <div className="relative z-10">
-              <h3 className="text-xl font-bold mb-2 tracking-tight">AI Trading Bots</h3>
-              <p className="text-white/80 text-xs font-medium mb-6">Automate your portfolio with institutional-grade neural strategies.</p>
+              <h3 className="text-lg font-bold mb-1 tracking-tight">AI Trading Bots</h3>
+              <p className="text-white/80 text-[10px] font-medium mb-4">Automate your portfolio strategies.</p>
               <button 
                 onClick={() => navigate('/bots')}
-                className="w-full py-3 bg-white text-primary font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg"
+                className="w-full py-2 bg-white text-primary text-[10px] font-bold rounded-lg hover:bg-slate-100 transition-all shadow-lg"
               >
                 Explore Bots
               </button>
             </div>
-            <Zap className="absolute -right-4 -top-4 w-24 h-24 text-white/10 rotate-12 group-hover:rotate-0 transition-transform duration-700" />
+            <Zap className="absolute -right-4 -top-4 w-20 h-20 text-white/10 rotate-12 group-hover:rotate-0 transition-transform duration-700" />
           </div>
 
           {/* Notifications */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-6">Recent Alerts</h3>
-            <div className="space-y-4">
+          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-4">Recent Alerts</h3>
+            <div className="space-y-3">
               {(user?.transactions || [])
                 .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
                 .slice(0, 3)
                 .map((notif, i) => (
-                <div key={i} className="flex gap-3">
+                <div key={i} className="flex gap-2">
                   <div className={cn(
-                    "w-1 h-1 mt-2 rounded-full shrink-0",
+                    "w-1 h-1 mt-1.5 rounded-full shrink-0",
                     notif.status === 'completed' ? "bg-green-500" : 
                     notif.status === 'pending' ? "bg-yellow-500 animate-pulse" : 
                     "bg-red-500"
                   )}></div>
                   <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    <p className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                       {notif.type} {notif.status.toUpperCase()}
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
+                    <p className="text-[9px] text-slate-500 mt-0.5 leading-normal">
                       {notif.status === 'completed' 
-                        ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} has been completed successfully.`
+                        ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} completed.`
                         : notif.status === 'pending'
-                        ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} is currently pending.`
+                        ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} is pending.`
                         : `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} was ${notif.status}.`}
                     </p>
                   </div>
