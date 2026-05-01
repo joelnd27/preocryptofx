@@ -110,9 +110,9 @@ export default function Landing() {
               AI-Powered Financial Intelligence
             </span>
             <h1 className="text-4xl sm:text-6xl md:text-8xl font-display font-black tracking-tight mb-6 sm:mb-8 leading-[0.95]">
-              Future of <br className="hidden sm:block" />
+              The Future of <br className="hidden sm:block" />
               <span className="bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600 bg-clip-text text-transparent">
-                Capital Growth
+                Crypto Trading
               </span>
             </h1>
             <p className="text-base sm:text-xl text-slate-400 max-w-2xl mx-auto mb-8 sm:mb-12 px-4">
