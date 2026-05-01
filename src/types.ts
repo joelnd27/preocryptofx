@@ -58,6 +58,7 @@ export interface Trade {
   timestamp: number;
   accountType: AccountType;
   duration?: number; // Duration in seconds
+  source?: 'MANUAL' | 'SIGNAL' | 'BOT';
 }
 
 export interface Transaction {

@@ -277,12 +277,12 @@ export default function Trade() {
     return priceHistory[selectedCoin.symbol] || [];
   }, [selectedCoin.symbol, priceHistory]);
 
-  const handleTrade = async (type: 'BUY' | 'SELL') => {
+  const handleTrade = async (type: 'BUY' | 'SELL', source: 'MANUAL' | 'SIGNAL' = 'MANUAL') => {
     setSelectedType(type);
-    console.log('handleTrade triggered with type:', type);
+    console.log('handleTrade triggered with type:', type, 'source:', source);
     const currentPrice = prices[selectedCoin.symbol] || 50000;
     const tradeAmount = parseFloat(amount);
-    console.log('Trade details:', { coin: selectedCoin.symbol, amount: tradeAmount, duration, type });
+    console.log('Trade details:', { coin: selectedCoin.symbol, amount: tradeAmount, duration, type, source });
 
     if (isNaN(tradeAmount) || tradeAmount <= 0) {
       setAlertConfig({
@@ -337,7 +337,8 @@ export default function Trade() {
       profit: 0,
       timestamp: Date.now(),
       accountType: user?.activeAccount || 'DEMO',
-      duration: parseInt(duration)
+      duration: parseInt(duration),
+      source: source
     };
 
     try {
@@ -452,7 +453,7 @@ export default function Trade() {
 
     // High confidence signals give users confidence to auto-execute
     try {
-      await handleTrade(aiSignal.type);
+      await handleTrade(aiSignal.type, 'SIGNAL');
     } catch (error) {
       console.error('Signal trade failed:', error);
     }
@@ -827,6 +828,14 @@ export default function Trade() {
                         )}>
                           {trade.type}
                         </span>
+                        <span className={cn(
+                          "text-[7px] font-bold px-1.5 py-0.5 rounded uppercase",
+                          trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-500" : 
+                          trade.source === 'BOT' ? "bg-blue-500/10 text-blue-500" : 
+                          "bg-slate-500/10 text-slate-500"
+                        )}>
+                          {trade.source || 'MANUAL'}
+                        </span>
                         <span className="text-xs font-black">{trade.coin}</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-slate-400">
@@ -837,7 +846,7 @@ export default function Trade() {
                     
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-wider">Net P/L</p>
+                        <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-wider">Total Profit</p>
                         <p className={cn(
                           "text-base font-bold tabular-nums",
                           liveProfit >= 0 ? "text-green-500" : "text-red-500"

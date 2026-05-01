@@ -236,7 +236,7 @@ export default function Bots() {
               onClick={() => setIsCreateModalOpen(true)}
               className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-600/10 text-[10px] sm:text-xs"
             >
-              <Plus size={14} /> <span className="hidden sm:inline">Initialize</span><span className="sm:hidden">Init</span>
+              <Plus size={14} /> <span className="hidden sm:inline">Create</span><span className="sm:hidden">Create</span>
             </button>
           )}
         </div>
@@ -375,7 +375,7 @@ export default function Bots() {
               {user?.bots[selectedBot.id as keyof typeof user.bots] ? (
                 <><Square size={12} fill="currentColor" /> Deactivate</>
               ) : (
-                <><Play size={12} fill="currentColor" /> Initialize</>
+                <><Play size={12} fill="currentColor" /> Run</>
               )}
             </button>
           </div>
@@ -448,8 +448,8 @@ export default function Bots() {
               
               <div className="grid grid-cols-2 gap-2.5">
                 {[
-                  { label: 'Net Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500' : 'text-red-500' },
-                  { label: 'Trade Ops', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500' },
+                  { label: 'Total Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500' : 'text-red-500' },
+                  { label: 'Total Trades', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500' },
                 ].map((stat, i) => (
                   <div key={i} className="bg-slate-100 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
                     <p className="text-[7px] text-slate-500 uppercase font-bold mb-0.5 tracking-tight">{stat.label}</p>
@@ -615,8 +615,8 @@ export default function Bots() {
                     onClick={() => {
                       setAlertConfig({
                         isOpen: true,
-                        title: 'Bot Initialized',
-                        message: 'Your custom bot has been successfully initialized and added to your processing units.',
+                        title: 'Bot Created',
+                        message: 'Your custom bot has been successfully created and added to your processing units.',
                         type: 'success'
                       });
                       setIsCreateModalOpen(false);
@@ -725,7 +725,7 @@ export default function Bots() {
                       <Info size={20} />
                     </div>
                     <p className="text-[10px] text-slate-500 leading-relaxed">
-                      Select your preferred settings above, then upload your bot's JSON configuration file to initialize.
+                      Select your preferred settings above, then upload your bot's JSON configuration file to create.
                     </p>
                   </div>
                 </div>

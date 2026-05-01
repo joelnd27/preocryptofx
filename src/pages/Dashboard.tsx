@@ -111,6 +111,14 @@ export default function Dashboard() {
       trend: `${(user?.profit || 0) >= 0 ? '+' : ''}${profitPercentage.toFixed(1)}%`
     },
     { 
+      label: 'Total Trades', 
+      value: (user?.trades?.length || 0), 
+      icon: HistoryIcon, 
+      color: 'text-amber-500', 
+      bg: 'bg-amber-500/10',
+      trend: 'History'
+    },
+    { 
       label: 'Active Trades', 
       value: user?.trades?.filter(t => t.status === 'OPEN').length || 0, 
       icon: Activity, 
@@ -267,6 +275,7 @@ export default function Dashboard() {
                     <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Type</th>
                     <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Amount</th>
                     <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Result</th>
+                    <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Source</th>
                     <th className="px-3 py-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
                   </tr>
                 </thead>
@@ -303,6 +312,16 @@ export default function Dashboard() {
                           trade.profit >= 0 ? "text-green-500" : "text-red-500"
                         )}>
                           {trade.profit >= 0 ? '+' : ''}{formatCurrency(trade.profit)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={cn(
+                          "px-1 py-0.5 rounded text-[7px] font-bold uppercase",
+                          trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-500" : 
+                          trade.source === 'BOT' ? "bg-blue-500/10 text-blue-500" : 
+                          "bg-slate-500/10 text-slate-500"
+                        )}>
+                          {trade.source || 'MANUAL'}
                         </span>
                       </td>
                       <td className="px-3 py-2.5">

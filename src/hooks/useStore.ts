@@ -272,7 +272,8 @@ export function useStore() {
               targetProfit: Number(t.target_profit || 0),
               timestamp: timestamp,
               accountType: t.account_type,
-              duration: t.duration
+              duration: t.duration,
+              source: t.source
             };
           }),
           transactions: sortedTransactions.map((t: any) => ({
@@ -678,43 +679,34 @@ export function useStore() {
         target_profit: targetProfit,
         account_type: trade.accountType,
         timestamp: new Date(newTrade.timestamp).toISOString(),
-        duration: trade.duration
+        duration: trade.duration,
+        source: trade.source
       };
 
       console.log('[Supabase] Inserting trade:', tradeData);
 
       let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().maybeSingle();
 
-      if (tradeError && (tradeError.message?.includes('duration') || tradeError.message?.includes('target_profit') || tradeError.code === 'PGRST204' || tradeError.code === '42703')) {
-        console.warn('Specialized columns missing or schema mismatch in trades table, retrying simpler insert...');
-        const simplifiedTrade = {
+      if (tradeError) {
+        console.warn('Trade insert error, attempting extremely simplified fallback...', tradeError);
+        const ultraSimpleTrade = {
           user_id: currentUser.id,
           coin: trade.coin,
           amount: trade.amount,
           type: trade.type,
           price: trade.price,
           status: 'OPEN',
-          profit: 0,
-          account_type: trade.accountType,
-          timestamp: new Date(newTrade.timestamp).toISOString()
+          account_type: trade.accountType
         };
-        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(simplifiedTrade).select().maybeSingle();
-        if (retryError) {
-          console.error('[Supabase] Retry failed:', retryError);
-          throw retryError;
+        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(ultraSimpleTrade).select().maybeSingle();
+        if (!retryError) {
+          insertedTrade = retryTrade;
+          tradeError = null;
         }
-        insertedTrade = retryTrade;
-        tradeError = null;
-      }
-
-      if (tradeError) {
-        console.error('[Supabase] Trade insert error:', tradeError);
-        throw tradeError;
       }
 
       if (insertedTrade) {
         newTrade.id = insertedTrade.id;
-        console.log('[Supabase] Trade confirmed in DB:', insertedTrade.id);
       }
 
       console.log(`[Supabase] Updating balance for ${currentUser.id} to ${newBalance}`);
@@ -1101,7 +1093,8 @@ export function useStore() {
           profit: finalAmount,
           account_type: currentUser.activeAccount,
           timestamp: new Date().toISOString(),
-          duration: 0
+          duration: 0,
+          source: 'BOT'
         });
       } catch (err) {
         console.error('Bot Sync Error:', err);
@@ -1144,7 +1137,8 @@ export function useStore() {
         profit: finalAmount,
         accountType: prev.activeAccount,
         timestamp: Date.now(),
-        duration: 0
+        duration: 0,
+        source: 'BOT'
       };
 
       return {

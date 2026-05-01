@@ -103,6 +103,7 @@ export default function AllTrades() {
                 <th className="px-6 py-4">Amount</th>
                 <th className="px-6 py-4">Entry Price</th>
                 <th className="px-6 py-4">Profit/Loss</th>
+                <th className="px-6 py-4">Source</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Account</th>
               </tr>
@@ -148,6 +149,16 @@ export default function AllTrades() {
                       {trade.profit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                       {trade.profit >= 0 ? '+' : ''}{formatCurrency(trade.profit)}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={cn(
+                      "px-2 py-1 rounded-lg text-[10px] font-bold uppercase",
+                      trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-600" : 
+                      trade.source === 'BOT' ? "bg-blue-500/10 text-blue-600" : 
+                      "bg-slate-500/10 text-slate-600"
+                    )}>
+                      {trade.source || 'MANUAL'}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
