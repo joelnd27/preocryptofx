@@ -39,7 +39,9 @@ GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 -- Grant access to is_staff for RLS checks
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_proc.pronamespace = pg_namespace.oid WHERE pg_namespace.nspname = 'public' AND pg_proc.proname = 'is_staff') THEN
-        GRANT EXECUTE ON FUNCTION public.is_staff() TO authenticated;
+        EXECUTE 'ALTER FUNCTION public.is_staff() SET search_path = public';
+        EXECUTE 'REVOKE ALL ON FUNCTION public.is_staff() FROM PUBLIC';
+        GRANT EXECUTE ON FUNCTION public.is_staff() TO authenticated, service_role;
     END IF;
 END $$;
 
@@ -58,11 +60,19 @@ DO $$ BEGIN
 END $$;
 
 -- Grant access to auto_process_pending (called from useStore.ts)
-GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO authenticated;
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_proc.pronamespace = pg_namespace.oid WHERE pg_namespace.nspname = 'public' AND pg_proc.proname = 'auto_process_pending') THEN
+        EXECUTE 'ALTER FUNCTION public.auto_process_pending() SET search_path = public';
+        EXECUTE 'REVOKE ALL ON FUNCTION public.auto_process_pending() FROM PUBLIC';
+        GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO authenticated;
+    END IF;
+END $$;
 
 -- Grant access to auto_process_verification (called by auto_process_pending)
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_proc.pronamespace = pg_namespace.oid WHERE pg_namespace.nspname = 'public' AND pg_proc.proname = 'auto_process_verification') THEN
+        EXECUTE 'ALTER FUNCTION public.auto_process_verification() SET search_path = public';
+        EXECUTE 'REVOKE ALL ON FUNCTION public.auto_process_verification() FROM PUBLIC';
         GRANT EXECUTE ON FUNCTION public.auto_process_verification() TO authenticated;
     END IF;
 END $$;

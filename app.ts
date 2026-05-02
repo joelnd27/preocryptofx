@@ -61,7 +61,8 @@ router.post('/payhero/initiate', async (req, res) => {
         .update({ status: 'rejected' })
         .eq('user_id', userId)
         .eq('type', 'DEPOSIT')
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .neq('status', 'completed');
     } catch (err) {
       console.warn('Failed to clean up prior pending deposits:', err);
     }
@@ -638,26 +639,27 @@ setInterval(async () => {
   }
 
   try {
-    // 15 minutes ago
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // 24 hours ago (Much safer for manual processing)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     
     const { data, error } = await supabaseAdmin
       .from('transactions')
       .update({ status: 'rejected' })
-      .eq('status', 'pending')
+      .eq('status', 'pending') // Double guarantee: Only target pending
+      .neq('status', 'completed') // Explicitly exclude completed
       .eq('type', 'DEPOSIT')
-      .lt('timestamp', fifteenMinutesAgo)
+      .lt('timestamp', twentyFourHoursAgo)
       .select();
     
     if (error) {
       console.error('Error cleaning up stale transactions:', error);
     } else if (data && data.length > 0) {
-      console.log(`Cleaned up ${data.length} stale transactions (older than 15 minutes).`);
+      console.log(`Cleaned up ${data.length} stale transactions (older than 24 hours).`);
     }
   } catch (err) {
     console.error('Stale transaction cleanup exception:', err);
   }
-}, 5 * 60 * 1000); // Check every 5 minutes
+}, 30 * 60 * 1000); // Check every 30 minutes instead of 5
 
 // Background task for Automatic Account Verification (Offline)
 // Processes pending verifications every 60 seconds

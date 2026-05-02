@@ -163,36 +163,6 @@ export function useStore() {
     processPending();
   }, [user?.id, user?.role, user?.transactions?.length]);
 
-  // Deposit Timeout Auto-Process (15 Minutes)
-  useEffect(() => {
-    if (!user) return;
-
-    const checkTimeouts = async () => {
-      const pendingDeposits = user.transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'pending');
-      const now = Date.now();
-      const TIMEOUT_MS = 15 * 60 * 1000;
-
-      for (const tx of pendingDeposits) {
-        if (now - tx.timestamp > TIMEOUT_MS) {
-          if (isSupabaseConfigured()) {
-            await supabase.from('transactions').update({ status: 'failed' }).eq('id', tx.id);
-          }
-          setUser(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              transactions: prev.transactions.map(t => t.id === tx.id ? { ...t, status: 'failed' } : t)
-            };
-          });
-        }
-      }
-    };
-
-    const interval = setInterval(checkTimeouts, 60000); // Check every minute
-    checkTimeouts();
-    return () => clearInterval(interval);
-  }, [user?.id, user?.transactions?.length]);
-
   // Sync with Supabase if configured
   const syncWithSupabase = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
@@ -202,8 +172,23 @@ export function useStore() {
       
       if (sessionError) {
         console.warn('Session sync error:', sessionError.message);
-        if (sessionError.message.includes('Refresh Token Not Found') || sessionError.message.includes('invalid_refresh_token')) {
+        // CRITICAL: Handle Invalid Refresh Token error by force-clearing state
+        if (
+          sessionError.message.includes('Refresh Token Not Found') || 
+          sessionError.message.includes('invalid_refresh_token') ||
+          sessionError.message.includes('Refresh Token has already been used')
+        ) {
+          console.error('CRITICAL AUTH ERROR: Invalid Refresh Token detected. Force clearing session.');
           localStorage.removeItem('preocrypto_user');
+          
+          // Clear all supabase-related auth keys to be sure
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key?.startsWith('sb-') && key.includes('-auth-token')) {
+              localStorage.removeItem(key);
+            }
+          }
+          
           setUser(null);
           return;
         }
@@ -1802,7 +1787,9 @@ export function useStore() {
     if (isSupabaseConfigured()) {
       await supabase.from('transactions')
         .update({ status: 'rejected' })
-        .eq('id', latestPending.id);
+        .eq('id', latestPending.id)
+        .eq('status', 'pending') // Only if it is still pending in DB
+        .neq('status', 'completed');
     }
 
     setUser(prev => {

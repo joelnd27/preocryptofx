@@ -119,7 +119,10 @@ BEGIN
     AND (role = 'admin' OR role = 'marketer')
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION public.is_staff() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_staff() TO authenticated, service_role;
 
 -- USERS POLICIES
 DROP POLICY IF EXISTS "Users can view own profile" ON public.users;
@@ -166,7 +169,10 @@ BEGIN
   AND verification_submitted_at IS NOT NULL
   AND (EXTRACT(EPOCH FROM NOW()) * 1000 - verification_submitted_at) > 450000;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION public.auto_process_verification() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auto_process_verification() TO authenticated, service_role;
 
 -- Universal Auto-Process (Syncs pending withdrawals for marketers, etc.)
 CREATE OR REPLACE FUNCTION public.auto_process_pending()
@@ -184,7 +190,10 @@ BEGIN
   -- Run verification check too
   PERFORM public.auto_process_verification();
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION public.auto_process_pending() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO authenticated, service_role;
 
 -- Marketer Auto-Verification Trigger
 CREATE OR REPLACE FUNCTION public.auto_verify_marketers()
@@ -195,7 +204,10 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION public.auto_verify_marketers() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auto_verify_marketers() TO authenticated, service_role;
 
 DROP TRIGGER IF EXISTS on_user_role_change ON public.users;
 CREATE TRIGGER on_user_role_change
