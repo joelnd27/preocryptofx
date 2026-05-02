@@ -87,6 +87,28 @@ export default function Dashboard() {
 
   const totalProfit = calculateTotalProfit();
 
+  const calculateDailyTrades = () => {
+    if (!user) return 0;
+    const todayStr = new Date().toISOString().split('T')[0];
+    return (user.trades || [])
+      .filter(t => {
+        const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
+        return tradeDate === todayStr;
+      }).length;
+  };
+
+  const dailyTradesCount = calculateDailyTrades();
+
+  const calculateWinRate = () => {
+    if (!user || (user.trades || []).length === 0) return '0%';
+    const closedTrades = (user.trades || []).filter(t => t.status === 'CLOSED');
+    if (closedTrades.length === 0) return '0%';
+    const wins = closedTrades.filter(t => t.profit > 0).length;
+    return `${((wins / closedTrades.length) * 100).toFixed(0)}%`;
+  };
+
+  const winRateNormalized = calculateWinRate();
+
   const calculateProfitPercentage = () => {
     if (!user) return 0;
     const balance = user.activeAccount === 'REAL' ? user.realBalance : user.demoBalance;
@@ -123,19 +145,19 @@ export default function Dashboard() {
     },
     { 
       label: 'Daily Trades', 
-      value: (user?.dailyTrades || 0), 
+      value: dailyTradesCount, 
       icon: HistoryIcon, 
       color: 'text-amber-500', 
       bg: 'bg-amber-500/10',
       trend: 'Today'
     },
     { 
-      label: 'Active Trades', 
-      value: user?.trades?.filter(t => t.status === 'OPEN').length || 0, 
+      label: 'Win Rate', 
+      value: winRateNormalized, 
       icon: Activity, 
       color: 'text-indigo-500', 
       bg: 'bg-indigo-500/10',
-      trend: 'Live'
+      trend: 'History'
     },
     { 
       label: 'Bot Status', 

@@ -258,7 +258,7 @@ export function useStore() {
           dailyProfitDemo: Number(userData.daily_profit_demo || 0),
           dailyTradesReal: Number(userData.daily_trades_real || 0),
           dailyTradesDemo: Number(userData.daily_trades_demo || 0),
-          lastProfitResetDate: userData.last_profit_reset_date,
+          lastProfitResetDate: userData.last_profit_reset_date || new Date().toISOString().split('T')[0],
           trades: [], // Will be populated below
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
