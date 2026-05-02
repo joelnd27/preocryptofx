@@ -1510,7 +1510,7 @@ export function useStore() {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && ADMIN_IDS.includes(u.id)) ? 'admin' : (u.role === 'admin' ? 'user' : u.role),
+            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) || ADMIN_IDS.includes(u.id)) ? 'admin' : (u.role === 'admin' ? 'user' : u.role),
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: currentStatus,
