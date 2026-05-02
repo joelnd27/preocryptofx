@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS public.users (
     total_profit_demo NUMERIC DEFAULT 0,
     daily_profit_real NUMERIC DEFAULT 0,
     daily_profit_demo NUMERIC DEFAULT 0,
+    daily_trades_real NUMERIC DEFAULT 0,
+    daily_trades_demo NUMERIC DEFAULT 0,
     last_profit_reset_date TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS public.trades (
     target_profit NUMERIC DEFAULT 0,
     account_type TEXT NOT NULL CHECK (account_type IN ('DEMO', 'REAL')),
     duration INTEGER,
+    source TEXT,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
@@ -57,7 +60,10 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     trend_active BOOLEAN DEFAULT FALSE,
     ai_active BOOLEAN DEFAULT FALSE,
     custom_active BOOLEAN DEFAULT FALSE,
-    custom_config JSONB
+    custom_config JSONB,
+    bot_stats JSONB,
+    bot_logs JSONB,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 5. Helper function to check if user is admin (Strictly by email and ID for double security)

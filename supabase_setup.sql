@@ -41,6 +41,8 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS total_profit_real NUMERIC DEFA
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS total_profit_demo NUMERIC DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_profit_real NUMERIC DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_profit_demo NUMERIC DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_trades_real NUMERIC DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_trades_demo NUMERIC DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_profit_reset_date TEXT;
 
 -- Transactions Table
@@ -78,8 +80,10 @@ CREATE TABLE IF NOT EXISTS public.trades (
     price NUMERIC NOT NULL,
     status TEXT DEFAULT 'OPEN', -- OPEN, CLOSED
     profit NUMERIC DEFAULT 0,
+    target_profit NUMERIC DEFAULT 0,
     account_type TEXT DEFAULT 'DEMO', -- REAL, DEMO
     duration INTEGER,
+    source TEXT,
     timestamp TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -90,6 +94,10 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     scalping_active BOOLEAN DEFAULT FALSE,
     trend_active BOOLEAN DEFAULT FALSE,
     ai_active BOOLEAN DEFAULT FALSE,
+    custom_active BOOLEAN DEFAULT FALSE,
+    custom_config JSONB,
+    bot_stats JSONB,
+    bot_logs JSONB,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
