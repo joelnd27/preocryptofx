@@ -217,10 +217,14 @@ export function useStore() {
         .maybeSingle();
 
       if (userData) {
-        // Sort and limit locally just in case, though DB cleanup should handle it
+        // Sort locally to ensure correct order
         const sortedTrades = (userData.trades || [])
-          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 50);
+          .sort((a: any, b: any) => {
+            const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
+            const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
+            return timeB - timeA;
+          });
+          // Removed .slice(0, 50) or .slice(0, 100) to keep trades for both REAL and DEMO in state
         
         const sortedTransactions = (userData.transactions || [])
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -423,6 +427,43 @@ export function useStore() {
               const logEntry = `[${new Date().toLocaleTimeString()}] Offline Simulation complete: ${catchupTrades} trades executed. Result: ${catchupProfit >= 0 ? '+' : ''}${catchupProfit.toFixed(2)} USDT`;
               formattedUser.botLogs = [logEntry, ...(formattedUser.botLogs || [])].slice(0, 50);
               
+              // NEW: Record a consolidated catch-up trade in DB so it appears in history and metrics
+              if (isSupabaseConfigured() && Math.abs(catchupProfit) > 0) {
+                const catchupTradeData = {
+                  user_id: userData.id,
+                  coin: 'BOT-SESSION',
+                  amount: 0,
+                  type: catchupProfit >= 0 ? 'CALL' : 'PUT',
+                  price: 0,
+                  status: 'CLOSED',
+                  profit: catchupProfit,
+                  target_profit: catchupProfit,
+                  account_type: formattedUser.activeAccount,
+                  timestamp: new Date().toISOString(),
+                  duration: 0,
+                  source: 'BOT'
+                };
+                supabase.from('trades').insert(catchupTradeData).select().then(({ data }) => {
+                  if (data && data.length > 0) {
+                    // Update the local trades list too
+                    formattedUser.trades = [{
+                      id: data[0].id,
+                      coin: 'BOT-SESSION',
+                      amount: 0,
+                      type: catchupProfit >= 0 ? 'BUY' : 'SELL',
+                      price: 0,
+                      status: 'CLOSED',
+                      profit: catchupProfit,
+                      targetProfit: catchupProfit,
+                      timestamp: Date.now(),
+                      accountType: formattedUser.activeAccount,
+                      duration: 0,
+                      source: 'BOT'
+                    }, ...formattedUser.trades];
+                  }
+                });
+              }
+
               // Update bot settings in DB
               await supabase.from('bot_settings').update({
                 bot_stats: formattedUser.botStats,
@@ -905,13 +946,14 @@ export function useStore() {
         [isReal ? 'daily_trades_real' : 'daily_trades_demo']: (isReal ? (currentUser.dailyTradesReal || 0) : (currentUser.dailyTradesDemo || 0)) + 1
       }).eq('id', currentUser.id);
       
-      // Cleanup old trades (Keep latest 50)
+      // Cleanup old trades (Keep latest 100 per account type to be safe)
       const { data: oldTrades } = await supabase
         .from('trades')
         .select('id')
         .eq('user_id', currentUser.id)
+        .eq('account_type', trade.accountType)
         .order('timestamp', { ascending: false })
-        .range(50, 1000);
+        .range(100, 1000);
       
       if (oldTrades && oldTrades.length > 0) {
         const idsToDelete = oldTrades.map(t => t.id);
@@ -1362,7 +1404,7 @@ export function useStore() {
         dailyTradesDemo: !isRealAccount ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo,
         botStats: newStats,
         botLogs: log ? [log, ...(prev.botLogs || [])].slice(0, 50) : (prev.botLogs || []),
-        trades: [newTradeEntry, ...(prev.trades || [])].slice(0, 50)
+        trades: [newTradeEntry, ...(prev.trades || [])]
       };
     });
 
@@ -1413,7 +1455,7 @@ export function useStore() {
           accountType: u.activeAccount,
           timestamp: Date.now(),
           duration: 0
-        }, ...(u.trades || [])].slice(0, 50)
+        }, ...(u.trades || [])]
       };
     }));
   };

@@ -80,8 +80,8 @@ export default function Dashboard() {
     if (!user) return 0;
     // Calculate from the already limited trades history (top 50) of the ACTIVE account
     return (user.trades || [])
-      .filter(t => t.status === 'CLOSED' && t.accountType === user.activeAccount)
-      .slice(0, 50)
+      .filter(t => t.status === 'CLOSED' && String(t.accountType).toUpperCase() === String(user.activeAccount).toUpperCase())
+      .slice(0, 1000)
       .reduce((sum, t) => sum + (t.profit || 0), 0);
   };
 
@@ -93,7 +93,7 @@ export default function Dashboard() {
     return (user.trades || [])
       .filter(t => {
         const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
-        return tradeDate === todayStr && t.accountType === user.activeAccount;
+        return tradeDate === todayStr && String(t.accountType).toUpperCase() === String(user.activeAccount).toUpperCase();
       }).length;
   };
 
@@ -115,7 +115,7 @@ export default function Dashboard() {
     return (user.trades || [])
       .filter(t => {
         const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
-        return tradeDate === todayStr && t.status === 'CLOSED' && t.accountType === user.activeAccount;
+        return tradeDate === todayStr && t.status === 'CLOSED' && String(t.accountType).toUpperCase() === String(user.activeAccount).toUpperCase();
       })
       .reduce((sum, t) => sum + (t.profit || 0), 0);
   };
@@ -166,7 +166,7 @@ export default function Dashboard() {
     },
     { 
       label: 'Active Trades', 
-      value: user?.trades?.filter(t => t.status === 'OPEN' && t.accountType === user.activeAccount).length || 0, 
+      value: user?.trades?.filter(t => t.status === 'OPEN' && String(t.accountType).toUpperCase() === String(user?.activeAccount || "DEMO").toUpperCase()).length || 0, 
       icon: Activity, 
       color: 'text-indigo-500', 
       bg: 'bg-indigo-500/10',

@@ -19,6 +19,7 @@ export default function AllTrades() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'OPEN' | 'CLOSED'>('ALL');
+  const [accountFilter, setAccountFilter] = useState<'ALL' | 'REAL' | 'DEMO'>(String(user?.activeAccount || 'ALL').toUpperCase() as any);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'N/A';
@@ -37,14 +38,14 @@ export default function AllTrades() {
     .filter(t => {
       const matchesSearch = t.coin.toLowerCase().includes(search.toLowerCase());
       const matchesFilter = filter === 'ALL' || t.status === filter;
-      return matchesSearch && matchesFilter;
+      const matchesAccount = accountFilter === 'ALL' || String(t.accountType).toUpperCase() === accountFilter;
+      return matchesSearch && matchesFilter && matchesAccount;
     })
     .sort((a, b) => {
       const timeA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
       const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
       return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
-    })
-    .slice(0, 50);
+    });
 
   return (
     <div className="space-y-8">
@@ -86,6 +87,23 @@ export default function AllTrades() {
                 )}
               >
                 {f}
+              </button>
+            ))}
+          </div>
+          
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
+            {(['ALL', 'REAL', 'DEMO'] as const).map((af) => (
+              <button
+                key={af}
+                onClick={() => setAccountFilter(af)}
+                className={cn(
+                  "flex-1 px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+                  accountFilter === af 
+                    ? "bg-blue-500 text-white shadow-sm" 
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                )}
+              >
+                {af}
               </button>
             ))}
           </div>
