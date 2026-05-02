@@ -371,16 +371,14 @@ export function useStore() {
 
             for (let i = 0; i < actualIntervals; i++) {
               const [botId] = activeBots[Math.floor(Math.random() * activeBots.length)];
-              let winChance = 0.75; // Baseline decent win rate
+              let winChance = 0.5;
               const isDemoAccount = formattedUser.activeAccount === 'DEMO';
-              const isMarketer = formattedUser.role === 'marketer';
-              const isAdmin = formattedUser.role === 'admin';
               
               if (isDemoAccount) winChance = 0.92;
               else if (isMarketer || isAdmin) winChance = 0.98;
               else {
-                // Regular users on Real account: Fair but profitable chance
-                winChance = 0.65;
+                // Normal user: Extremely tight win chance
+                winChance = 0.02; 
               }
 
               const baseAmount = (1 + Math.random() * 4);
@@ -390,8 +388,8 @@ export function useStore() {
               // but don't force losses 98% of the time.
               const balanceNow = isDemoAccount ? updatedDemoBalance + catchupProfit : updatedRealBalance + catchupProfit;
               if (!isDemoAccount && !isMarketer && !isAdmin && balanceNow < 100 && isWin) {
-                // If extremely low balance, keep it slightly harder but not impossible
-                if (Math.random() < 0.20) isWin = false;
+                // If balance is < $100, give an additional 98% chance to flip a win to a loss
+                if (Math.random() < 0.98) isWin = false;
               }
 
               const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
@@ -1875,14 +1873,14 @@ export function useStore() {
         const isMarketer = currentUser.role === 'marketer';
         const isAdmin = currentUser.role === 'admin';
         
-        let winChance = 0.75; // Baseline decent win rate
+        let winChance = 0.5;
         if (isDemo) {
           winChance = 0.92;
         } else if (isMarketer || isAdmin) {
           winChance = 0.98;
         } else {
-          // Normal user: Fair profitable chance
-          winChance = 0.65; 
+          // Normal user: Extremely tight win chance
+          winChance = 0.02; 
         }
         
         const isActiveReal = currentUser.activeAccount === 'REAL';
@@ -1892,8 +1890,8 @@ export function useStore() {
         // Tighten win rate for small balances on REAL accounts
         let adjustedWin = isWin;
         if (!isDemo && !isMarketer && !isAdmin && balance < 100 && isWin) {
-          // If balance is < $100, give an additional chance to flip a win to a loss
-          if (Math.random() < 0.20) adjustedWin = false;
+          // If balance is < $100, give an additional 98% chance to flip a win to a loss
+          if (Math.random() < 0.98) adjustedWin = false;
         }
 
         const profitVal = adjustedWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
