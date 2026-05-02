@@ -76,11 +76,22 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  const calculateTotalProfit = () => {
+    if (!user) return 0;
+    // Calculate from the already limited trades history (top 50)
+    return (user.trades || [])
+      .slice(0, 50)
+      .filter(t => t.status === 'CLOSED')
+      .reduce((sum, t) => sum + (t.profit || 0), 0);
+  };
+
+  const totalProfit = calculateTotalProfit();
+
   const calculateProfitPercentage = () => {
     if (!user) return 0;
     const balance = user.activeAccount === 'REAL' ? user.realBalance : user.demoBalance;
     if (balance === 0) return 0;
-    return ((user.profit || 0) / balance) * 100;
+    return (totalProfit / balance) * 100;
   };
 
   const profitPercentage = calculateProfitPercentage();
@@ -104,11 +115,11 @@ export default function Dashboard() {
     },
     { 
       label: 'Total Profit', 
-      value: formatCurrency(user?.profit || 0), 
+      value: formatCurrency(totalProfit), 
       icon: BarChart3, 
-      color: (user?.profit || 0) >= 0 ? 'text-green-500' : 'text-red-500', 
-      bg: (user?.profit || 0) >= 0 ? 'bg-green-500/10' : 'bg-red-500/10',
-      trend: `${(user?.profit || 0) >= 0 ? '+' : ''}${profitPercentage.toFixed(1)}%`
+      color: totalProfit >= 0 ? 'text-green-500' : 'text-red-500', 
+      bg: totalProfit >= 0 ? 'bg-green-500/10' : 'bg-red-500/10',
+      trend: `${totalProfit >= 0 ? '+' : ''}${profitPercentage.toFixed(1)}%`
     },
     { 
       label: 'Daily Trades', 

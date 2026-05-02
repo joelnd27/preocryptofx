@@ -741,10 +741,28 @@ export function useStore() {
     if (!user) return;
     
     if (isSupabaseConfigured()) {
-      await supabase.from('users').update({ demo_balance: 10000 }).eq('id', user.id);
+      await supabase.from('users').update({ 
+        demo_balance: 10000,
+        total_profit_demo: 0,
+        daily_profit_demo: 0,
+        daily_trades_demo: 0
+      }).eq('id', user.id);
+
+      // Also clear demo trades from DB to reset total profit calculation based on history
+      await supabase.from('trades').delete().eq('user_id', user.id).eq('account_type', 'DEMO');
     }
 
-    const updatedUser = { ...user, demoBalance: 10000 };
+    const updatedUser = { 
+      ...user, 
+      demoBalance: 10000,
+      totalProfitDemo: 0,
+      dailyProfitDemo: 0,
+      dailyTradesDemo: 0,
+      trades: user.trades.filter(t => t.accountType !== 'DEMO'),
+      profit: user.activeAccount === 'DEMO' ? 0 : user.profit,
+      dailyProfit: user.activeAccount === 'DEMO' ? 0 : user.dailyProfit,
+      dailyTrades: user.activeAccount === 'DEMO' ? 0 : user.dailyTrades
+    };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
     
