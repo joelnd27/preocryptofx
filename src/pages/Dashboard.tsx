@@ -78,10 +78,10 @@ export default function Dashboard() {
 
   const calculateTotalProfit = () => {
     if (!user) return 0;
-    // Calculate from the already limited trades history (top 50)
+    // Calculate from the already limited trades history (top 50) of the ACTIVE account
     return (user.trades || [])
+      .filter(t => t.status === 'CLOSED' && t.accountType === user.activeAccount)
       .slice(0, 50)
-      .filter(t => t.status === 'CLOSED')
       .reduce((sum, t) => sum + (t.profit || 0), 0);
   };
 
@@ -93,7 +93,7 @@ export default function Dashboard() {
     return (user.trades || [])
       .filter(t => {
         const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
-        return tradeDate === todayStr;
+        return tradeDate === todayStr && t.accountType === user.activeAccount;
       }).length;
   };
 
@@ -108,6 +108,19 @@ export default function Dashboard() {
   };
 
   const winRateNormalized = calculateWinRate();
+
+  const calculateDailyProfit = () => {
+    if (!user) return 0;
+    const todayStr = new Date().toISOString().split('T')[0];
+    return (user.trades || [])
+      .filter(t => {
+        const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
+        return tradeDate === todayStr && t.status === 'CLOSED' && t.accountType === user.activeAccount;
+      })
+      .reduce((sum, t) => sum + (t.profit || 0), 0);
+  };
+
+  const currentDailyProfit = calculateDailyProfit();
 
   const calculateProfitPercentage = () => {
     if (!user) return 0;
@@ -129,10 +142,10 @@ export default function Dashboard() {
     },
     { 
       label: 'Daily Profit', 
-      value: formatCurrency(user?.dailyProfit || 0), 
+      value: formatCurrency(currentDailyProfit), 
       icon: TrendingUp, 
-      color: (user?.dailyProfit || 0) >= 0 ? 'text-green-500' : 'text-red-500', 
-      bg: (user?.dailyProfit || 0) >= 0 ? 'bg-green-500/10' : 'bg-red-500/10',
+      color: currentDailyProfit >= 0 ? 'text-green-500' : 'text-red-500', 
+      bg: currentDailyProfit >= 0 ? 'bg-green-500/10' : 'bg-red-500/10',
       trend: 'Today'
     },
     { 
@@ -152,12 +165,12 @@ export default function Dashboard() {
       trend: 'Today'
     },
     { 
-      label: 'Win Rate', 
-      value: winRateNormalized, 
+      label: 'Active Trades', 
+      value: user?.trades?.filter(t => t.status === 'OPEN' && t.accountType === user.activeAccount).length || 0, 
       icon: Activity, 
       color: 'text-indigo-500', 
       bg: 'bg-indigo-500/10',
-      trend: 'History'
+      trend: 'Live'
     },
     { 
       label: 'Bot Status', 
