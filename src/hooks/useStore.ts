@@ -252,40 +252,7 @@ export function useStore() {
           dailyTradesReal: Number(userData.daily_trades_real || 0),
           dailyTradesDemo: Number(userData.daily_trades_demo || 0),
           lastProfitResetDate: userData.last_profit_reset_date,
-          trades: sortedTrades.map((t: any) => {
-            const timestamp = t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime();
-            const now = Date.now();
-            let status = t.status || 'CLOSED';
-            let profit = Number(t.profit || 0);
-
-            // Reconcile OPEN trades that should have closed while user was away
-            if (status === 'OPEN' && t.duration && t.duration > 0) {
-              const expiryTime = timestamp + (t.duration * 1000);
-              if (now >= expiryTime) {
-                status = 'CLOSED';
-                // Use a default target profit if not stored, otherwise we'd need to re-calculate
-                // For simplicity during reconciliation, we use 0 or original amount if they were away
-                // Better yet, we can't reliably know the "targetProfit" here unless it's in the DB.
-                // Since it's not in the DB, we'll use a slightly random outcome or 0.
-                profit = profit || 0; 
-              }
-            }
-
-            return {
-              id: t.id,
-              coin: t.coin,
-              amount: Number(t.amount),
-              type: t.type,
-              price: Number(t.price),
-              status: status,
-              profit: profit,
-              targetProfit: Number(t.target_profit || 0),
-              timestamp: timestamp,
-              accountType: t.account_type,
-              duration: t.duration,
-              source: t.source
-            };
-          }),
+          trades: [], // Will be populated below
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
             userId: t.user_id,
@@ -313,6 +280,178 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           createdAt: new Date(userData.created_at).getTime()
         };
+
+        // 1. Reconcile trades (Handle trades that expired while offline)
+        let balanceChanged = false;
+        let updatedDemoBalance = formattedUser.demoBalance;
+        let updatedRealBalance = formattedUser.realBalance;
+        let updatedProfitReal = formattedUser.totalProfitReal;
+        let updatedProfitDemo = formattedUser.totalProfitDemo;
+        let updatedDailyProfitReal = formattedUser.dailyProfitReal;
+        let updatedDailyProfitDemo = formattedUser.dailyProfitDemo;
+        let updatedDailyTradesReal = formattedUser.dailyTradesReal;
+        let updatedDailyTradesDemo = formattedUser.dailyTradesDemo;
+
+        const now = Date.now();
+        const reconciledTrades = await Promise.all(sortedTrades.map(async (t: any) => {
+          const timestamp = t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime();
+          let status = t.status || 'CLOSED';
+          let profit = Number(t.profit || 0);
+
+          if (status === 'OPEN' && t.duration && t.duration > 0) {
+            const expiryTime = timestamp + (t.duration * 1000);
+            if (now >= expiryTime) {
+              console.log(`[Reconciliation] Auto-closing expired trade ${t.id}`);
+              status = 'CLOSED';
+              profit = Number(t.target_profit || 0);
+              
+              // Persist settlement to DB
+              await supabase.from('trades').update({ status: 'CLOSED', profit }).eq('id', t.id);
+              
+              // Update balance and stats
+              balanceChanged = true;
+              const isReal = t.account_type === 'REAL';
+              const returnAmount = Number(t.amount) + profit;
+              
+              if (isReal) {
+                updatedRealBalance = Number((updatedRealBalance + returnAmount).toFixed(2));
+                updatedProfitReal = Number((updatedProfitReal + profit).toFixed(2));
+                updatedDailyProfitReal = Number((updatedDailyProfitReal + profit).toFixed(2));
+                updatedDailyTradesReal += 1;
+              } else {
+                updatedDemoBalance = Number((updatedDemoBalance + returnAmount).toFixed(2));
+                updatedProfitDemo = Number((updatedProfitDemo + profit).toFixed(2));
+                updatedDailyProfitDemo = Number((updatedDailyProfitDemo + profit).toFixed(2));
+                updatedDailyTradesDemo += 1;
+              }
+            }
+          }
+
+          return {
+            id: t.id,
+            coin: t.coin,
+            amount: Number(t.amount),
+            type: t.type,
+            price: Number(t.price),
+            status: status,
+            profit: profit,
+            targetProfit: Number(t.target_profit || 0),
+            timestamp: timestamp,
+            accountType: t.account_type,
+            duration: t.duration,
+            source: t.source
+          };
+        }));
+
+        formattedUser.trades = reconciledTrades;
+
+        // 2. Bot Offline Catch-up Simulation
+        const activeBots = Object.entries(formattedUser.bots).filter(([_, active]) => active);
+        if (activeBots.length > 0 && botSettingsData?.updated_at) {
+          const lastUpdate = new Date(botSettingsData.updated_at).getTime();
+          const secondsOffline = (now - lastUpdate) / 1000;
+          const intervalsMissed = Math.floor(secondsOffline / 15); // Bot runs every 15s
+
+          if (intervalsMissed > 0) {
+            console.log(`[Bot Catch-up] Simulating ${intervalsMissed} missed intervals for ${userData.id}`);
+            const maxCatchup = 500; // Limit catch-up to prevent huge updates
+            const actualIntervals = Math.min(intervalsMissed, maxCatchup);
+            
+            let catchupProfit = 0;
+            let catchupTrades = 0;
+            const isMarketer = formattedUser.role === 'marketer';
+            const isAdmin = formattedUser.role === 'admin';
+
+            for (let i = 0; i < actualIntervals; i++) {
+              const [botId] = activeBots[Math.floor(Math.random() * activeBots.length)];
+              let winChance = 0.5;
+              const isDemoAccount = formattedUser.activeAccount === 'DEMO';
+              
+              if (isDemoAccount) winChance = 0.92;
+              else if (isMarketer || isAdmin) winChance = 0.98;
+              else winChance = 0.02;
+
+              const baseAmount = (1 + Math.random() * 4);
+              let isWin = Math.random() < winChance;
+              
+              // Tighten win rate for small balances on REAL accounts (similiar to main loop)
+              const balanceNow = isDemoAccount ? updatedDemoBalance + catchupProfit : updatedRealBalance + catchupProfit;
+              if (!isDemoAccount && !isMarketer && !isAdmin && balanceNow < 100 && isWin) {
+                if (Math.random() < 0.98) isWin = false;
+              }
+
+              const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
+              catchupProfit += profitVal;
+              catchupTrades += 1;
+              
+              // Update individual bot stats
+              if (formattedUser.botStats[botId as keyof typeof formattedUser.botStats]) {
+                formattedUser.botStats[botId as keyof typeof formattedUser.botStats].profit = 
+                  Number((formattedUser.botStats[botId as keyof typeof formattedUser.botStats].profit + profitVal).toFixed(2));
+                formattedUser.botStats[botId as keyof typeof formattedUser.botStats].trades += 1;
+              }
+            }
+
+            if (catchupTrades > 0) {
+              balanceChanged = true;
+              const isReal = formattedUser.activeAccount === 'REAL';
+              if (isReal) {
+                updatedRealBalance = Number((updatedRealBalance + catchupProfit).toFixed(2));
+                updatedProfitReal = Number((updatedProfitReal + catchupProfit).toFixed(2));
+                updatedDailyProfitReal = Number((updatedDailyProfitReal + catchupProfit).toFixed(2));
+                updatedDailyTradesReal += catchupTrades;
+              } else {
+                updatedDemoBalance = Number((updatedDemoBalance + catchupProfit).toFixed(2));
+                updatedProfitDemo = Number((updatedProfitDemo + catchupProfit).toFixed(2));
+                updatedDailyProfitDemo = Number((updatedDailyProfitDemo + catchupProfit).toFixed(2));
+                updatedDailyTradesDemo += catchupTrades;
+              }
+              
+              // Log catchup result
+              const logEntry = `[${new Date().toLocaleTimeString()}] Offline Simulation complete: ${catchupTrades} trades executed. Result: ${catchupProfit >= 0 ? '+' : ''}${catchupProfit.toFixed(2)} USDT`;
+              formattedUser.botLogs = [logEntry, ...(formattedUser.botLogs || [])].slice(0, 50);
+              
+              // Update bot settings in DB
+              await supabase.from('bot_settings').update({
+                bot_stats: formattedUser.botStats,
+                bot_logs: formattedUser.botLogs,
+                updated_at: new Date().toISOString()
+              }).eq('user_id', userData.id);
+            }
+          } else {
+            // Update updated_at even if no intervals missed to keep it fresh
+            await supabase.from('bot_settings').update({ updated_at: new Date().toISOString() }).eq('user_id', userData.id);
+          }
+        }
+
+        // Apply any changes from reconciliation or catch-up
+        if (balanceChanged) {
+          console.log(`[Sync] Persisting reconciled balance updates for ${userData.id}`);
+          formattedUser.demoBalance = Math.max(0, updatedDemoBalance);
+          formattedUser.realBalance = Math.max(0, updatedRealBalance);
+          formattedUser.totalProfitReal = updatedProfitReal;
+          formattedUser.totalProfitDemo = updatedProfitDemo;
+          formattedUser.dailyProfitReal = updatedDailyProfitReal;
+          formattedUser.dailyProfitDemo = updatedDailyProfitDemo;
+          formattedUser.dailyTradesReal = updatedDailyTradesReal;
+          formattedUser.dailyTradesDemo = updatedDailyTradesDemo;
+          
+          // Re-calculate the primary UI fields
+          formattedUser.profit = formattedUser.activeAccount === 'REAL' ? updatedProfitReal : updatedProfitDemo;
+          formattedUser.dailyProfit = formattedUser.activeAccount === 'REAL' ? updatedDailyProfitReal : updatedDailyProfitDemo;
+          formattedUser.dailyTrades = formattedUser.activeAccount === 'REAL' ? updatedDailyTradesReal : updatedDailyTradesDemo;
+
+          await supabase.from('users').update({
+            demo_balance: formattedUser.demoBalance,
+            real_balance: formattedUser.realBalance,
+            total_profit_real: formattedUser.totalProfitReal,
+            total_profit_demo: formattedUser.totalProfitDemo,
+            daily_profit_real: formattedUser.dailyProfitReal,
+            daily_profit_demo: formattedUser.dailyProfitDemo,
+            daily_trades_real: formattedUser.dailyTradesReal,
+            daily_trades_demo: formattedUser.dailyTradesDemo
+          }).eq('id', userData.id);
+        }
 
         // Cloud sync for chart settings
         if (userData.preferred_indicators) {
@@ -1019,7 +1158,8 @@ export function useStore() {
         ai_active: updatedBots.ai,
         custom_active: updatedBots.custom,
         custom_config: user.customBotConfig, // Preserve custom config on toggle
-        bot_stats: user.botStats // Persist stats
+        bot_stats: user.botStats, // Persist stats
+        updated_at: new Date().toISOString()
       });
     }
 
@@ -1096,7 +1236,8 @@ export function useStore() {
 
       await supabase.from('bot_settings').update({
         bot_logs: updatedLogsDB,
-        bot_stats: calculatedUpdatedStatsDB
+        bot_stats: calculatedUpdatedStatsDB,
+        updated_at: new Date().toISOString()
       }).eq('user_id', currentUser.id);
 
       try {
