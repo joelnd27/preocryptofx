@@ -173,22 +173,29 @@ export function useStore() {
       if (sessionError) {
         console.warn('Session sync error:', sessionError.message);
         // CRITICAL: Handle Invalid Refresh Token error by force-clearing state
+        const errorMessage = sessionError.message || '';
         if (
-          sessionError.message.includes('Refresh Token Not Found') || 
-          sessionError.message.includes('invalid_refresh_token') ||
-          sessionError.message.includes('Refresh Token has already been used')
+          errorMessage.includes('Refresh Token Not Found') || 
+          errorMessage.includes('invalid_refresh_token') ||
+          errorMessage.includes('Refresh Token has already been used') ||
+          errorMessage.includes('Invalid Refresh Token')
         ) {
           console.error('CRITICAL AUTH ERROR: Invalid Refresh Token detected. Force clearing session.');
           localStorage.removeItem('preocrypto_user');
           
           // Clear all supabase-related auth keys to be sure
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key?.startsWith('sb-') && key.includes('-auth-token')) {
-              localStorage.removeItem(key);
+          try {
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key?.startsWith('sb-') && (key.includes('-auth-token') || key.includes('.token'))) {
+                localStorage.removeItem(key);
+              }
             }
+          } catch (e) {
+            console.warn('Failed to clear some local storage keys', e);
           }
           
+          await supabase.auth.signOut().catch(() => {});
           setUser(null);
           return;
         }

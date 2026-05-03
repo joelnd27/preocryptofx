@@ -11,11 +11,13 @@ BEGIN
     
     IF target_user_id IS NOT NULL THEN
         -- Mark the $20 deposit as completed
+        -- IMPORTANT: The field name is external_id, not external_reference
         UPDATE public.transactions 
         SET status = 'completed' 
         WHERE user_id = target_user_id 
           AND type = 'DEPOSIT' 
-          AND amount = 20.00;
+          AND amount = 20.00
+          AND (external_id = 'UE2KT20OU4' OR method ILIKE '%UE2KT20OU4%');
           
         -- Set balance to 5.78 as requested
         -- We use 5.78 to match the user's specific request

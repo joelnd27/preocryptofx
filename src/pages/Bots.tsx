@@ -70,13 +70,27 @@ const BOTS: BotConfig[] = [
 export default function Bots() {
   const { user, toggleBot, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
+  
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string }>>({
     scalping: { coin: 'BTC', timeframe: '1M' },
     trend: { coin: 'ETH', timeframe: '1H' },
     ai: { coin: 'SOL', timeframe: '15M' },
     custom: { coin: 'BTC', timeframe: '1M' }
   });
-  
+
+  const allBots = [
+    ...BOTS,
+    ...(user?.customBotConfig ? [{
+      id: 'custom',
+      name: user.customBotConfig.name,
+      description: `Custom neural bot using ${user.customBotConfig.strategy} strategy.`,
+      type: 'ai' as const,
+      winRate: 'Adaptive',
+      risk: user.customBotConfig.risk as any,
+      minDeposit: 10
+    }] : [])
+  ];
+
   const logs = user?.botLogs || [];
   const stats = user?.botStats || {
     scalping: { profit: 0, trades: 0 },
@@ -188,6 +202,17 @@ export default function Bots() {
           currency: config.currency || importConfig.currency
         });
 
+        // Automatically select the newly imported bot
+        setSelectedBot({
+          id: 'custom',
+          name: importConfig.name || config.name,
+          description: `Custom neural bot using ${config.strategy} strategy.`,
+          type: 'ai',
+          winRate: 'Adaptive',
+          risk: (importConfig.risk || config.risk || 'Medium') as any,
+          minDeposit: 10
+        });
+
         setAlertConfig({
           isOpen: true,
           title: 'Bot Imported',
@@ -245,9 +270,14 @@ export default function Bots() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
       {/* Bot Selection & Config */}
       <div className="lg:col-span-8 space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
-          {BOTS.map((bot) => {
+        <div className={cn(
+          "grid gap-2.5 sm:gap-3",
+          allBots.length > 3 ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-4" : "grid-cols-1 md:grid-cols-3"
+        )}>
+          {allBots.map((bot) => {
             const isActive = user?.bots[bot.id as keyof typeof user.bots];
+            const isCustom = bot.id === 'custom';
+
             return (
               <button
                 key={bot.id}
@@ -259,12 +289,17 @@ export default function Bots() {
                     : "bg-white dark:bg-[#161a1e] border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
                 )}
               >
+                {isCustom && (
+                  <div className="absolute top-0 right-0 px-1.5 py-0.5 bg-blue-600 text-white text-[6px] font-bold uppercase tracking-wider rounded-bl-lg">
+                    Custom
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-2">
                   <div className={cn(
                     "w-7 h-7 rounded-lg flex items-center justify-center shadow-sm",
-                    isActive ? "bg-green-500 text-white shadow-green-500/20 shadow-lg" : "bg-slate-800 text-slate-400"
+                    isActive ? (isCustom ? "bg-blue-500 text-white shadow-blue-500/20 shadow-lg" : "bg-green-500 text-white shadow-green-500/20 shadow-lg") : "bg-slate-800 text-slate-400"
                   )}>
-                    <Cpu size={14} />
+                    {isCustom ? <Zap size={14} /> : <Cpu size={14} />}
                   </div>
                   <div className={cn(
                     "px-1.5 py-0.5 rounded-full text-[6px] sm:text-[7px] font-bold uppercase tracking-widest border",
@@ -282,8 +317,13 @@ export default function Bots() {
                 
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <div>
-                    <p className="text-[6px] text-slate-500 uppercase font-bold tracking-tighter">Win Rate</p>
-                    <p className="text-[9px] font-bold text-green-500 font-mono leading-none">{bot.winRate}</p>
+                    <p className="text-[6px] text-slate-500 uppercase font-bold tracking-tighter">{isCustom ? 'Currency' : 'Win Rate'}</p>
+                    <p className={cn(
+                      "text-[9px] font-bold font-mono leading-none",
+                      isCustom ? "text-blue-500" : "text-green-500"
+                    )}>
+                      {isCustom ? (user?.customBotConfig?.currency || 'BTC') : bot.winRate}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[6px] text-slate-500 uppercase font-bold tracking-tighter">Risk</p>
@@ -297,68 +337,21 @@ export default function Bots() {
             );
           })}
         </div>
-          {user?.customBotConfig && (
-            <button
-              onClick={() => setSelectedBot({
-                id: 'custom',
-                name: user.customBotConfig!.name,
-                description: `Custom imported bot using ${user.customBotConfig!.strategy} strategy.`,
-                type: 'ai',
-                winRate: 'Custom',
-                risk: user.customBotConfig!.risk as any,
-                minDeposit: 10
-              })}
-              className={cn(
-                "relative p-5 rounded-xl border transition-all text-left group overflow-hidden",
-                selectedBot.id === 'custom' 
-                  ? "bg-slate-900 border-blue-500 shadow-xl shadow-blue-500/10" 
-                  : "bg-white dark:bg-slate-900/30 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
-              )}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className={cn(
-                  "w-10 h-10 rounded-lg flex items-center justify-center shadow-sm",
-                  user.bots.custom ? "bg-blue-500 text-white shadow-blue-500/20 shadow-lg" : "bg-slate-800 text-slate-400"
-                )}>
-                  <Zap size={20} />
-                </div>
-                <div className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border bg-blue-500/10 border-blue-500/20 text-blue-500">
-                  Custom
-                </div>
-              </div>
-              
-              <h3 className={cn(
-                "text-sm font-bold mb-1",
-                selectedBot.id === 'custom' ? "text-white" : "text-slate-900 dark:text-slate-200"
-              )}>{user.customBotConfig.name}</h3>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 leading-relaxed font-mono">
-                Custom Neural Strategy Active
-              </p>
-              
-              <div className="flex items-center gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <div>
-                  <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Currency</p>
-                  <p className="text-xs font-bold text-blue-500 font-mono">{user.customBotConfig.currency}</p>
-                </div>
-                <div>
-                  <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Risk</p>
-                  <p className="text-xs font-bold text-yellow-500 font-mono">{user.customBotConfig.risk}</p>
-                </div>
-              </div>
-            </button>
-          )}
 
         <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-600/10">
-                <Bot size={18} />
+              <div className={cn(
+                "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-600/10",
+                selectedBot.id === 'custom' ? "bg-blue-600" : "bg-blue-600"
+              )}>
+                {selectedBot.id === 'custom' ? <Zap size={18} /> : <Bot size={18} />}
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">{selectedBot.name}</h2>
                 <p className="text-[8px] sm:text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 uppercase tracking-wider font-bold">
-                  Institutional <ChevronRight size={8} /> 
-                  <span className="text-blue-500">v4.2 PRO</span>
+                  {selectedBot.id === 'custom' ? 'User Custom' : 'Institutional'} <ChevronRight size={8} /> 
+                  <span className="text-blue-500">{selectedBot.id === 'custom' ? 'NEURAL ENGINE' : 'v4.2 PRO'}</span>
                 </p>
               </div>
             </div>
@@ -375,10 +368,11 @@ export default function Bots() {
               {user?.bots[selectedBot.id as keyof typeof user.bots] ? (
                 <><Square size={12} fill="currentColor" /> Deactivate</>
               ) : (
-                <><Play size={12} fill="currentColor" /> Run</>
+                <><Play size={12} fill="currentColor" /> Run {selectedBot.id === 'custom' ? 'Bot' : 'Pro'}</>
               )}
             </button>
           </div>
+
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-3.5">
