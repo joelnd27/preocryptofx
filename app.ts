@@ -270,13 +270,35 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
       
       console.log(`Manual status check success for ${external_reference}. Ref: ${ref}`);
 
-      const { data: currentTx } = await client.from('transactions').select('status, amount, user_id, id').or(`external_id.eq."${ref}",id.eq."${ref}"`).maybeSingle();
+      // ATOMIC UPDATE: Only proceed if we successfully change status from pending to completed
+      const { data: updatedTx, error: updateError } = await client
+        .from('transactions')
+        .update({ 
+          status: 'completed', 
+          method: `Payhero status (${paymentId || 'M-Pesa'})` 
+        })
+        .or(`external_id.eq."${ref}",id.eq."${ref}"`)
+        .eq('status', 'pending')
+        .select();
 
-      if (currentTx && currentTx.status !== 'completed') {
-        const { error: txUpdateError } = await client.from('transactions').update({ status: 'completed', method: `Payhero (${paymentId || 'M-Pesa'})` }).eq('id', currentTx.id);
-        if (!txUpdateError) {
-          console.log(`Transaction ${currentTx.id} marked as completed.`);
+      if (!updateError && updatedTx && updatedTx.length > 0) {
+        const completedTx = updatedTx[0];
+        console.log(`Transaction ${completedTx.id} successfully marked as completed via status check. Crediting user...`);
+        
+        // Use RPC for atomic balance increment
+        const { error: rpcError } = await client.rpc('increment_balance', {
+          user_id: completedTx.user_id,
+          amount: Number(completedTx.amount)
+        });
+
+        if (rpcError) {
+          console.error('CRITICAL: Failed to increment balance via RPC in status check:', rpcError);
+          // Special case: if RPC fails, we might have a serious issue as status is already completed
+        } else {
+          console.log(`User ${completedTx.user_id} successfully credited with ${completedTx.amount} via status check.`);
         }
+      } else {
+        console.log(`Status check success for ${ref}, but transaction was already processed or is not in pending state.`);
       }
     } else if (payment && (payment.status === 'failed' || payment.ResultCode === 1032)) {
       // 1032 is Request Cancelled by User
@@ -439,59 +461,46 @@ router.post('/payhero/callback', async (req, res) => {
       }
 
       if (tx.status === 'completed') {
-        console.log(`Transaction ${tx.id} already marked as completed. Skipping balance update.`);
+        console.log(`Transaction ${tx.id} already marked as completed. Skipping further processing.`);
         return res.json({ success: true, message: 'Already processed' });
       }
 
+      // ATOMIC UPDATE: Only proceed if we successfully change status from pending/rejected to completed
+      // We allow moving from 'rejected' too, just in case de-duplication marked it rejected but user still paid.
+      const { data: updatedTxs, error: updateError } = await client
+        .from('transactions')
+        .update({ 
+          status: 'completed', 
+          method: `Payhero callback (${transactionId || 'M-Pesa'})` 
+        })
+        .eq('id', tx.id)
+        .in('status', ['pending', 'rejected']) // Critical: Must be pending or rejected
+        .select();
+
+      if (updateError || !updatedTxs || updatedTxs.length === 0) {
+        console.warn(`Transaction ${tx.id} was already processed or its status changed. Skipping balance update.`);
+        return res.json({ success: true, message: 'Already processed or status changed' });
+      }
+
       const userId = tx.user_id;
-      const amountUsd = tx.amount; 
+      const amountUsd = Number(tx.amount); 
 
       console.log(`Processing success for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
 
-      // 2. Update balance
-      const { data: userData, error: userError } = await client
-        .from('users')
-        .select('real_balance, username')
-        .eq('id', userId)
-        .single();
-
-      if (userError || !userData) {
-        console.error(`User ${userId} fetch error:`, userError);
-        return res.status(404).json({ error: 'User not found' });
+      // 2. Update balance atomically using RPC
+      const { error: rpcError } = await client.rpc('increment_balance', {
+        user_id: userId,
+        amount: amountUsd
+      });
+      
+      if (rpcError) {
+        console.error('CRITICAL: Failed to increment balance via RPC in callback:', rpcError);
+        // We should probably log this to a special table or alert admin
+        return res.status(500).json({ error: 'Failed to credit balance' });
       }
 
-      const currentBalance = Number(userData.real_balance || 0);
-      const newBalance = Number((currentBalance + amountUsd).toFixed(2));
-      
-      console.log(`Updating balance for ${userData.username} (${userId}): ${currentBalance} -> ${newBalance}`);
-      
-      const { error: balanceError } = await client
-        .from('users')
-        .update({ real_balance: newBalance })
-        .eq('id', userId);
-      
-      if (balanceError) {
-        console.error('CRITICAL: Balance update error:', balanceError);
-        return res.status(500).json({ error: 'Failed to update balance' });
-      } 
-      
-      console.log(`Balance successfully updated for ${userId}`);
-
-      // 3. Update transaction
-      const { error: txError } = await client.from('transactions').update({
-        status: 'completed',
-        method: `Payhero (${transactionId || checkoutId || 'M-Pesa'})`
-      })
-      .eq('id', tx.id);
-
-      if (txError) {
-        console.error('Transaction status update error:', txError);
-      } else {
-        console.log(`Transaction ${tx.id} marked as completed.`);
-      }
-
-      if (txError) console.error('Transaction update error:', txError);
-      else console.log(`Transaction ${ref || checkoutId} marked as completed.`);
+      console.log(`Balance successfully updated for ${userId} with ${amountUsd} USD`);
+      return res.json({ success: true, message: 'Processed successfully' });
 
     } else {
       console.log(`Payment failed/cancelled. Reason: ${resultDesc}`);
@@ -569,18 +578,19 @@ router.post('/admin/credit-user', async (req, res) => {
     const { userId, amount, transactionId } = req.body;
     if (!supabaseAdmin) throw new Error('Admin client not configured');
 
-    // 1. Get current balance
-    const { data: targetUser } = await supabaseAdmin.from('users').select('real_balance').eq('id', userId).single();
-    if (!targetUser) throw new Error('User not found');
-
-    const newBalance = Number((Number(targetUser.real_balance || 0) + Number(amount)).toFixed(2));
-
-    // 2. Update balance
-    await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', userId);
-
-    // 3. Update transaction if provided
+    // 1. Update transaction if provided (Atomic check)
     if (transactionId) {
-      await supabaseAdmin.from('transactions').update({ status: 'completed', method: 'Manual Credit (Admin)' }).eq('id', transactionId);
+      const { data: updatedTx, error: txError } = await supabaseAdmin
+        .from('transactions')
+        .update({ status: 'completed', method: 'Manual Credit (Admin)' })
+        .eq('id', transactionId)
+        .neq('status', 'completed') // Only if not already completed
+        .select();
+      
+      if (txError) throw txError;
+      if (!updatedTx || updatedTx.length === 0) {
+        return res.status(400).json({ error: 'Transaction already processed or not found' });
+      }
     } else {
       // Create a manual credit record
       await supabaseAdmin.from('transactions').insert({
@@ -594,7 +604,15 @@ router.post('/admin/credit-user', async (req, res) => {
       });
     }
 
-    res.json({ success: true, newBalance });
+    // 2. Update balance atomically
+    const { error: rpcError } = await supabaseAdmin.rpc('increment_balance', {
+      user_id: userId,
+      amount: Number(amount)
+    });
+
+    if (rpcError) throw rpcError;
+
+    res.json({ success: true, message: 'User credited successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

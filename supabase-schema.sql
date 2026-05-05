@@ -169,6 +169,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- 9. Atomic Balance Increment
+CREATE OR REPLACE FUNCTION public.increment_balance(user_id UUID, amount NUMERIC)
+RETURNS void AS $$
+BEGIN
+  UPDATE public.users
+  SET real_balance = COALESCE(real_balance, 0) + amount
+  WHERE id = user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
