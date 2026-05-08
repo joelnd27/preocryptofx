@@ -1833,7 +1833,7 @@ export function useStore() {
   const importBot = async (config: { name: string, strategy: string, risk: string, currency: string }) => {
     if (!user) return;
     
-    const expiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
+    const expiresAt = Date.now() + (3650 * 24 * 60 * 60 * 1000); // 10 years from now (effectively no expiration)
     const customConfig = { ...config, expiresAt };
     
     if (isSupabaseConfigured()) {
@@ -1942,35 +1942,7 @@ export function useStore() {
     return () => clearInterval(interval);
   }, [user?.id, user?.bots?.scalping, user?.bots?.trend, user?.bots?.ai, user?.bots?.custom, user?.customBotConfig]);
 
-  // Bot Expiration Logic
-  useEffect(() => {
-    if (!user || !user.customBotConfig) return;
-    
-    const checkExpiration = async () => {
-      if (Date.now() >= user.customBotConfig!.expiresAt) {
-        console.log('[Bot] Custom bot expired. Removing...');
-        
-        if (isSupabaseConfigured()) {
-          await supabase.from('bot_settings').update({
-            custom_config: null,
-            custom_active: false
-          }).eq('user_id', user.id);
-        }
-        
-        setUser(prev => prev ? {
-          ...prev,
-          customBotConfig: undefined,
-          bots: { ...prev.bots, custom: false }
-        } : null);
-      }
-    };
-    
-    const interval = setInterval(checkExpiration, 60000); // Check every minute
-    checkExpiration();
-    return () => clearInterval(interval);
-  }, [user?.customBotConfig]);
-
-  // Bot Simulation Effect
+  // Dark mode persistence
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('preocrypto_theme');
     return saved ? saved === 'dark' : true;
@@ -1978,6 +1950,11 @@ export function useStore() {
 
   useEffect(() => {
     localStorage.setItem('preocrypto_theme', isDarkMode ? 'dark' : 'light');
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {

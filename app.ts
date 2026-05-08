@@ -793,65 +793,98 @@ setInterval(async () => {
       }
     }
 
-    // 2. Offline Bot Simulation (Every 5 minutes for anyone with active bots)
-    // We only process if now's minutes are divisible by 5 to stick to a 5-min schedule
-    if (now.getMinutes() % 5 === 0) {
-      const { data: botUsers, error: botError } = await supabaseAdmin
-        .from('bot_settings')
-        .select('*, users(role, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo)')
-        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
+    // 2. Offline Bot Simulation (Every minute for anyone with active bots)
+    // Runs every minute via the outer setInterval (60 * 1000)
+    const { data: botUsers, error: botError } = await supabaseAdmin
+      .from('bot_settings')
+      .select('*, users(role, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo)')
+      .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
 
-      if (!botError && botUsers) {
-        for (const setting of botUsers) {
-          const user = setting.users;
-          if (!user) continue;
+    if (!botError && botUsers) {
+      for (const setting of botUsers) {
+        const user = setting.users;
+        if (!user) continue;
 
-          console.log(`[Bot-Offline] Simulating bot profit for user ${setting.user_id}`);
-          
-          const isReal = user.active_account === 'REAL';
-          const isDemo = user.active_account === 'DEMO';
-          const isMarketer = user.role === 'marketer';
-          const isAdmin = user.role === 'admin';
+        const isReal = user.active_account === 'REAL';
+        const balanceField = isReal ? 'real_balance' : 'demo_balance';
+        const currentBalance = Number(user[balanceField] || 0);
 
-          let winChance = 0.5;
-          if (isDemo) winChance = 0.92;
-          else if (isMarketer || isAdmin) winChance = 0.95;
-          else winChance = 0.035;
-
-          const baseAmount = (10 + Math.random() * 40); // Larger amount for 5-min intervals
-          const isWin = Math.random() < winChance;
-          const profit = isWin ? Number(baseAmount.toFixed(2)) : Number((-baseAmount).toFixed(2));
-
-          const balanceField = isReal ? 'real_balance' : 'demo_balance';
-          const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
-          const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
-
-          const currentBalance = Number(user[balanceField] || 0);
-          const newBalance = Math.max(0, Number((currentBalance + profit).toFixed(2)));
-          const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
-          const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
-
-          // Create bot trade record
-          await supabaseAdmin.from('trades').insert({
-            user_id: setting.user_id,
-            coin: 'OFFLINE_BOT',
-            amount: Math.abs(profit),
-            type: profit >= 0 ? 'BUY' : 'SELL',
-            price: 50000, // Dummy price
-            status: 'CLOSED',
-            profit: profit,
-            account_type: user.active_account,
-            timestamp: new Date().toISOString(),
-            duration: 0
-          });
-
-          // Update User
-          await supabaseAdmin.from('users').update({
-            [balanceField]: newBalance,
-            [totalProfitField]: newTotalProfit,
-            [dailyProfitField]: newDailyProfit
-          }).eq('id', setting.user_id);
+        // Security check: Stop bot if balance is below minimum ($10)
+        if (currentBalance < 10) {
+          console.log(`[Bot-Offline] Balance too low ($${currentBalance}) for user ${setting.user_id}. Deactivating bots.`);
+          await supabaseAdmin.from('bot_settings').update({
+            scalping_active: false,
+            trend_active: false,
+            ai_active: false,
+            custom_active: false,
+            updated_at: new Date().toISOString()
+          }).eq('user_id', setting.user_id);
+          continue;
         }
+
+        console.log(`[Bot-Offline] Simulating bot profit for user ${setting.user_id}`);
+        
+        const isDemo = user.active_account === 'DEMO';
+        const isMarketer = user.role === 'marketer';
+        const isAdmin = user.role === 'admin';
+
+        let winChance = 0.5;
+        if (isDemo) winChance = 0.92;
+        else if (isMarketer || isAdmin) winChance = 0.95;
+        else winChance = 0.035; // Standard user: tight win rate
+
+        // Adjust base amount to be per-minute (comparable to frontend 15s sum)
+        const baseAmount = (4 + Math.random() * 8); 
+        const isWin = Math.random() < winChance;
+        const profit = isWin ? Number(baseAmount.toFixed(2)) : Number((-baseAmount).toFixed(2));
+
+        const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
+        const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
+
+        const newBalance = Math.max(0, Number((currentBalance + profit).toFixed(2)));
+        const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
+        const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+
+        // Create consolidated bot trade record
+        await supabaseAdmin.from('trades').insert({
+          user_id: setting.user_id,
+          coin: 'OFFLINE_BOT',
+          amount: Math.abs(profit),
+          type: profit >= 0 ? 'BUY' : 'SELL',
+          price: 65000, 
+          status: 'CLOSED',
+          profit: profit,
+          account_type: user.active_account,
+          timestamp: new Date().toISOString(),
+          duration: 0,
+          source: 'BOT'
+        });
+
+        // Update User Profile
+        await supabaseAdmin.from('users').update({
+          [balanceField]: newBalance,
+          [totalProfitField]: newTotalProfit,
+          [dailyProfitField]: newDailyProfit
+        }).eq('id', setting.user_id);
+
+        // Update Bot Settings (Timestamp is crucial for client catch-up prevention)
+        const botId = setting.scalping_active ? 'scalping' : (setting.trend_active ? 'trend' : (setting.ai_active ? 'ai' : 'custom'));
+        const currentStats = setting.bot_stats || {};
+        const newStats = {
+          ...currentStats,
+          [botId]: {
+            profit: Number(((currentStats[botId]?.profit || 0) + profit).toFixed(2)),
+            trades: (currentStats[botId]?.trades || 0) + 1
+          }
+        };
+        const newLog = `[${new Date().toLocaleTimeString()}] Offline execution: ${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USDT`;
+        const updatedLogs = [newLog, ...(setting.bot_logs || [])].slice(0, 50);
+
+        await supabaseAdmin.from('bot_settings').update({
+          bot_stats: newStats,
+          bot_logs: updatedLogs,
+          updated_at: new Date().toISOString()
+        }).eq('user_id', setting.user_id);
       }
     }
   } catch (err) {

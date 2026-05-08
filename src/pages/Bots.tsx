@@ -216,7 +216,7 @@ export default function Bots() {
         setAlertConfig({
           isOpen: true,
           title: 'Bot Imported',
-          message: 'The bot configuration has been successfully imported and integrated into your library for the next 24 hours.',
+          message: 'The bot configuration has been successfully imported and integrated into your library.',
           type: 'success'
         });
         setIsImportModalOpen(false);
