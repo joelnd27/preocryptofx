@@ -22,7 +22,7 @@ export default function Referrals() {
   const [copiedCode, setCopiedCode] = useState(false);
 
   // Generate real referral link
-  const referralLink = `${window.location.origin}/register?ref=${user?.referralCode || ''}`;
+  const referralLink = `https://preocryptofx.com/register?ref=${user?.referralCode || ''}`;
 
   const copyToClipboard = (text: string, isLink: boolean) => {
     if (!text) return;
@@ -96,7 +96,7 @@ export default function Referrals() {
             
             <button
               onClick={() => copyToClipboard(referralLink, true)}
-              className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 active:scale-95 shrink-0"
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 active:scale-95 shrink-0"
             >
               {copiedLink ? (
                 <><Check size={16} /> Copied</>
