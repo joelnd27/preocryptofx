@@ -1937,7 +1937,7 @@ export function useStore() {
 
         await addBotProfit(parseFloat(profitStr), botId, newLog);
       }
-    }, 15000); // 15 seconds for global background bot simulation
+    }, 5000); // 5 seconds for global background bot simulation
 
     return () => clearInterval(interval);
   }, [user?.id, user?.bots?.scalping, user?.bots?.trend, user?.bots?.ai, user?.bots?.custom, user?.customBotConfig]);
