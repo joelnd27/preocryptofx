@@ -7,6 +7,7 @@ import {
   Bot, 
   History, 
   User as UserIcon, 
+  Users,
   HelpCircle, 
   LogOut, 
   Menu, 
@@ -17,14 +18,12 @@ import {
   ShieldCheck,
   Wallet,
   ChevronRight,
-  Search,
-  Download
+  Search
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 import Chatbot from './Chatbot';
 import PWAInstallBanner from './PWAInstallBanner';
-import InstallInstructionsModal from './InstallInstructionsModal';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -33,7 +32,7 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { user, logout, switchAccount, isDarkMode, setIsDarkMode, installApp } = useStore();
+  const { user, logout, switchAccount, isDarkMode, setIsDarkMode } = useStore();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -53,8 +52,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const bottomItems = [
     { icon: HelpCircle, label: 'Support', path: '/help' },
-    { icon: Download, label: 'Download App', onClick: () => installApp() },
     { icon: isDarkMode ? Sun : Moon, label: isDarkMode ? 'Light Mode' : 'Dark Mode', onClick: () => setIsDarkMode(!isDarkMode) },
+    { icon: Users, label: 'Referrals', path: '/referrals' },
     { icon: LogOut, label: 'Sign Out', onClick: () => { logout(); navigate('/'); } },
   ];
 
@@ -261,7 +260,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       <Chatbot />
-      <InstallInstructionsModal />
     </div>
   );
 }

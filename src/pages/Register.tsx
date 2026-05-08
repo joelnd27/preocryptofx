@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff, Users } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 
@@ -11,9 +11,22 @@ export default function Register() {
   const [phone, setPhone] = useState('+254');
   const [countryFlag, setCountryFlag] = useState('🇰🇪');
   const [password, setPassword] = useState('');
+  const [referralCodeInput, setReferralCodeInput] = useState('');
 
-  // Detect country on mount
+  const [searchParams] = useSearchParams();
+  const refCodeFromUrl = searchParams.get('ref') || searchParams.get('referral');
+
+  // Detect country and referral code on mount/change
   React.useEffect(() => {
+    // Get parameters directly from window.location in case useSearchParams is delayed
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('ref') || urlParams.get('referral') || refCodeFromUrl;
+    
+    console.log('[Register] Detected referral code:', code);
+    if (code && !referralCodeInput) {
+      setReferralCodeInput(code.toUpperCase());
+    }
+
     const detectCountry = async () => {
       try {
         const response = await fetch('https://ipapi.co/json/');
@@ -34,7 +47,7 @@ export default function Register() {
       }
     };
     detectCountry();
-  }, []);
+  }, [refCodeFromUrl]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
@@ -52,7 +65,7 @@ export default function Register() {
     setLoading(true);
 
     try {
-      await register(username, email, password, role, phone);
+      await register(username, email, password, role, phone, referralCodeInput || undefined);
       setSuccess(true);
       // Wait a bit before navigating to let them see the success message
       setTimeout(() => navigate('/dashboard'), 2000);
@@ -107,52 +120,126 @@ export default function Register() {
           )}>Join the future of automated crypto trading</p>
         </div>
 
-        <div className={cn(
-          "backdrop-blur-xl border p-8 rounded-3xl shadow-2xl transition-all",
-          isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white/80 border-slate-200"
-        )}>
-          {success ? (
-            <div className="text-center space-y-6 py-8">
-              <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto text-green-500">
-                <CheckCircle2 size={40} />
-              </div>
-              <div className="space-y-2">
-                <h2 className={cn(
-                  "text-2xl font-bold",
-                  isDarkMode ? "text-white" : "text-slate-900"
-                )}>Registration Successful!</h2>
-                <p className={isDarkMode ? "text-slate-400" : "text-slate-500"}>Redirecting you to the dashboard...</p>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-sm">
-                  <AlertCircle size={18} />
-                  {error}
-                </div>
+          <div className={cn(
+            "backdrop-blur-xl border p-8 rounded-3xl shadow-2xl transition-all relative overflow-hidden",
+            isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white/80 border-slate-200"
+          )}>
+            {/* Referral Badge */}
+            <AnimatePresence>
+              {referralCodeInput && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+                  exit={{ opacity: 0, y: -20, height: 0 }}
+                  className="mb-6 -mt-2"
+                >
+                  <div className={cn(
+                    "p-3 rounded-2xl border flex items-center justify-between gap-3 bg-blue-500/10",
+                    isDarkMode ? "bg-blue-600/20 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-100 text-blue-600 shadow-sm"
+                  )}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                        <Users size={16} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-tighter opacity-80">Referral Multiplier Active</p>
+                        <p className="text-sm font-bold truncate max-w-[150px]">{referralCodeInput}</p>
+                      </div>
+                    </div>
+                    <div className="px-2 py-1 bg-blue-500/20 rounded-lg text-[9px] font-black uppercase">
+                      Applied
+                    </div>
+                  </div>
+                </motion.div>
               )}
+            </AnimatePresence>
 
-            <div className="space-y-2">
-              <label className={cn(
-                "text-sm font-medium ml-1",
-                isDarkMode ? "text-slate-300" : "text-slate-700"
-              )}>Full Name</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
-                <input
-                  type="text"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className={cn(
-                    "w-full border rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
-                    isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
-                  )}
-                  placeholder="Enter your full name"
-                />
+            {success ? (
+              <div className="text-center space-y-6 py-8">
+                <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto text-green-500">
+                  <CheckCircle2 size={40} />
+                </div>
+                <div className="space-y-2">
+                  <h2 className={cn(
+                    "text-2xl font-bold",
+                    isDarkMode ? "text-white" : "text-slate-900"
+                  )}>Registration Successful!</h2>
+                  <p className={isDarkMode ? "text-slate-400" : "text-slate-500"}>Redirecting you to the dashboard...</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {error && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-sm">
+                    <AlertCircle size={18} />
+                    {error}
+                  </div>
+                )}
+
+              <div className={cn(
+                "space-y-2 p-4 rounded-2xl border-2 transition-all relative overflow-hidden",
+                referralCodeInput 
+                  ? (isDarkMode ? "bg-blue-600/10 border-blue-500/50" : "bg-blue-50 border-blue-200 shadow-inner") 
+                  : (isDarkMode ? "bg-slate-800/30 border-slate-700/50" : "bg-slate-50 border-slate-200")
+              )}>
+                {referralCodeInput && (
+                  <div className="absolute top-0 right-0 p-2 opacity-10">
+                    <Users size={60} />
+                  </div>
+                )}
+                <label className={cn(
+                  "text-sm font-bold ml-1 flex items-center gap-2",
+                  referralCodeInput ? "text-blue-500" : (isDarkMode ? "text-slate-300" : "text-slate-700")
+                )}>
+                  <Users size={16} className={cn(referralCodeInput ? "text-blue-500" : "text-slate-500")} />
+                  Referral Code {referralCodeInput ? "" : "(optional)"}
+                </label>
+                <div className="relative">
+                  <Users className={cn(
+                    "absolute left-4 top-1/2 -translate-y-1/2 transition-colors",
+                    referralCodeInput ? "text-blue-500" : "text-slate-500"
+                  )} size={20} />
+                  <input
+                    type="text"
+                    value={referralCodeInput}
+                    onChange={(e) => setReferralCodeInput(e.target.value.toUpperCase())}
+                    className={cn(
+                      "w-full border-0 rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono text-base font-bold",
+                      isDarkMode ? "bg-slate-900/50 text-white placeholder:text-slate-600" : "bg-white text-slate-900 placeholder:text-slate-400"
+                    )}
+                    placeholder="MKTXXXXXX"
+                  />
+                  {referralCodeInput && (
+                     <CheckCircle2 size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-500 animate-in fade-in zoom-in" />
+                  )}
+                </div>
+                {referralCodeInput && (
+                  <p className="text-[11px] text-blue-500 font-black ml-1 flex items-center gap-1 mt-1 uppercase tracking-wider">
+                     ✓ Referral Applied
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className={cn(
+                  "text-sm font-medium ml-1",
+                  isDarkMode ? "text-slate-300" : "text-slate-700"
+                )}>Full Name</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+                  <input
+                    type="text"
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className={cn(
+                      "w-full border rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
+                      isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
+                    )}
+                    placeholder="Enter your full name"
+                  />
+                </div>
+              </div>
 
             <div className="space-y-2">
               <label className={cn(

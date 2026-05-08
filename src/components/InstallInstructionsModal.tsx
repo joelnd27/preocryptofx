@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Share, Smartphone, MousePointer2, PlusSquare, Download } from 'lucide-react';
-import { useStore } from '../hooks/useStore';
+import { useStore } from '../context/StoreContext';
 
 export default function InstallInstructionsModal() {
   const { showInstallInstructions, setShowInstallInstructions } = useStore();

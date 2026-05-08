@@ -281,8 +281,23 @@ export function useStore() {
             custom: { profit: 0, trades: 0 }
           },
           botLogs: botSettingsData?.bot_logs || [],
+          referralCode: userData.referral_code || `MKT${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+          referredBy: userData.referred_by,
+          referrals: userData.referrals || [],
+          referralBonusClaimed: userData.referral_bonus_claimed || false,
           createdAt: new Date(userData.created_at).getTime()
         };
+
+        // Ensure referral code is persisted if it was missing
+        if (!userData.referral_code && isSupabaseConfigured()) {
+          console.log('[Referral] Generating and saving missing referral code for user...');
+          supabase.from('users')
+            .update({ referral_code: formattedUser.referralCode })
+            .eq('id', userData.id)
+            .then(({ error }) => {
+              if (error) console.error('Failed to save generated referral code:', error);
+            });
+        }
 
         // 1. Reconcile trades (Handle trades that expired while offline)
         let balanceChanged = false;
@@ -526,6 +541,7 @@ export function useStore() {
             demo_balance: 10000,
             real_balance: 0,
             active_account: 'DEMO',
+            referral_code: `MKT${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
             daily_profit_real: 0,
             daily_profit_demo: 0,
             daily_trades_real: 0,
@@ -663,16 +679,27 @@ export function useStore() {
     throw new Error('Invalid email or password.');
   };
 
-  const register = async (username: string, email: string, password?: string, _role: 'user' | 'marketer' = 'user', phone?: string) => {
+  const register = async (username: string, email: string, password?: string, _role: 'user' | 'marketer' = 'user', phone?: string, refCode?: string) => {
     // Force all new registrations to be 'user'
     const role = 'user';
     
+    // Generate a unique referral code for the new user
+    const userReferralCode = `MKT${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
     if (isSupabaseConfigured() && password) {
       console.log('Attempting Supabase registration for:', email);
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { username, role, phone } }
+        options: { 
+          data: { 
+            username, 
+            role, 
+            phone,
+            referral_code: userReferralCode,
+            referred_by: refCode 
+          } 
+        }
       });
 
       if (authData.user) {
@@ -724,6 +751,9 @@ export function useStore() {
       lastProfitResetDate: new Date().toISOString().split('T')[0],
       trades: [],
       transactions: [],
+      referralCode: userReferralCode,
+      referredBy: refCode,
+      referrals: [],
       bots: {
         scalping: false,
         trend: false,
@@ -732,6 +762,44 @@ export function useStore() {
       },
       createdAt: Date.now()
     };
+    
+    // Update referrer if refCode is valid
+    if (refCode) {
+      setUsers(prev => prev.map(u => {
+        if (u.referralCode === refCode) {
+          const updatedReferrals = [...(u.referrals || []), {
+            userId: newUser.id,
+            username: newUser.username,
+            joinedAt: newUser.createdAt,
+            status: 'pending' as const,
+            hasDeposited: false
+          }];
+
+          let bonusUpdate = {};
+          // If user hits 100 referrals and hasn't claimed the bonus
+          if (updatedReferrals.length === 100 && !u.referralBonusClaimed) {
+            const bonusTransaction: Transaction = {
+              id: Math.random().toString(36).substring(2, 9),
+              type: 'DEPOSIT',
+              amount: 50,
+              status: 'completed',
+              timestamp: Date.now(),
+              asset: 'USD',
+              method: 'Referral Bonus (100 Referrals)',
+              walletAddress: 'SYSTEM'
+            };
+            bonusUpdate = {
+              balance: (u.balance || 0) + 50,
+              referralBonusClaimed: true,
+              transactions: [bonusTransaction, ...(u.transactions || [])]
+            };
+          }
+
+          return { ...u, referrals: updatedReferrals, ...bonusUpdate };
+        }
+        return u;
+      }));
+    }
     
     setUsers(prev => [...prev, newUser]);
     setUser(newUser);
@@ -1177,13 +1245,31 @@ export function useStore() {
 
     setUser(prev => {
       if (!prev) return null;
-      const updatedUser = {
+      let updatedUser = {
         ...prev,
         transactions: [newTransaction, ...prev.transactions]
       };
       if (transaction.type === 'WITHDRAW') {
         updatedUser[balanceKey] = newBalance;
       }
+
+      // Handle referral bonus/check if this is a deposit
+      if (transaction.type === 'DEPOSIT' && transaction.amount >= 17 && prev.referredBy) {
+        // Find the referrer and update their referrals list
+        setUsers(allUsers => allUsers.map(u => {
+          if (u.referralCode === prev.referredBy) {
+            const updatedReferrals = (u.referrals || []).map(ref => {
+              if (ref.userId === prev.id) {
+                return { ...ref, hasDeposited: true, status: 'confirmed' as const };
+              }
+              return ref;
+            });
+            return { ...u, referrals: updatedReferrals };
+          }
+          return u;
+        }));
+      }
+
       return updatedUser;
     });
 
@@ -2028,15 +2114,18 @@ export function useStore() {
   const [showInstallInstructions, setShowInstallInstructions] = useState(false);
 
   const installApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDeferredPrompt(null);
-      }
-    } else {
-      setShowInstallInstructions(true);
-    }
+    // Directly trigger a download of a mock APK/App for demonstration
+    const fileName = 'PreoCryptoFX-Installer.apk';
+    const content = 'Mock APK content for demonstration purposes.';
+    const blob = new Blob([content], { type: 'application/vnd.android.package-archive' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const dismissInstallBanner = () => {

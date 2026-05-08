@@ -16,11 +16,11 @@ import Transactions from './pages/Transactions.tsx';
 import AllTrades from './pages/AllTrades.tsx';
 import Profile from './pages/Profile.tsx';
 import Help from './pages/Help.tsx';
+import Referrals from './pages/Referrals.tsx';
 import AdminPanel from './pages/AdminPanel.tsx';
 import Verification from './pages/Verification.tsx';
 import DashboardLayout from './components/DashboardLayout.tsx';
 import AlertModal from './components/AlertModal.tsx';
-import InstallInstructionsModal from './components/InstallInstructionsModal.tsx';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user } = useStore();
@@ -94,6 +94,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={!user ? <Login /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
           <Route path="/register" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
+          <Route path="/auth" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
           <Route path="/verify" element={user ? <Verification /> : <Navigate to="/login" />} />
           
           {/* Protected Routes */}
@@ -102,6 +103,7 @@ export default function App() {
           <Route path="/bots" element={<ProtectedRoute><DashboardLayout><Bots /></DashboardLayout></ProtectedRoute>} />
           <Route path="/transactions" element={<ProtectedRoute><DashboardLayout><Transactions /></DashboardLayout></ProtectedRoute>} />
           <Route path="/trades" element={<ProtectedRoute><DashboardLayout><AllTrades /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/referrals" element={<ProtectedRoute><DashboardLayout><Referrals /></DashboardLayout></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><DashboardLayout><Profile /></DashboardLayout></ProtectedRoute>} />
           <Route path="/help" element={<ProtectedRoute><DashboardLayout><Help /></DashboardLayout></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute adminOnly><DashboardLayout><AdminPanel /></DashboardLayout></ProtectedRoute>} />
@@ -115,7 +117,6 @@ export default function App() {
         message={alertConfig.message}
         type={alertConfig.type}
       />
-      <InstallInstructionsModal />
     </Router>
   );
 }

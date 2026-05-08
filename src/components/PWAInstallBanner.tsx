@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, Download, Smartphone } from 'lucide-react';
-import { useStore } from '../hooks/useStore';
+import { useStore } from '../context/StoreContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 

@@ -46,6 +46,16 @@ export interface User {
   };
   botStats?: Record<string, { profit: number, trades: number }>;
   botLogs?: string[];
+  referralCode: string;
+  referredBy?: string;
+  referralBonusClaimed?: boolean;
+  referrals?: {
+    userId: string;
+    username: string;
+    joinedAt: number;
+    status: 'pending' | 'confirmed';
+    hasDeposited: boolean;
+  }[];
   createdAt: number;
 }
 

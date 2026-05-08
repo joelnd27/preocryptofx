@@ -18,9 +18,8 @@ import {
 } from 'lucide-react';
 import { CRYPTO_LIST } from '../types';
 import { cn } from '../lib/utils';
-import { useStore } from '../hooks/useStore';
+import { useStore } from '../context/StoreContext';
 import PWAInstallBanner from '../components/PWAInstallBanner';
-import InstallInstructionsModal from '../components/InstallInstructionsModal';
 
 export default function Landing() {
   const { isDarkMode, toggleDarkMode, installApp } = useStore();
@@ -438,7 +437,6 @@ export default function Landing() {
           animation: marquee 40s linear infinite;
         }
       `}</style>
-      <InstallInstructionsModal />
     </div>
   );
 }
