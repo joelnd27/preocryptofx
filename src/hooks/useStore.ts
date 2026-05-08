@@ -2009,11 +2009,53 @@ export function useStore() {
     return () => clearTimeout(timeout);
   }, [user?.id, indicators, chartType, timeframe]);
 
+  // Install Prompt Logic
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallBannerDismissed, setIsInstallBannerDismissed] = useState(() => {
+    return localStorage.getItem('preocrypto_install_dismissed') === 'true';
+  });
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
+
+  const installApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      setShowInstallInstructions(true);
+    }
+  };
+
+  const dismissInstallBanner = () => {
+    setIsInstallBannerDismissed(true);
+    localStorage.setItem('preocrypto_install_dismissed', 'true');
+  };
+
   return {
     user,
     setUser,
     isDarkMode,
     setIsDarkMode,
+    toggleDarkMode: () => setIsDarkMode(prev => !prev),
+    deferredPrompt,
+    installApp,
+    showInstallInstructions,
+    setShowInstallInstructions,
+    isInstallBannerDismissed,
+    dismissInstallBanner,
     indicators,
     setIndicators,
     chartType,

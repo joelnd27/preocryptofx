@@ -142,12 +142,12 @@ export default function Profile() {
                 {user?.verificationStatus?.replace('_', ' ') || 'not verified'}
               </span>
             </div>
-            <p className="text-slate-500 dark:text-slate-400 mb-6">{user?.email}</p>
+            <p className="text-slate-500 dark:text-slate-300 mb-6">{user?.email}</p>
             <div className="flex flex-wrap justify-center md:justify-start gap-4">
-              <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-400">
+              <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300">
                 Member since: <span className="text-slate-900 dark:text-white">April 2026</span>
               </div>
-              <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-400">
+              <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300">
                 Account Type: <span className="text-blue-600 dark:text-blue-400">Trader</span>
               </div>
             </div>
@@ -207,7 +207,7 @@ export default function Profile() {
               <form onSubmit={handleUpdate} className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-500 ml-1">Full Name</label>
+                    <label className="text-sm font-medium text-slate-500 dark:text-slate-400 ml-1">Full Name</label>
                     <div className="relative">
                       <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input
@@ -220,7 +220,7 @@ export default function Profile() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-500 ml-1">Email Address</label>
+                    <label className="text-sm font-medium text-slate-500 dark:text-slate-400 ml-1">Email Address</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input
@@ -233,7 +233,7 @@ export default function Profile() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-500 ml-1">Phone Number</label>
+                    <label className="text-sm font-medium text-slate-500 dark:text-slate-400 ml-1">Phone Number</label>
                     <div className="relative">
                       <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input

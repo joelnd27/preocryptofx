@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, Lock, ArrowRight, AlertCircle, Shield, Eye, EyeOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { cn } from '../lib/utils';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -10,7 +11,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useStore();
+  const { login, isDarkMode } = useStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -39,10 +40,19 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+    <div className={cn(
+      "min-h-screen flex items-center justify-center p-6 transition-colors duration-300",
+      isDarkMode ? "bg-slate-950" : "bg-slate-50"
+    )}>
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 blur-[120px] rounded-full"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-400/10 blur-[120px] rounded-full"></div>
+        <div className={cn(
+          "absolute top-1/4 left-1/4 w-96 h-96 blur-[120px] rounded-full",
+          isDarkMode ? "bg-blue-600/10" : "bg-blue-400/20"
+        )}></div>
+        <div className={cn(
+          "absolute bottom-1/4 right-1/4 w-96 h-96 blur-[120px] rounded-full",
+          isDarkMode ? "bg-cyan-400/10" : "bg-blue-200/20"
+        )}></div>
       </div>
 
       <motion.div 
@@ -53,23 +63,38 @@ export default function Login() {
         <div className="text-center mb-10">
           <Link to="/" className="inline-flex items-center gap-2 mb-6">
             <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-10 h-10" />
-            <span className="text-2xl font-bold text-white">PreoCryptoFX</span>
+            <span className={cn(
+              "text-2xl font-bold",
+              isDarkMode ? "text-white" : "text-slate-900"
+            )}>PreoCryptoFX</span>
           </Link>
-          <h1 className="text-3xl font-bold text-white">Welcome Back</h1>
-          <p className="text-slate-400 mt-2">Enter your credentials to access your account</p>
+          <h1 className={cn(
+            "text-3xl font-bold",
+            isDarkMode ? "text-white" : "text-slate-900"
+          )}>Welcome Back</h1>
+          <p className={cn(
+            "mt-2",
+            isDarkMode ? "text-slate-400" : "text-slate-500"
+          )}>Enter your credentials to access your account</p>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl">
+        <div className={cn(
+          "backdrop-blur-xl border p-8 rounded-3xl shadow-2xl transition-all",
+          isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white/80 border-slate-200"
+        )}>
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400 text-sm">
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-sm">
                 <AlertCircle size={18} />
                 {error}
               </div>
             )}
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
+              <label className={cn(
+                "text-sm font-medium ml-1",
+                isDarkMode ? "text-slate-300" : "text-slate-700"
+              )}>Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
                 <input
@@ -77,7 +102,10 @@ export default function Login() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  className={cn(
+                    "w-full border rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
+                    isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
+                  )}
                   placeholder="name@example.com"
                 />
               </div>
@@ -85,8 +113,11 @@ export default function Login() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center ml-1">
-                <label className="text-sm font-medium text-slate-300">Password</label>
-                <a href="#" className="text-xs text-blue-400 hover:text-blue-300">Forgot password?</a>
+                <label className={cn(
+                  "text-sm font-medium",
+                  isDarkMode ? "text-slate-300" : "text-slate-700"
+                )}>Password</label>
+                <a href="#" className="text-xs text-blue-600 hover:text-blue-500">Forgot password?</a>
               </div>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
@@ -95,7 +126,10 @@ export default function Login() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-12 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  className={cn(
+                    "w-full border rounded-xl py-3 pl-12 pr-12 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
+                    isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
+                  )}
                   placeholder="••••••••"
                 />
                 <button
@@ -121,10 +155,13 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-8 pt-8 border-t border-slate-800 text-center">
-            <p className="text-slate-400 text-sm">
+          <div className={cn(
+            "mt-8 pt-8 border-t text-center",
+            isDarkMode ? "border-slate-800" : "border-slate-100"
+          )}>
+            <p className="text-slate-500 text-sm">
               Don't have an account?{' '}
-              <Link to="/register" className="text-blue-400 font-bold hover:text-blue-300">Create Account</Link>
+              <Link to="/register" className="text-blue-600 font-bold hover:text-blue-500">Create Account</Link>
             </p>
           </div>
         </div>

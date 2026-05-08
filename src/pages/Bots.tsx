@@ -286,7 +286,7 @@ export default function Bots() {
                   "relative p-3.5 sm:p-4 rounded-xl border transition-all text-left group overflow-hidden",
                   selectedBot.id === bot.id 
                     ? "bg-slate-900 border-blue-500 shadow-xl shadow-blue-500/10" 
-                    : "bg-white dark:bg-[#161a1e] border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                    : "bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
                 )}
               >
                 {isCustom && (
@@ -338,7 +338,7 @@ export default function Bots() {
           })}
         </div>
 
-        <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none">
+        <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
               <div className={cn(

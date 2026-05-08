@@ -20,6 +20,7 @@ import AdminPanel from './pages/AdminPanel.tsx';
 import Verification from './pages/Verification.tsx';
 import DashboardLayout from './components/DashboardLayout.tsx';
 import AlertModal from './components/AlertModal.tsx';
+import InstallInstructionsModal from './components/InstallInstructionsModal.tsx';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user } = useStore();
@@ -114,6 +115,7 @@ export default function App() {
         message={alertConfig.message}
         type={alertConfig.type}
       />
+      <InstallInstructionsModal />
     </Router>
   );
 }

@@ -17,11 +17,14 @@ import {
   ShieldCheck,
   Wallet,
   ChevronRight,
-  Search
+  Search,
+  Download
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 import Chatbot from './Chatbot';
+import PWAInstallBanner from './PWAInstallBanner';
+import InstallInstructionsModal from './InstallInstructionsModal';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -30,7 +33,7 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { user, logout, switchAccount, isDarkMode, setIsDarkMode } = useStore();
+  const { user, logout, switchAccount, isDarkMode, setIsDarkMode, installApp } = useStore();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -50,6 +53,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const bottomItems = [
     { icon: HelpCircle, label: 'Support', path: '/help' },
+    { icon: Download, label: 'Download App', onClick: () => installApp() },
     { icon: isDarkMode ? Sun : Moon, label: isDarkMode ? 'Light Mode' : 'Dark Mode', onClick: () => setIsDarkMode(!isDarkMode) },
     { icon: LogOut, label: 'Sign Out', onClick: () => { logout(); navigate('/'); } },
   ];
@@ -57,13 +61,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-300 font-sans flex overflow-hidden",
-      isDarkMode ? "bg-[#0b0e11] text-white" : "bg-slate-50 text-slate-900"
+      isDarkMode ? "bg-background text-foreground" : "bg-slate-50 text-slate-900"
     )}>
       {/* Sidebar - Desktop */}
       <aside className={cn(
         "hidden lg:flex flex-col border-r transition-all duration-300 ease-in-out shrink-0",
         isSidebarOpen ? "w-64" : "w-20",
-        isDarkMode ? "bg-[#161a1e] border-slate-800" : "bg-white border-slate-200 shadow-sm"
+        isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200 shadow-sm"
       )}>
         <div className="h-16 flex items-center px-6 border-b border-transparent shrink-0">
           <div className="flex items-center gap-3">
@@ -81,10 +85,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group",
                 location.pathname === item.path
                   ? "bg-primary/10 text-primary font-bold"
-                  : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                  : "text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
               )}
             >
-              <item.icon size={20} className={cn("shrink-0", location.pathname === item.path ? "text-primary" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")} />
+              <item.icon size={20} className={cn("shrink-0", location.pathname === item.path ? "text-primary" : "text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-100")} />
               {isSidebarOpen && <span className="whitespace-nowrap">{item.label}</span>}
             </Link>
           ))}
@@ -95,9 +99,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <button
               key={i}
               onClick={item.onClick || (() => item.path && navigate(item.path))}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all group"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all group"
             >
-              <item.icon size={20} className="shrink-0 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300" />
+              <item.icon size={20} className="shrink-0 text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-100" />
               {isSidebarOpen && <span className="text-sm font-medium whitespace-nowrap">{item.label}</span>}
             </button>
           ))}
@@ -113,7 +117,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMobileMenuOpen(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] lg:hidden"
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] lg:hidden"
             />
             <motion.aside
               initial={{ x: '-100%' }}
@@ -121,8 +125,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className={cn(
-                "fixed inset-y-0 left-0 w-64 z-[70] flex flex-col lg:hidden",
-                isDarkMode ? "bg-[#161a1e]" : "bg-white"
+                "fixed inset-y-0 left-0 w-64 z-[210] flex flex-col lg:hidden shadow-2xl",
+                isDarkMode ? "bg-slate-900" : "bg-white"
               )}
             >
               <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
@@ -174,14 +178,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Top Header */}
-        <header className={cn(
-          "h-16 border-b flex items-center justify-between px-4 lg:px-8 shrink-0 z-40",
-          isDarkMode ? "bg-[#161a1e]/80 border-slate-800" : "bg-white/80 border-slate-200",
-          "backdrop-blur-md"
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative">
+        <div className="sticky top-0 z-50 w-full shrink-0">
+          <PWAInstallBanner />
+          
+          {/* Top Header */}
+          <header className={cn(
+            "h-16 border-b flex items-center justify-between px-4 lg:px-8 shrink-0 relative z-10",
+          isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white/80 border-slate-200",
+          "backdrop-blur-md text-slate-900 dark:text-white"
         )}>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <button 
               onClick={() => {
                 if (window.innerWidth >= 1024) setIsSidebarOpen(!isSidebarOpen);
@@ -191,13 +198,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             >
               <Menu size={20} />
             </button>
-            <div className="hidden md:flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-1.5 border border-transparent focus-within:border-primary/50 transition-all">
-              <Search size={16} className="text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Search assets..." 
-                className="bg-transparent border-none focus:ring-0 text-sm ml-2 w-48"
-              />
+            <div className="flex items-center gap-2">
+              <img src="/favicon.svg" alt="Logo" className="w-7 h-7 rounded-lg shrink-0" />
+              <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-white lg:hidden">PreoCryptoFX</span>
             </div>
           </div>
 
@@ -230,7 +233,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
             {/* Balance */}
             <div className="hidden sm:block text-right">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Balance</p>
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Balance</p>
               <p className="text-sm font-bold text-primary tabular-nums">
                 ${(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
@@ -238,8 +241,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
             <div className="flex items-center gap-2">
               <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors relative">
-                <Bell size={20} className="text-slate-500" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-[#161a1e]"></span>
+                <Bell size={20} className="text-slate-500 dark:text-slate-400" />
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-800"></span>
               </button>
               <Link to="/profile" className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
                 <UserIcon size={20} className="text-primary" />
@@ -247,8 +250,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
           </div>
         </header>
+      </div>
 
-        {/* Page Content */}
+      {/* Page Content */}
         <main className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8">
           <div className="max-w-7xl mx-auto">
             {children}
@@ -257,6 +261,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       <Chatbot />
+      <InstallInstructionsModal />
     </div>
   );
 }

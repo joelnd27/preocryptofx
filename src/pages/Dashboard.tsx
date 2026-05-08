@@ -212,12 +212,12 @@ export default function Dashboard() {
       {/* Stats Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-4">
         {stats.map((stat, i) => (
-          <motion.div
+            <motion.div
             key={i}
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-2.5 sm:p-4 rounded-xl shadow-sm relative overflow-hidden group hover:border-primary/50 transition-colors"
+            className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-2.5 sm:p-4 rounded-xl shadow-sm relative overflow-hidden group hover:border-primary/50 transition-colors"
           >
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-1.5">
@@ -234,7 +234,7 @@ export default function Dashboard() {
                   {stat.trend}
                 </div>
               </div>
-              <p className="text-slate-500 dark:text-slate-400 text-[8px] sm:text-[9px] font-bold uppercase tracking-tight mb-0.5">{stat.label}</p>
+              <p className="text-slate-500 dark:text-slate-300 text-[8px] sm:text-[9px] font-bold uppercase tracking-tight mb-0.5">{stat.label}</p>
               <h3 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white tabular-nums leading-tight">{stat.value}</h3>
             </div>
           </motion.div>
@@ -245,7 +245,7 @@ export default function Dashboard() {
         {/* Market Analysis (Pie & Bar) */}
         <div className="lg:col-span-2 space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-3.5 sm:p-6 rounded-2xl shadow-sm">
+            <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-3.5 sm:p-6 rounded-2xl shadow-sm">
               <h3 className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 uppercase tracking-wide">
                 <PieIcon size={14} className="text-primary" /> Market Dist.
               </h3>
@@ -266,7 +266,7 @@ export default function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '9px' }}
+                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -275,13 +275,13 @@ export default function Dashboard() {
                 {marketShareData.map((item, i) => (
                   <div key={i} className="flex items-center gap-1">
                     <div className="w-1 h-1 rounded-full" style={{ backgroundColor: item.color }}></div>
-                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tight">{item.name}</span>
+                    <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight">{item.name}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-3.5 sm:p-6 rounded-2xl shadow-sm">
+            <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-3.5 sm:p-6 rounded-2xl shadow-sm">
               <h3 className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 uppercase tracking-wide">
                 <BarChart3 size={14} className="text-primary" /> Trading Vol.
               </h3>
@@ -293,7 +293,7 @@ export default function Dashboard() {
                     <YAxis hide />
                     <Tooltip 
                       cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '9px' }}
+                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
                     />
                     <Bar dataKey="volume" fill="var(--color-primary)" radius={[2, 2, 0, 0]} />
                   </BarChart>
@@ -303,7 +303,7 @@ export default function Dashboard() {
           </div>
 
           {/* Recent Trades Table */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
             <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Recent Activity</h3>
               <button 
@@ -386,7 +386,7 @@ export default function Dashboard() {
         {/* Sidebar Info */}
         <div className="space-y-4 sm:space-y-6">
           {/* Live AI Feed */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-3.5 sm:p-5 rounded-2xl shadow-sm">
+          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-3.5 sm:p-5 rounded-2xl shadow-sm">
             <div className="flex items-center justify-between mb-2.5">
               <h3 className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Market Pulse</h3>
               <div className="flex items-center gap-1.5">
@@ -395,7 +395,7 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="p-2 bg-blue-500/5 border border-blue-500/10 rounded-lg mb-3">
-              <p className="text-[8px] text-blue-600 dark:text-blue-400 font-medium leading-normal">
+              <p className="text-[8px] text-blue-600 dark:text-blue-300 font-medium leading-normal">
                 Real-time global trading feed.
               </p>
             </div>
@@ -457,7 +457,7 @@ export default function Dashboard() {
           </div>
 
           {/* Notifications */}
-          <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
             <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-4">Recent Alerts</h3>
             <div className="space-y-3">
               {(user?.transactions || [])
@@ -475,7 +475,7 @@ export default function Dashboard() {
                     <p className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                       {notif.type} {notif.status.toUpperCase()}
                     </p>
-                    <p className="text-[9px] text-slate-500 mt-0.5 leading-normal">
+                    <p className="text-[9px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">
                       {notif.status === 'completed' 
                         ? `Your ${notif.type.toLowerCase()} of ${formatCurrency(notif.amount)} completed.`
                         : notif.status === 'pending'

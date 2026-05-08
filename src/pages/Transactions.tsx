@@ -408,12 +408,12 @@ export default function Transactions() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Timestamp</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Type</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Amount</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Alias</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">Status</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest italic">ID</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Timestamp</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Type</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Amount</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Alias</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Status</th>
+                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">ID</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -706,7 +706,7 @@ export default function Transactions() {
           </div>
 
           <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-sm">
-            <h4 className="text-[10px] font-bold mb-3 flex items-center gap-2 uppercase tracking-widest text-slate-400">
+            <h4 className="text-[10px] font-bold mb-3 flex items-center gap-2 uppercase tracking-widest text-slate-500 dark:text-slate-400">
               <Info size={14} className="text-blue-500" /> Information
             </h4>
             <div className="space-y-3">
@@ -715,8 +715,8 @@ export default function Transactions() {
                   <Smartphone size={14} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold">M-Pesa (Mobile)</p>
-                  <p className="text-[9px] text-slate-500">$1 = {USD_TO_KES} KES.</p>
+                  <p className="text-[10px] font-bold text-slate-900 dark:text-white">M-Pesa (Mobile)</p>
+                  <p className="text-[9px] text-slate-500 dark:text-slate-400">$1 = {USD_TO_KES} KES.</p>
                 </div>
               </div>
               <div className="flex items-start gap-2.5">

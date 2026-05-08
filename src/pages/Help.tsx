@@ -63,7 +63,7 @@ export default function Help() {
       {/* Hero Section */}
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-bold text-slate-900 dark:text-white">How can we help?</h2>
-        <p className="text-slate-500 dark:text-slate-400">Search our knowledge base or contact our support team 24/7.</p>
+        <p className="text-slate-500 dark:text-slate-300">Search our knowledge base or contact our support team 24/7.</p>
         <div className="max-w-2xl mx-auto relative mt-8">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input
@@ -113,7 +113,7 @@ export default function Help() {
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
-                    className="px-6 pb-6 text-slate-600 dark:text-slate-400 text-sm leading-relaxed"
+                    className="px-6 pb-6 text-slate-600 dark:text-slate-300 text-sm leading-relaxed"
                   >
                     {faq.a}
                   </motion.div>

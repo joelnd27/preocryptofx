@@ -87,14 +87,14 @@ export default function Verification() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0b0e11] py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 dark:bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600/10 rounded-2xl text-blue-600 mb-4">
             <Shield size={32} />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2">Account Verification</h1>
-          <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">Complete your profile to unlock full trading features</p>
+          <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-300">Complete your profile to unlock full trading features</p>
         </div>
 
         <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[32px] p-8 shadow-sm">
