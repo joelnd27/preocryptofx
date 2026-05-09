@@ -1850,10 +1850,23 @@ export function useStore() {
   const updateUserVerificationStatus = async (userId: string, status: 'verified' | 'rejected' | 'not_verified') => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
-    const { error } = await supabase.from('users').update({ verification_status: status }).eq('id', userId);
-    if (error) {
-      console.error('Error updating verification status:', error);
-      return false;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await axios.post('/api/admin/update-user', {
+        userId,
+        updates: { verification_status: status }
+      }, {
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
+
+      if (response.status !== 200) throw new Error(response.data.error);
+    } catch (error: any) {
+      console.warn('Direct fallback for verification status update...');
+      const { error: directError } = await supabase.from('users').update({ verification_status: status }).eq('id', userId);
+      if (directError) {
+        console.error('Error updating verification status:', directError);
+        return false;
+      }
     }
 
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, verificationStatus: status } : u));
