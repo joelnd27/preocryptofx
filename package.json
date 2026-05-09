@@ -1,12 +1,13 @@
 {
-  "name": "react-example",
+  "name": "preocryptofx",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "server.ts",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
-    "start": "tsx server.ts",
+    "start": "node server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
