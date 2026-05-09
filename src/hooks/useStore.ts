@@ -281,7 +281,7 @@ export function useStore() {
             custom: { profit: 0, trades: 0 }
           },
           botLogs: botSettingsData?.bot_logs || [],
-          referralCode: userData.referral_code || `MKT${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+          referralCode: userData.referral_code || `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
           referredBy: userData.referred_by,
           referrals: userData.referrals || [],
           referralBonusClaimed: userData.referral_bonus_claimed || false,
@@ -541,7 +541,7 @@ export function useStore() {
             demo_balance: 10000,
             real_balance: 0,
             active_account: 'DEMO',
-            referral_code: `MKT${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+            referral_code: `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
             daily_profit_real: 0,
             daily_profit_demo: 0,
             daily_trades_real: 0,
@@ -684,7 +684,7 @@ export function useStore() {
     const role = 'user';
     
     // Generate a unique referral code for the new user
-    const userReferralCode = `MKT${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const userReferralCode = `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     if (isSupabaseConfigured() && password) {
       console.log('Attempting Supabase registration for:', email);
@@ -782,7 +782,7 @@ export function useStore() {
               id: Math.random().toString(36).substring(2, 9),
               type: 'DEPOSIT',
               amount: 50,
-              status: 'completed',
+              status: 'COMPLETED',
               timestamp: Date.now(),
               asset: 'USD',
               method: 'Referral Bonus (100 Referrals)',
