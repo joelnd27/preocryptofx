@@ -283,10 +283,46 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           referralCode: userData.referral_code || `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
           referredBy: userData.referred_by,
-          referrals: userData.referrals || [],
+          referrals: [], // Will be populated below
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           createdAt: new Date(userData.created_at).getTime()
         };
+
+        // Fetch referrals properly from DB
+        if (isSupabaseConfigured() && formattedUser.referralCode) {
+          const { data: referredUsers } = await supabase
+            .from('users')
+            .select(`
+              id, 
+              username, 
+              created_at, 
+              transactions (
+                type, 
+                amount, 
+                status
+              )
+            `)
+            .eq('referred_by', formattedUser.referralCode);
+          
+          if (referredUsers) {
+            formattedUser.referrals = referredUsers.map((ru: any) => {
+              const deps = (ru.transactions || []).filter((t: any) => 
+                t.type === 'DEPOSIT' && t.status === 'completed'
+              );
+              const hasDeposited = deps.some((t: any) => Number(t.amount) >= 17);
+              const totalDeposited = deps.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+              
+              return {
+                userId: ru.id,
+                username: ru.username,
+                joinedAt: new Date(ru.created_at).getTime(),
+                status: hasDeposited ? 'confirmed' : 'pending',
+                hasDeposited,
+                totalDeposited
+              };
+            });
+          }
+        }
 
         // Ensure referral code is persisted if it was missing
         if (!userData.referral_code && isSupabaseConfigured()) {
@@ -541,7 +577,8 @@ export function useStore() {
             demo_balance: 10000,
             real_balance: 0,
             active_account: 'DEMO',
-            referral_code: `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+            referral_code: session.user.user_metadata.referral_code || `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+            referred_by: session.user.user_metadata.referred_by,
             daily_profit_real: 0,
             daily_profit_demo: 0,
             daily_trades_real: 0,

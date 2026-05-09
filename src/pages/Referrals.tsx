@@ -39,6 +39,7 @@ export default function Referrals() {
   const referrals = user?.referrals || [];
   const totalReferred = referrals.length;
   const depositedCount = referrals.filter(r => r.hasDeposited).length;
+  const totalDepositedAmount = referrals.reduce((sum, r) => sum + (r.totalDeposited || 0), 0);
   const conversionRate = totalReferred > 0 ? Math.round((depositedCount / totalReferred) * 100) : 0;
 
   const stats = [
@@ -50,11 +51,11 @@ export default function Referrals() {
       description: 'Total users signed up'
     },
     { 
-      label: 'Deposited', 
-      value: depositedCount, 
+      label: 'Deposited Money', 
+      value: `$${totalDepositedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
       icon: UserCheck, 
       color: 'emerald',
-      description: 'Users with min $17 deposit'
+      description: `From ${depositedCount} active referrals`
     },
   ];
 
@@ -210,7 +211,7 @@ export default function Referrals() {
                 <th className={cn(
                   "px-6 py-3 text-[10px] font-bold uppercase tracking-[0.1em]",
                   isDarkMode ? "text-slate-600" : "text-slate-400"
-                )}>Confirmed</th>
+                )}>Deposit</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-inherit">
@@ -261,12 +262,12 @@ export default function Referrals() {
                     <td className="px-6 py-4">
                       <div className={cn(
                         "inline-flex items-center gap-1.5 font-bold text-xs",
-                        ref.hasDeposited ? "text-emerald-500" : "text-slate-400"
+                        ref.hasDeposited ? "text-emerald-500" : "text-slate-500"
                       )}>
                         {ref.hasDeposited ? (
                           <><Check size={14} className="stroke-[3]" /> Yes</>
                         ) : (
-                          "No"
+                          "—"
                         )}
                       </div>
                     </td>

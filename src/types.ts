@@ -55,6 +55,7 @@ export interface User {
     joinedAt: number;
     status: 'pending' | 'confirmed';
     hasDeposited: boolean;
+    totalDeposited?: number;
   }[];
   createdAt: number;
 }
