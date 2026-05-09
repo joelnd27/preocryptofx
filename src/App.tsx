@@ -48,6 +48,8 @@ function AdminRedirector({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+import PWAInstallBanner from './components/PWAInstallBanner.tsx';
+
 export default function App() {
   const { user, resetDemoBalance } = useStore();
   const isAdmin = user?.role === 'admin';
@@ -89,26 +91,31 @@ export default function App() {
 
   return (
     <Router>
-      <AdminRedirector>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={!user ? <Login /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
-          <Route path="/register" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
-          <Route path="/auth" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
-          <Route path="/verify" element={user ? <Verification /> : <Navigate to="/login" />} />
-          
-          {/* Protected Routes */}
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout><Dashboard /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/trade" element={<ProtectedRoute><DashboardLayout><Trade /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/bots" element={<ProtectedRoute><DashboardLayout><Bots /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/transactions" element={<ProtectedRoute><DashboardLayout><Transactions /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/trades" element={<ProtectedRoute><DashboardLayout><AllTrades /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/referrals" element={<ProtectedRoute><DashboardLayout><Referrals /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><DashboardLayout><Profile /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/help" element={<ProtectedRoute><DashboardLayout><Help /></DashboardLayout></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute adminOnly><DashboardLayout><AdminPanel /></DashboardLayout></ProtectedRoute>} />
-        </Routes>
-      </AdminRedirector>
+      <div className="flex flex-col min-h-screen">
+        <PWAInstallBanner />
+        <div className="flex-1 overflow-x-hidden">
+          <AdminRedirector>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={!user ? <Login /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
+              <Route path="/register" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
+              <Route path="/auth" element={!user ? <Register /> : <Navigate to={isAdmin ? "/admin" : "/dashboard"} />} />
+              <Route path="/verify" element={user ? <Verification /> : <Navigate to="/login" />} />
+              
+              {/* Protected Routes */}
+              <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout><Dashboard /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/trade" element={<ProtectedRoute><DashboardLayout><Trade /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/bots" element={<ProtectedRoute><DashboardLayout><Bots /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/transactions" element={<ProtectedRoute><DashboardLayout><Transactions /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/trades" element={<ProtectedRoute><DashboardLayout><AllTrades /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/referrals" element={<ProtectedRoute><DashboardLayout><Referrals /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><DashboardLayout><Profile /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/help" element={<ProtectedRoute><DashboardLayout><Help /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute adminOnly><DashboardLayout><AdminPanel /></DashboardLayout></ProtectedRoute>} />
+            </Routes>
+          </AdminRedirector>
+        </div>
+      </div>
       
       <AlertModal
         isOpen={alertConfig.isOpen}

@@ -19,7 +19,6 @@ import {
 import { CRYPTO_LIST } from '../types';
 import { cn } from '../lib/utils';
 import { useStore } from '../context/StoreContext';
-import PWAInstallBanner from '../components/PWAInstallBanner';
 
 export default function Landing() {
   const { isDarkMode, toggleDarkMode, installApp, isInstalling } = useStore();
@@ -52,8 +51,6 @@ export default function Landing() {
       isDarkMode ? "bg-background text-foreground" : "bg-slate-50 text-slate-900"
     )}>
       <div className="sticky top-0 z-[100] w-full">
-        <PWAInstallBanner />
-
         {/* Navbar */}
         <nav className={cn(
           "w-full border-b shadow-sm",
@@ -368,6 +365,20 @@ export default function Landing() {
             )}>
               The world's most advanced AI-powered crypto trading platform. Join over 500,000 traders worldwide.
             </p>
+            <div className="flex flex-col gap-4">
+              <button 
+                onClick={() => installApp()}
+                disabled={isInstalling}
+                className={cn(
+                  "flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all shadow-lg disabled:opacity-50",
+                  isDarkMode 
+                    ? "bg-blue-600 border border-blue-500 text-white hover:bg-blue-700 shadow-blue-600/20" 
+                    : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10"
+                )}
+              >
+                <Download size={18} /> {isInstalling ? 'Installing...' : 'Install App'}
+              </button>
+            </div>
           </div>
           <div>
             <h4 className="font-bold mb-6 text-sm uppercase tracking-wider text-slate-500">Platform</h4>
