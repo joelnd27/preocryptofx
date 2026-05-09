@@ -2114,18 +2114,17 @@ export function useStore() {
   const [showInstallInstructions, setShowInstallInstructions] = useState(false);
 
   const installApp = async () => {
-    // Directly trigger a download of a mock APK/App for demonstration
-    const fileName = 'PreoCryptoFX-Installer.apk';
-    const content = 'Mock APK content for demonstration purposes.';
-    const blob = new Blob([content], { type: 'application/vnd.android.package-archive' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      }
+      setDeferredPrompt(null);
+    } else {
+      // If no prompt is available, show instructions
+      setShowInstallInstructions(true);
+    }
   };
 
   const dismissInstallBanner = () => {

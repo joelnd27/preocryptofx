@@ -24,6 +24,7 @@ import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 import Chatbot from './Chatbot';
 import PWAInstallBanner from './PWAInstallBanner';
+import InstallInstructionsModal from './InstallInstructionsModal';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -260,6 +261,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       <Chatbot />
+      <InstallInstructionsModal />
     </div>
   );
 }
