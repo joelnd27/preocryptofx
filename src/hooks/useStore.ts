@@ -782,11 +782,10 @@ export function useStore() {
               id: Math.random().toString(36).substring(2, 9),
               type: 'DEPOSIT',
               amount: 50,
-              status: 'COMPLETED',
+              status: 'completed',
               timestamp: Date.now(),
-              asset: 'USD',
-              method: 'Referral Bonus (100 Referrals)',
-              walletAddress: 'SYSTEM'
+              accountType: 'REAL',
+              method: 'Referral Bonus (100 Referrals)'
             };
             bonusUpdate = {
               balance: (u.balance || 0) + 50,
@@ -2095,7 +2094,6 @@ export function useStore() {
     return () => clearTimeout(timeout);
   }, [user?.id, indicators, chartType, timeframe]);
 
-  // Install Prompt Logic
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallBannerDismissed, setIsInstallBannerDismissed] = useState(() => {
     return localStorage.getItem('preocrypto_install_dismissed') === 'true';
@@ -2111,19 +2109,31 @@ export function useStore() {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
-  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
-
   const installApp = async () => {
+    console.log('installApp called, deferredPrompt:', !!deferredPrompt);
+    
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      alert('PreoCryptoFX is already installed and running as an app.');
+      return;
+    }
+
     if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        console.log('User accepted the install prompt');
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log('Install prompt outcome:', outcome);
+        setDeferredPrompt(null);
+      } catch (err) {
+        console.error('Error during install prompt:', err);
       }
-      setDeferredPrompt(null);
     } else {
-      // If no prompt is available, show instructions
-      setShowInstallInstructions(true);
+      // Very brief fallback for iOS/other browsers where the automated prompt isn't available
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      if (isIOS) {
+        alert('To install: Tap the "Share" icon and select "Add to Home Screen".');
+      } else {
+        alert('App installation is ready. Please select "Install App" or "Add to Home Screen" from your browser settings (three dots ⋮).');
+      }
     }
   };
 
@@ -2140,8 +2150,6 @@ export function useStore() {
     toggleDarkMode: () => setIsDarkMode(prev => !prev),
     deferredPrompt,
     installApp,
-    showInstallInstructions,
-    setShowInstallInstructions,
     isInstallBannerDismissed,
     dismissInstallBanner,
     indicators,

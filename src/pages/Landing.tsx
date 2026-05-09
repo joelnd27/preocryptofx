@@ -211,7 +211,7 @@ export default function Landing() {
                 Start Trading Now <ArrowRight className="group-hover:translate-x-1 transition-transform" size={20} />
               </Link>
               <button 
-                onClick={installApp}
+                onClick={() => installApp()}
                 className={cn(
                   "w-full sm:w-auto px-8 sm:px-10 py-3 sm:py-4 rounded-full text-base sm:text-lg font-bold transition-all flex items-center justify-center gap-2",
                   isDarkMode 
@@ -219,7 +219,7 @@ export default function Landing() {
                     : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm"
                 )}
               >
-                <Download size={20} /> Download App
+                <Download size={20} /> Get Mobile App
               </button>
             </div>
           </motion.div>
@@ -393,7 +393,7 @@ export default function Landing() {
             </p>
             <div className="flex flex-col gap-4">
               <button 
-                onClick={installApp}
+                onClick={() => installApp()}
                 className={cn(
                   "flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all shadow-lg",
                   isDarkMode 

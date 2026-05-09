@@ -82,6 +82,7 @@ export interface Transaction {
   timestamp: number;
   accountType: AccountType;
   method?: string;
+  externalId?: string;
 }
 
 export interface CryptoPrice {
