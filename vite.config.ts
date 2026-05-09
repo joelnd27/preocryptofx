@@ -19,11 +19,13 @@ export default defineConfig({
         name: 'PreoCryptoFX AI Trading',
         short_name: 'PreoCryptoFX',
         description: 'AI-Powered Crypto Trading Platform',
-        id: '/?source=pwa',
+        id: '/',
         start_url: '/',
         display: 'standalone',
         background_color: '#0f172a',
-        theme_color: '#2563eb',
+        theme_color: '#0f172a',
+        orientation: 'portrait',
+        categories: ['finance', 'business'],
         icons: [
           {
             src: 'favicon.svg',

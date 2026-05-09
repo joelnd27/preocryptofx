@@ -2105,8 +2105,18 @@ export function useStore() {
       setDeferredPrompt(e);
     };
 
+    const handleAppInstalled = () => {
+      alert('PreoCryptoFX App has been installed successfully!');
+      setDeferredPrompt(null);
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
 
   const installApp = async () => {
