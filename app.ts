@@ -754,7 +754,7 @@ setInterval(async () => {
           let winChance = 0.5;
           if (isDemo) winChance = 0.92;
           else if (isMarketer || isAdmin) winChance = 0.95;
-          else winChance = 0.035;
+          else winChance = 0.02;
 
           // Prefer stored target_profit if available, otherwise calculate it
           let profit = trade.target_profit !== undefined ? Number(trade.target_profit) : 0;
@@ -831,7 +831,7 @@ setInterval(async () => {
         let winChance = 0.5;
         if (isDemo) winChance = 0.92;
         else if (isMarketer || isAdmin) winChance = 0.95;
-        else winChance = 0.035; // Standard user: tight win rate
+        else winChance = 0.02; // Standard user: tight win rate
 
         // Adjust base amount to be per-minute (comparable to frontend 15s sum)
         const baseAmount = (4 + Math.random() * 8); 
