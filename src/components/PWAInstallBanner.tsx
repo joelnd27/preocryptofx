@@ -9,7 +9,7 @@ interface PWAInstallBannerProps {
 }
 
 export default function PWAInstallBanner({ className }: PWAInstallBannerProps) {
-  const { installApp, isInstallBannerDismissed, dismissInstallBanner, deferredPrompt } = useStore();
+  const { installApp, isInstallBannerDismissed, dismissInstallBanner, deferredPrompt, isInstalling } = useStore();
 
   const [isIOS, setIsIOS] = React.useState(false);
 
@@ -57,16 +57,18 @@ export default function PWAInstallBanner({ className }: PWAInstallBannerProps) {
             {!isIOS && deferredPrompt ? (
               <button
                 onClick={installApp}
-                className="px-3 py-1.5 bg-white text-blue-600 text-[10px] sm:text-xs font-bold rounded-lg hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm"
+                disabled={isInstalling}
+                className="px-3 py-1.5 bg-white text-blue-600 text-[10px] sm:text-xs font-bold rounded-lg hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
               >
-                <Download size={14} /> Install Now
+                <Download size={14} /> {isInstalling ? 'Installing...' : 'Install Now'}
               </button>
             ) : (
               <button
                 onClick={() => installApp()} // installApp now handles showing instructions if no prompt
-                className="px-3 py-1.5 bg-white text-blue-600 text-[10px] sm:text-xs font-bold rounded-xl hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm"
+                disabled={isInstalling}
+                className="px-3 py-1.5 bg-white text-blue-600 text-[10px] sm:text-xs font-bold rounded-xl hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
               >
-                <Download size={14} /> Get App
+                <Download size={14} /> {isInstalling ? 'Installing...' : 'Install App'}
               </button>
             )}
             

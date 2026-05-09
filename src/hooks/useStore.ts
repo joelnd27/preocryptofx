@@ -2095,6 +2095,7 @@ export function useStore() {
   }, [user?.id, indicators, chartType, timeframe]);
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalling, setIsInstalling] = useState(false);
   const [isInstallBannerDismissed, setIsInstallBannerDismissed] = useState(() => {
     return localStorage.getItem('preocrypto_install_dismissed') === 'true';
   });
@@ -2107,6 +2108,7 @@ export function useStore() {
 
     const handleAppInstalled = () => {
       alert('PreoCryptoFX App has been installed successfully!');
+      setIsInstalling(false);
       setDeferredPrompt(null);
     };
 
@@ -2129,20 +2131,30 @@ export function useStore() {
 
     if (deferredPrompt) {
       try {
+        setIsInstalling(true);
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
         console.log('Install prompt outcome:', outcome);
+        
+        if (outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+          // isInstalling will be reset by the appinstalled event listener
+        } else {
+          console.log('User dismissed the install prompt');
+          setIsInstalling(false);
+        }
         setDeferredPrompt(null);
       } catch (err) {
         console.error('Error during install prompt:', err);
+        setIsInstalling(false);
       }
     } else {
       // Very brief fallback for iOS/other browsers where the automated prompt isn't available
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       if (isIOS) {
-        alert('To install: Tap the "Share" icon and select "Add to Home Screen".');
+        alert('To install PreoCryptoFX: Tap the "Share" icon and select "Add to Home Screen".');
       } else {
-        alert('App installation is ready. Please select "Install App" or "Add to Home Screen" from your browser settings (three dots ⋮).');
+        alert('Ready to Install: Please check your browser menu (typically the three dots ⋮ or share icon) and select "Install App" or "Add to Home Screen".');
       }
     }
   };
@@ -2160,6 +2172,7 @@ export function useStore() {
     toggleDarkMode: () => setIsDarkMode(prev => !prev),
     deferredPrompt,
     installApp,
+    isInstalling,
     isInstallBannerDismissed,
     dismissInstallBanner,
     indicators,

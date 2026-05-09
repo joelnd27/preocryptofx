@@ -22,7 +22,7 @@ import { useStore } from '../context/StoreContext';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
 export default function Landing() {
-  const { isDarkMode, toggleDarkMode, installApp } = useStore();
+  const { isDarkMode, toggleDarkMode, installApp, isInstalling } = useStore();
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -144,18 +144,6 @@ export default function Landing() {
                   isDarkMode ? "text-slate-300 hover:text-white" : "text-slate-600 hover:text-blue-600"
                 )}>How it Works</a>
                 <div className="pt-4 flex flex-col gap-3">
-                  <button 
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      installApp();
-                    }}
-                    className={cn(
-                      "w-full py-3 flex items-center justify-center gap-2 rounded-xl font-bold border",
-                      isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-white border-slate-200 text-slate-700"
-                    )}
-                  >
-                    <Download size={18} /> Download App
-                  </button>
                   <Link to="/login" className={cn(
                     "w-full py-3 text-center rounded-xl font-medium",
                     isDarkMode ? "bg-slate-800" : "bg-slate-100"
@@ -210,17 +198,6 @@ export default function Landing() {
               <Link to="/register" className="w-full sm:w-auto px-8 sm:px-10 py-3 sm:py-4 bg-blue-600 rounded-full text-base sm:text-lg font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 group shadow-xl shadow-blue-600/20 text-white">
                 Start Trading Now <ArrowRight className="group-hover:translate-x-1 transition-transform" size={20} />
               </Link>
-              <button 
-                onClick={() => installApp()}
-                className={cn(
-                  "w-full sm:w-auto px-8 sm:px-10 py-3 sm:py-4 rounded-full text-base sm:text-lg font-bold transition-all flex items-center justify-center gap-2",
-                  isDarkMode 
-                    ? "bg-slate-900 border border-slate-800 text-white hover:bg-slate-800" 
-                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm"
-                )}
-              >
-                <Download size={20} /> Get Mobile App
-              </button>
             </div>
           </motion.div>
 
@@ -394,14 +371,15 @@ export default function Landing() {
             <div className="flex flex-col gap-4">
               <button 
                 onClick={() => installApp()}
+                disabled={isInstalling}
                 className={cn(
-                  "flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all shadow-lg",
+                  "flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all shadow-lg disabled:opacity-50",
                   isDarkMode 
                     ? "bg-blue-600 border border-blue-500 text-white hover:bg-blue-700 shadow-blue-600/20" 
                     : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10"
                 )}
               >
-                <Download size={18} /> Download PreoCryptoFX App
+                <Download size={18} /> {isInstalling ? 'Installing...' : 'Install PreoCryptoFX App'}
               </button>
             </div>
           </div>
