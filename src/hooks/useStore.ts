@@ -290,37 +290,45 @@ export function useStore() {
 
         // Fetch referrals properly from DB
         if (isSupabaseConfigured() && formattedUser.referralCode) {
-          const { data: referredUsers } = await supabase
-            .from('users')
-            .select(`
-              id, 
-              username, 
-              created_at, 
-              transactions (
-                type, 
-                amount, 
-                status
-              )
-            `)
-            .eq('referred_by', formattedUser.referralCode);
-          
-          if (referredUsers) {
-            formattedUser.referrals = referredUsers.map((ru: any) => {
-              const deps = (ru.transactions || []).filter((t: any) => 
-                t.type === 'DEPOSIT' && t.status === 'completed'
-              );
-              const hasDeposited = deps.some((t: any) => Number(t.amount) >= 17);
-              const totalDeposited = deps.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-              
-              return {
-                userId: ru.id,
-                username: ru.username,
-                joinedAt: new Date(ru.created_at).getTime(),
-                status: hasDeposited ? 'confirmed' : 'pending',
-                hasDeposited,
-                totalDeposited
-              };
-            });
+          try {
+            const { data: referredUsers, error: referralError } = await supabase
+              .from('users')
+              .select(`
+                id, 
+                username, 
+                created_at, 
+                transactions (
+                  type, 
+                  amount, 
+                  status
+                )
+              `)
+              .eq('referred_by', formattedUser.referralCode);
+            
+            if (referralError) throw referralError;
+
+            if (referredUsers) {
+              formattedUser.referrals = referredUsers.map((ru: any) => {
+                const deps = (ru.transactions || []).filter((t: any) => 
+                  t.type === 'DEPOSIT' && t.status === 'completed'
+                );
+                const hasDeposited = deps.some((t: any) => Number(t.amount) >= 17);
+                const totalDeposited = deps.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+                
+                return {
+                  userId: ru.id,
+                  username: ru.username,
+                  joinedAt: new Date(ru.created_at).getTime(),
+                  status: hasDeposited ? 'confirmed' : 'pending',
+                  hasDeposited,
+                  totalDeposited
+                };
+              });
+            }
+          } catch (err) {
+            console.error('[Referral] Error fetching referrals:', err);
+            // Don't block login if referrals fail to fetch
+            formattedUser.referrals = [];
           }
         }
 
@@ -593,6 +601,8 @@ export function useStore() {
         }
       } else if (error) {
         console.error('Supabase fetch error:', error);
+        // We removed the fallback that set balances to zero. 
+        // We will stick with what we have in localStorage if the DB is temporarily inaccessible.
       }
     }
     } catch (err) {
