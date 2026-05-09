@@ -2107,7 +2107,7 @@ export function useStore() {
     };
 
     const handleAppInstalled = () => {
-      alert('PreoCryptoFX App has been installed successfully!');
+      alert('PreoCryptoFX has been registered! Your phone is now finishing the setup. The app icon will appear in your app drawer/home screen within a few moments.');
       setIsInstalling(false);
       setDeferredPrompt(null);
     };
