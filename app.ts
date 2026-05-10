@@ -402,17 +402,23 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
 
         if (rpcError) {
           console.error('CRITICAL: Failed to increment balance via RPC in status check:', rpcError);
-          // Special case: if RPC fails, we might have a serious issue as status is already completed
         } else {
           console.log(`User ${completedTx.user_id} successfully credited with ${completedTx.amount} via status check.`);
         }
       } else {
         console.log(`Status check success for ${ref}, but transaction was already processed or is not in pending state.`);
       }
-    } else if (payment && (payment.status === 'failed' || payment.ResultCode === 1032)) {
-      // 1032 is Request Cancelled by User
-      await client.from('transactions').update({ status: 'rejected' }).or(`external_id.eq."${external_reference}",method.ilike."%${external_reference}%"`).eq('status', 'pending');
-      console.log(`Transaction ${external_reference} marked as rejected via status check.`);
+    } else if (payment) {
+      // If we got a payment object but it's NOT a success, it must be some form of failure or cancellation
+      // common Safaricom result codes: 1032 (Cancelled), 1 (Insufficient Funds), 1037 (Timeout), etc.
+      // PayHero status can be 'failed', 'cancelled', 'rejected'
+      const statusLabel = payment.status || payment.Status || 'failed';
+      console.log(`Marking transaction ${external_reference} as rejected via status check. PayHero reported: ${statusLabel}`);
+      
+      await client.from('transactions')
+        .update({ status: 'rejected', method: `Payhero failed: ${statusLabel}` })
+        .or(`external_id.eq."${external_reference}",method.ilike."%${external_reference}%"`)
+        .eq('status', 'pending');
     }
     
     res.json(response.data);
@@ -612,13 +618,22 @@ router.post('/payhero/callback', async (req, res) => {
       return res.json({ success: true, message: 'Processed successfully' });
 
     } else {
-      console.log(`Payment failed/cancelled. Reason: ${resultDesc}`);
+      // Terminal failure callback from PayHero
+      const failReason = resultDesc || 'Unknown failure';
+      console.log(`Payment failed/cancelled. Reason: ${failReason}`);
       
-      // Mark as rejected
-      await client.from('transactions')
-        .update({ status: 'rejected' })
-        .eq('status', 'pending')
+      // Mark as rejected/failed
+      const { error: updateFailError } = await client.from('transactions')
+        .update({ 
+          status: 'rejected', 
+          method: `Payhero callback failed: ${failReason}` 
+        })
+        .eq('status', 'pending') // Only if still pending
         .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`);
+      
+      if (updateFailError) {
+        console.warn('Failed to update transaction status to rejected in callback:', updateFailError);
+      }
     }
 
     res.json({ success: true });
@@ -758,35 +773,113 @@ app.use('/api', router);
 app.use('/.netlify/functions/api', router);
 
 // Background task to mark stale pending transactions as failed (Timeout Handling)
-// Marks transactions as failed if they remain pending for more than 15 minutes
+// Marks transactions as failed if they remain pending for more than 24 hours
 setInterval(async () => {
-  if (!supabaseAdmin || !supabaseUrl) {
-    console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL is not configured.');
-    return;
-  }
+  if (!supabaseAdmin || !supabaseUrl) return;
 
   try {
-    // 24 hours ago (Much safer for manual processing)
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    
-    const { data, error } = await supabaseAdmin
-      .from('transactions')
-      .update({ status: 'rejected' })
-      .eq('status', 'pending') // Double guarantee: Only target pending
-      .neq('status', 'completed') // Explicitly exclude completed
+    await supabaseAdmin.from('transactions')
+      .update({ status: 'rejected', method: 'Automatically timed out (24h)' })
+      .eq('status', 'pending')
       .eq('type', 'DEPOSIT')
-      .lt('timestamp', twentyFourHoursAgo)
-      .select();
-    
-    if (error) {
-      console.error('Error cleaning up stale transactions:', error);
-    } else if (data && data.length > 0) {
-      console.log(`Cleaned up ${data.length} stale transactions (older than 24 hours).`);
-    }
+      .lt('timestamp', twentyFourHoursAgo);
   } catch (err) {
     console.error('Stale transaction cleanup exception:', err);
   }
-}, 30 * 60 * 1000); // Check every 30 minutes instead of 5
+}, 60 * 60 * 1000);
+
+// Proactive Status Polling (Every 2 minutes)
+// Checks PayHero for pending deposits created in the last 30 minutes
+setInterval(async () => {
+  if (!supabaseAdmin || !PAYHERO_API_KEY) return;
+
+  try {
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const oneMinAgo = new Date(Date.now() - 60 * 1000).toISOString();
+
+    const { data: pendingTxs, error } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .eq('type', 'DEPOSIT')
+      .eq('status', 'pending')
+      .gt('timestamp', thirtyMinsAgo)
+      .lt('timestamp', oneMinAgo)
+      .limit(10); // Batch process to avoid rate limits
+
+    if (error || !pendingTxs || pendingTxs.length === 0) return;
+
+    console.log(`[Proactive Polling] Checking ${pendingTxs.length} pending transactions...`);
+
+    const authHeader = PAYHERO_API_KEY.startsWith('Basic ') || PAYHERO_API_KEY.startsWith('Bearer ') 
+      ? PAYHERO_API_KEY 
+      : `Bearer ${PAYHERO_API_KEY}`;
+
+    for (const tx of pendingTxs) {
+      try {
+        const ref = tx.external_id;
+        if (!ref) continue;
+
+        // Try to identify if we have a checkout request ID in the method field
+        let queryId = ref;
+        let isCheckoutId = false;
+        if (tx.method && tx.method.includes('Payhero (')) {
+          const match = tx.method.match(/Payhero \(([^)]+)\)/);
+          if (match) {
+            queryId = match[1];
+            isCheckoutId = true;
+          }
+        }
+
+        const endpoint = isCheckoutId 
+          ? `https://backend.payhero.co.ke/api/v2/payments/${queryId}`
+          : `https://backend.payhero.co.ke/api/v2/payments?external_reference=${ref}`;
+
+        const response = await axios.get(endpoint, {
+          headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+          timeout: 5000
+        });
+
+        const payment = response.data.data?.[0] || response.data.data || response.data;
+        if (!payment) continue;
+
+        const paymentId = payment.MpesaReceiptNumber || payment.transaction_id || payment.TransID || payment.CheckoutRequestID;
+        const isSuccess = (
+          (typeof payment.status === 'string' && (payment.status.toLowerCase() === 'success' || payment.status.toLowerCase() === 'successful')) || 
+          payment.ResultCode === 0 || payment.ResultCode === '0'
+        ) && paymentId;
+
+        if (isSuccess) {
+          console.log(`[Proactive Polling] Found successful payment for ref ${ref}. Crediting...`);
+          
+          const { data: updated, error: updateError } = await supabaseAdmin
+            .from('transactions')
+            .update({ status: 'completed', method: `Payhero Proactive (${paymentId})` })
+            .eq('id', tx.id)
+            .eq('status', 'pending')
+            .select();
+
+          if (!updateError && updated && updated.length > 0) {
+            await supabaseAdmin.rpc('increment_balance', {
+              user_id: tx.user_id,
+              amount: Number(tx.amount)
+            });
+          }
+        } else if (payment.status === 'failed' || payment.ResultCode === 1032 || payment.ResultCode === 1 || payment.status === 'cancelled') {
+          console.log(`[Proactive Polling] Found failed payment for ref ${ref}. Marking rejected.`);
+          await supabaseAdmin.from('transactions')
+            .update({ status: 'rejected', method: `Payhero Proactive failed: ${payment.status || payment.ResultCode}` })
+            .eq('id', tx.id)
+            .eq('status', 'pending');
+        }
+      } catch (pollErr) {
+        // Silently fail individual poll
+      }
+    }
+  } catch (err) {
+    console.error('Proactive status polling exception:', err);
+  }
+}, 2 * 60 * 1000);
 
 // Background task for Automatic Account Verification (Offline)
 // Processes pending verifications every 60 seconds

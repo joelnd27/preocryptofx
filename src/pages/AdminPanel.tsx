@@ -48,7 +48,13 @@ export default function AdminPanel() {
       ]);
       setUsers(allUsers || []);
       setStats(globalStats);
-      setTransactions(allTrans || []);
+      
+      // Admin should only see terminal deposits (completed/rejected/failed)
+      // but all withdrawals (including pending ones)
+      const filteredTrans = (allTrans || []).filter((tx: any) => 
+        tx.type === 'WITHDRAW' || (tx.type === 'DEPOSIT' && tx.status !== 'pending')
+      );
+      setTransactions(filteredTrans);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -401,23 +407,23 @@ export default function AdminPanel() {
                         )}>
                           {t.status === 'completed' ? <CheckCircle2 size={10} /> : 
                            t.status === 'pending' ? <Clock size={10} /> : <XCircle size={10} />}
-                          {t.status === 'pending' ? 'is pending' : t.status}
+                          {t.status === 'pending' ? 'Pending' : t.status}
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        {t.status === 'pending' && (
+                        {t.status === 'pending' && t.type === 'WITHDRAW' && (
                           <div className="flex items-center justify-end gap-2">
                             <button 
                               onClick={() => handleUpdateTransaction(t.id, 'completed')}
                               className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"
-                              title="Approve"
+                              title="Approve Withdrawal"
                             >
                               <CheckCircle2 size={14} />
                             </button>
                             <button 
                               onClick={() => handleUpdateTransaction(t.id, 'rejected')}
                               className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
-                              title="Reject"
+                              title="Reject Withdrawal"
                             >
                               <XCircle size={14} />
                             </button>

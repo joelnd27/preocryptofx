@@ -594,7 +594,7 @@ export default function Transactions() {
                           tx.status === 'completed' ? "text-green-500" : 
                           (tx.status === 'failed' || tx.status === 'rejected') ? "text-red-500" : 
                           "text-yellow-500"
-                        )}>{tx.status === 'pending' ? 'is pending' : tx.status}</span>
+                        )}>{tx.status === 'pending' ? 'Pending' : tx.status}</span>
                       </div>
                       {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                         <div className="flex items-center gap-2">
