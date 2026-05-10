@@ -910,24 +910,24 @@ export default function Transactions() {
                         <div className="space-y-4 pt-2">
                           <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
                             <div className="space-y-2">
-                              <label className="text-[9px] font-bold text-slate-500 uppercase">BTC Address</label>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">BTC (BEP20) Address</label>
                               <div className="flex items-center gap-2">
-                                <input readOnly value="bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
-                                <button type="button" onClick={() => { navigator.clipboard.writeText('bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
+                                <input readOnly value="0xcc6371a1f224ac0e655b6c787be086444be2f674" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
+                                <button type="button" onClick={() => { navigator.clipboard.writeText('0xcc6371a1f224ac0e655b6c787be086444be2f674'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
                               </div>
                             </div>
                             <div className="space-y-2">
                               <label className="text-[9px] font-bold text-slate-500 uppercase">ETH (ERC20) Address</label>
                               <div className="flex items-center gap-2">
-                                <input readOnly value="0x71C7656EC7ab88b098defB751B7401B5f6d8976F" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
-                                <button type="button" onClick={() => { navigator.clipboard.writeText('0x71C7656EC7ab88b098defB751B7401B5f6d8976F'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
+                                <input readOnly value="0xcc6371a1f224ac0e655b6c787be086444be2f674" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
+                                <button type="button" onClick={() => { navigator.clipboard.writeText('0xcc6371a1f224ac0e655b6c787be086444be2f674'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
                               </div>
                             </div>
                             <div className="space-y-2">
                               <label className="text-[9px] font-bold text-slate-500 uppercase">USDT (TRC20) Address</label>
                               <div className="flex items-center gap-2">
-                                <input readOnly value="TR7NHqjuS2p3yAfEnZddP7F9vW55m5fD6m" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
-                                <button type="button" onClick={() => { navigator.clipboard.writeText('TR7NHqjuS2p3yAfEnZddP7F9vW55m5fD6m'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
+                                <input readOnly value="TUmex3LPfRF8Zjbx8DUw6XS7YFdmuoXKuz" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 px-3 text-[10px] flex-1 font-mono" />
+                                <button type="button" onClick={() => { navigator.clipboard.writeText('TUmex3LPfRF8Zjbx8DUw6XS7YFdmuoXKuz'); alert('Address copied!'); }} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center"><CheckCircle2 size={12} /></button>
                               </div>
                             </div>
                           </div>
