@@ -6,6 +6,7 @@ import {
   TrendingUp, 
   Copy, 
   Check, 
+  CheckCircle2,
   ExternalLink,
   Search,
   Filter,
@@ -211,13 +212,17 @@ export default function Referrals() {
                 <th className={cn(
                   "px-6 py-3 text-[10px] font-bold uppercase tracking-[0.1em]",
                   isDarkMode ? "text-slate-600" : "text-slate-400"
-                )}>Deposit</th>
+                )}>Status</th>
+                <th className={cn(
+                  "px-6 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-right",
+                  isDarkMode ? "text-slate-600" : "text-slate-400"
+                )}>Total Deposited</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-inherit">
               {referrals.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-6 py-16 text-center">
+                  <td colSpan={4} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className={cn(
                         "w-12 h-12 rounded-2xl flex items-center justify-center mb-1",
@@ -242,13 +247,19 @@ export default function Referrals() {
                   )}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold text-[10px]">
+                        <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">
                           {ref.username.charAt(0).toUpperCase()}
                         </div>
-                        <span className={cn(
-                          "text-sm font-medium",
-                          isDarkMode ? "text-slate-300" : "text-slate-700"
-                        )}>{ref.username}</span>
+                        <div className="flex flex-col min-w-0">
+                          <span className={cn(
+                            "text-sm font-semibold truncate",
+                            isDarkMode ? "text-slate-200" : "text-slate-900"
+                          )}>{ref.username}</span>
+                          <span className={cn(
+                            "text-[10px] truncate",
+                            isDarkMode ? "text-slate-500" : "text-slate-400"
+                          )}>{ref.email}</span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -261,15 +272,22 @@ export default function Referrals() {
                     </td>
                     <td className="px-6 py-4">
                       <div className={cn(
-                        "inline-flex items-center gap-1.5 font-bold text-xs",
-                        ref.hasDeposited ? "text-emerald-500" : "text-slate-500"
+                        "inline-flex items-center gap-1.5 font-bold text-[10px] px-2 py-1 rounded-lg",
+                        ref.hasDeposited 
+                          ? (isDarkMode ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600")
+                          : (isDarkMode ? "bg-slate-800/50 text-slate-500" : "bg-slate-100 text-slate-500")
                       )}>
                         {ref.hasDeposited ? (
-                          <><Check size={14} className="stroke-[3]" /> Yes</>
+                          <><CheckCircle2 size={12} className="stroke-[3]" /> Deposited</>
                         ) : (
-                          "—"
+                          "No Deposit"
                         )}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 text-right font-mono font-bold text-xs">
+                      <span className={isDarkMode ? "text-slate-300" : "text-slate-700"}>
+                        ${(ref.totalDeposited || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </span>
                     </td>
                   </tr>
                 ))

@@ -235,11 +235,11 @@ export default function Transactions() {
 
       // Check limits for unverified users
       if (user?.verificationStatus !== 'verified') {
-        if (val > 100) {
+        if (val > 500) {
           setAlertConfig({
             isOpen: true,
             title: 'Verification Required',
-            message: 'Unverified accounts are limited to withdrawals of $100 or less. Please verify your identity to unlock higher limits.',
+            message: 'Unverified accounts are limited to withdrawals of $500 or less. Please verify your identity to unlock higher limits.',
             type: 'warning'
           });
           return;
@@ -870,7 +870,7 @@ export default function Transactions() {
                         <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-start gap-3">
                           <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
                           <p className="text-[10px] text-blue-700 dark:text-blue-400 font-medium">
-                            Verify your account to withdraw more than $100. Unverified accounts have a $100 daily limit.
+                            Verify your account to withdraw more than $500. Unverified accounts have a $500 daily limit.
                           </p>
                         </div>
                       )}

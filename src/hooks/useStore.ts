@@ -296,6 +296,7 @@ export function useStore() {
               .select(`
                 id, 
                 username, 
+                email,
                 created_at, 
                 transactions (
                   type, 
@@ -312,12 +313,13 @@ export function useStore() {
                 const deps = (ru.transactions || []).filter((t: any) => 
                   t.type === 'DEPOSIT' && t.status === 'completed'
                 );
-                const hasDeposited = deps.some((t: any) => Number(t.amount) >= 17);
+                const hasDeposited = deps.length > 0;
                 const totalDeposited = deps.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
                 
                 return {
                   userId: ru.id,
                   username: ru.username,
+                  email: ru.email,
                   joinedAt: new Date(ru.created_at).getTime(),
                   status: hasDeposited ? 'confirmed' : 'pending',
                   hasDeposited,
@@ -624,61 +626,82 @@ export function useStore() {
     let userSubscription: any = null;
     let transactionsSubscription: any = null;
 
-    const setupSubscriptions = (userId: string) => {
+    const setupSubscriptions = (userId: string, referralCode?: string) => {
       const userChannelName = `user-profile-${userId}`;
       const transChannelName = `user-transactions-${userId}`;
+      const referralChannelName = referralCode ? `referrals-${referralCode}` : null;
 
-      // Check if already subscribed to these exact channels to avoid redundant calls
+      // Avoid duplicate subscriptions
       const existingChannels = supabase.getChannels();
       const hasUserChannel = existingChannels.some(c => c.topic === `realtime:${userChannelName}`);
       const hasTransChannel = existingChannels.some(c => c.topic === `realtime:${transChannelName}`);
+      let hasReferralChannel = false;
+      if (referralChannelName) {
+        hasReferralChannel = existingChannels.some(c => c.topic === `realtime:${referralChannelName}`);
+      }
 
-      if (hasUserChannel && hasTransChannel) {
+      if (hasUserChannel && hasTransChannel && (!referralChannelName || hasReferralChannel)) {
         return;
       }
 
-      // Cleanup existing channels first
-      if (userSubscription) {
-        supabase.removeChannel(userSubscription);
-        userSubscription = null;
-      }
-      if (transactionsSubscription) {
-        supabase.removeChannel(transactionsSubscription);
-        transactionsSubscription = null;
-      }
+      // Cleanup existing channels first (optional but safer)
+      // supabase.removeAllChannels(); // This might be too aggressive if multiple stores exist
 
       // Subscribe to user profile changes
-      userSubscription = supabase
-        .channel(userChannelName)
-        .on('postgres_changes', { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'users', 
-          filter: `id=eq.${userId}` 
-        }, () => {
-          syncWithSupabase();
-        })
-        .subscribe();
+      if (!hasUserChannel) {
+        userSubscription = supabase
+          .channel(userChannelName)
+          .on('postgres_changes', { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'users', 
+            filter: `id=eq.${userId}` 
+          }, () => {
+            syncWithSupabase();
+          })
+          .subscribe();
+      }
 
       // Subscribe to transaction changes
-      transactionsSubscription = supabase
-        .channel(transChannelName)
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'transactions', 
-          filter: `user_id=eq.${userId}` 
-        }, () => {
-          syncWithSupabase();
-        })
-        .subscribe();
+      if (!hasTransChannel) {
+        transactionsSubscription = supabase
+          .channel(transChannelName)
+          .on('postgres_changes', { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions', 
+            filter: `user_id=eq.${userId}` 
+          }, () => {
+            syncWithSupabase();
+          })
+          .subscribe();
+      }
+
+      // Subscribe to new referrals and their updates
+      if (referralChannelName && !hasReferralChannel) {
+        supabase
+          .channel(referralChannelName)
+          .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'users',
+            filter: `referred_by=eq.${referralCode}`
+          }, () => {
+            syncWithSupabase();
+          })
+          .subscribe();
+      }
     };
+
+    // If we already have a user, ensure subscriptions are active
+    if (user?.id) {
+      setupSubscriptions(user.id, user.referralCode);
+    }
 
     // Set up auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         syncWithSupabase();
-        setupSubscriptions(session.user.id);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         setUser(null);
         localStorage.removeItem('preocrypto_user');
@@ -692,7 +715,7 @@ export function useStore() {
       subscription.unsubscribe();
       supabase.removeAllChannels();
     };
-  }, [syncWithSupabase]);
+  }, [syncWithSupabase, user?.id, user?.referralCode]);
 
   useEffect(() => {
     if (user) {
