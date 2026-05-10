@@ -38,8 +38,16 @@ export function useStore() {
   });
 
   const userRef = useRef<User | null>(user);
+  const isInternalUpdate = useRef(false);
+  
   useEffect(() => {
     userRef.current = user;
+    // Security: Any user state change resetting the internal update flag
+    // so that the next change must set it again to be considered authorized.
+    if (isInternalUpdate.current) {
+        // Reset flag after one event loop cycle (enough for the state update to settle)
+        setTimeout(() => { isInternalUpdate.current = false; }, 0);
+    }
   }, [user]);
 
   const [users, setUsers] = useState<User[]>(() => {
@@ -291,6 +299,8 @@ export function useStore() {
         // Fetch referrals properly from DB
         if (isSupabaseConfigured() && formattedUser.referralCode) {
           try {
+            console.log('[Referral] Fetching referred users for:', formattedUser.referralCode);
+            // Search by EITHER referral code OR user ID to be super robust
             const { data: referredUsers, error: referralError } = await supabase
               .from('users')
               .select(`
@@ -304,7 +314,7 @@ export function useStore() {
                   status
                 )
               `)
-              .eq('referred_by', formattedUser.referralCode);
+              .or(`referred_by.eq.${formattedUser.referralCode},referred_by.eq.${formattedUser.id}`);
             
             if (referralError) throw referralError;
 
@@ -571,6 +581,7 @@ export function useStore() {
         if (userData.preferred_chart_type) setChartType(userData.preferred_chart_type as ChartType);
         if (userData.preferred_timeframe) setTimeframe(userData.preferred_timeframe as Timeframe);
 
+        isInternalUpdate.current = true;
         setUser(formattedUser);
         hasSyncedRef.current = true;
       } else if (!error) {
@@ -622,6 +633,13 @@ export function useStore() {
 
     syncWithSupabase();
     
+    // Heartbeat sync every 30 seconds to prevent state drift and hacks
+    const heartbeat = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncWithSupabase();
+      }
+    }, 30000);
+
     // Set up real-time subscription for the current user
     let userSubscription: any = null;
     let transactionsSubscription: any = null;
@@ -903,6 +921,7 @@ export function useStore() {
     };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    isInternalUpdate.current = true;
   };
 
   const resetDemoBalance = async () => {
@@ -1026,67 +1045,34 @@ export function useStore() {
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
     const newBalance = Number((currentBalance - trade.amount).toFixed(2));
+    isInternalUpdate.current = true;
     
     if (isSupabaseConfigured()) {
-      const tradeData: any = {
-        user_id: currentUser.id,
-        coin: trade.coin,
-        amount: trade.amount,
-        type: trade.type,
-        price: trade.price,
-        status: 'OPEN',
-        profit: 0,
-        target_profit: targetProfit,
-        account_type: trade.accountType,
-        timestamp: new Date(newTrade.timestamp).toISOString(),
-        duration: trade.duration,
-        source: trade.source
-      };
-
-      console.log('[Supabase] Inserting trade:', tradeData);
-
-      let { data: insertedTrade, error: tradeError } = await supabase.from('trades').insert(tradeData).select().maybeSingle();
-
-      if (tradeError) {
-        console.warn('Trade insert error, attempting extremely simplified fallback...', tradeError);
-        const ultraSimpleTrade = {
-          user_id: currentUser.id,
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const response = await axios.post('/api/trades/open', {
           coin: trade.coin,
           amount: trade.amount,
           type: trade.type,
           price: trade.price,
-          status: 'OPEN',
-          account_type: trade.accountType
-        };
-        const { data: retryTrade, error: retryError } = await supabase.from('trades').insert(ultraSimpleTrade).select().maybeSingle();
-        if (!retryError) {
-          insertedTrade = retryTrade;
-          tradeError = null;
+          accountType: trade.accountType,
+          duration: trade.duration,
+          source: trade.source
+        }, {
+          headers: { Authorization: `Bearer ${session?.access_token}` }
+        });
+
+        if (response.status === 200) {
+          const insertedTrade = response.data;
+          newTrade.id = insertedTrade.id;
+          newTrade.targetProfit = insertedTrade.target_profit;
+        } else {
+          throw new Error('Failed to open trade securely');
         }
-      }
-
-      if (insertedTrade) {
-        newTrade.id = insertedTrade.id;
-      }
-
-      console.log(`[Supabase] Updating balance and stats for ${currentUser.id} to ${newBalance}`);
-      await supabase.from('users').update({
-        [isReal ? 'real_balance' : 'demo_balance']: newBalance,
-        [isReal ? 'daily_trades_real' : 'daily_trades_demo']: (isReal ? (currentUser.dailyTradesReal || 0) : (currentUser.dailyTradesDemo || 0)) + 1
-      }).eq('id', currentUser.id);
-      
-      // Cleanup old trades (Keep latest 100 per account type to be safe)
-      const { data: oldTrades } = await supabase
-        .from('trades')
-        .select('id')
-        .eq('user_id', currentUser.id)
-        .eq('account_type', trade.accountType)
-        .order('timestamp', { ascending: false })
-        .range(100, 1000);
-      
-      if (oldTrades && oldTrades.length > 0) {
-        const idsToDelete = oldTrades.map(t => t.id);
-        await supabase.from('trades').delete().in('id', idsToDelete);
+      } catch (err: any) {
+        console.error('SECURE TRADE FAILED:', err.response?.data?.error || err.message);
+        throw new Error(err.response?.data?.error || 'Failed to place trade via secure gateway');
       }
     }
 
@@ -1122,44 +1108,29 @@ export function useStore() {
     
     const currentBalance = currentUser[balanceKey];
     const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((currentBalance + trade.amount + currentProfit).toFixed(2)));
+    isInternalUpdate.current = true;
 
-    // 1. Sync with Supabase first
+    // 1. Sync with Supabase first via secure API
     if (isSupabaseConfigured()) {
       try {
-        console.log(`[Supabase] Closing trade ${tradeId} with profit ${currentProfit}`);
-        const { error: tradeUpdateError } = await supabase.from('trades').update({
-          status: 'CLOSED',
-          profit: currentProfit
-        }).eq('id', tradeId);
-
-        if (tradeUpdateError) throw tradeUpdateError;
-
-        const { data: u, error: userFetchError } = await supabase.from('users').select('total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo').eq('id', currentUser.id).maybeSingle();
-        if (userFetchError) throw userFetchError;
+        const { data: { session } } = await supabase.auth.getSession();
         
-        if (u) {
-          const newTotal = Number((Number(isReal ? u.total_profit_real : u.total_profit_demo) + currentProfit).toFixed(2));
-          const newDaily = Number((Number(isReal ? u.daily_profit_real : u.daily_profit_demo) + currentProfit).toFixed(2));
-          const newDailyTrades = (Number(isReal ? u.daily_trades_real : u.daily_trades_demo) || 0) + 1;
-          
-          console.log(`[Supabase] Updating profits for ${currentUser.id}: Total=${newTotal}, Daily=${newDaily}, Trades=${newDailyTrades}`);
-          const { error: profitUpdateError } = await supabase.from('users').update({
-            [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotal,
-            [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDaily,
-            [isReal ? 'daily_trades_real' : 'daily_trades_demo']: newDailyTrades
-          }).eq('id', currentUser.id);
-          
-          if (profitUpdateError) throw profitUpdateError;
+        console.log(`[Supabase] Closing trade ${tradeId} via secure API...`);
+        const response = await axios.post('/api/trades/close', {
+          tradeId,
+          currentProfit
+        }, {
+          headers: { Authorization: `Bearer ${session?.access_token}` }
+        });
+
+        if (response.status !== 200) {
+          throw new Error(response.data.error || 'Secure closure failed');
         }
 
-        console.log(`[Supabase] Updating balance for ${currentUser.id} to ${newBalance}`);
-        const { error: balanceUpdateError } = await supabase.from('users').update({
-          [isReal ? 'real_balance' : 'demo_balance']: newBalance
-        }).eq('id', currentUser.id);
-        
-        if (balanceUpdateError) throw balanceUpdateError;
-      } catch (err) {
-        console.error('CRITICAL: Supabase sync error in closeTrade:', err);
+        console.log(`[Supabase] Secure closure success. New Balance: ${response.data.newBalance}`);
+      } catch (err: any) {
+        console.error('CRITICAL: Supabase secure sync error in closeTrade:', err.response?.data?.error || err.message);
+        // We still update local state for responsiveness, but the DB is the authority
       }
     }
 
@@ -1272,10 +1243,18 @@ export function useStore() {
       timestamp: Date.now()
     };
 
+    // Withdrawal limits for unverified users
+    if (transaction.type === 'WITHDRAW' && user.verificationStatus !== 'verified') {
+      if (transaction.amount > 500) {
+        throw new Error('Unverified accounts have a withdrawal limit of $500. Please verify your account to increase this limit.');
+      }
+    }
+
     // Deduct balance immediately for withdrawals
     let newBalance = user[balanceKey];
     if (transaction.type === 'WITHDRAW') {
       newBalance = Number((user[balanceKey] - transaction.amount).toFixed(2));
+      isInternalUpdate.current = true;
     }
 
     if (isSupabaseConfigured()) {
@@ -1437,6 +1416,7 @@ export function useStore() {
     const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
     const entryPrice = randomCoin.basePrice * (0.95 + Math.random() * 0.1);
     const updatedLogsDB = log ? [log, ...(currentUser.botLogs || [])].slice(0, 50) : (currentUser.botLogs || []);
+    isInternalUpdate.current = true;
     
     const calculatedUpdatedStatsDB = {
       ...(currentUser.botStats || {
@@ -1981,6 +1961,7 @@ export function useStore() {
   const submitVerification = async (docs: User['verificationDocuments']) => {
     if (!user) return;
     
+    isInternalUpdate.current = true;
     const now = Date.now();
     if (isSupabaseConfigured()) {
       await supabase.from('users').update({
@@ -2022,6 +2003,7 @@ export function useStore() {
   const updateProfile = async (updates: Partial<Pick<User, 'username' | 'email' | 'phone'>>) => {
     if (!user) return;
     
+    isInternalUpdate.current = true;
     const updatedUser = { ...user, ...updates };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
@@ -2293,6 +2275,7 @@ export function useStore() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return false;
 
+        isInternalUpdate.current = true;
         const response = await axios.post('/api/admin/credit-user', {
           userId,
           amount,

