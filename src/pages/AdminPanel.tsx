@@ -48,13 +48,7 @@ export default function AdminPanel() {
       ]);
       setUsers(allUsers || []);
       setStats(globalStats);
-      
-      // Admin should only see terminal deposits (completed/rejected/failed)
-      // but all withdrawals (including pending ones)
-      const filteredTrans = (allTrans || []).filter((tx: any) => 
-        tx.type === 'WITHDRAW' || (tx.type === 'DEPOSIT' && tx.status !== 'pending')
-      );
-      setTransactions(filteredTrans);
+      setTransactions(allTrans || []);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -391,39 +385,66 @@ export default function AdminPanel() {
                         <div>
                           <p className={cn(
                             "font-bold text-sm",
-                            t.type === 'DEPOSIT' ? "text-green-500" : "text-red-500"
+                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
                           )}>
                             {t.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(t.amount)}
                           </p>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{t.method || 'Direct'}</p>
+                          <div className="mt-1">
+                            {(() => {
+                              const method = t.method || 'Direct';
+                              if (method.toLowerCase().includes('payhero')) {
+                                const idMatch = method.match(/\(([^)]+)\)/);
+                                const id = idMatch ? idMatch[1] : null;
+                                
+                                if (t.status === 'completed') {
+                                  return (
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
+                                      {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') 
+                                        ? `PAYHERO CALLBACK ${id ? `(${id})` : ''}`
+                                        : `PAYHERO ${id ? `(${id})` : ''}`}
+                                    </p>
+                                  );
+                                } else {
+                                  return (
+                                    <>
+                                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">PAYHERO</p>
+                                      {id && <p className="text-[9px] text-slate-400 font-medium italic">({id})</p>}
+                                    </>
+                                  );
+                                }
+                              }
+                              return <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{method}</p>;
+                            })()}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-5">
                         <span className={cn(
-                          "px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit",
+                          "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit",
                           t.status === 'completed' ? "bg-green-500/10 text-green-500" :
                           t.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
                           "bg-red-500/10 text-red-500"
                         )}>
                           {t.status === 'completed' ? <CheckCircle2 size={10} /> : 
-                           t.status === 'pending' ? <Clock size={10} /> : <XCircle size={10} />}
-                          {t.status === 'pending' ? 'Pending' : t.status}
+                           t.status === 'pending' ? <Clock size={10} /> : 
+                           <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div>}
+                          {t.status === 'pending' ? 'is pending' : t.status === 'rejected' ? 'REJECTED' : t.status.toUpperCase()}
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        {t.status === 'pending' && t.type === 'WITHDRAW' && (
+                        {t.status === 'pending' && (
                           <div className="flex items-center justify-end gap-2">
                             <button 
                               onClick={() => handleUpdateTransaction(t.id, 'completed')}
                               className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"
-                              title="Approve Withdrawal"
+                              title="Approve"
                             >
                               <CheckCircle2 size={14} />
                             </button>
                             <button 
                               onClick={() => handleUpdateTransaction(t.id, 'rejected')}
                               className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
-                              title="Reject Withdrawal"
+                              title="Reject"
                             >
                               <XCircle size={14} />
                             </button>

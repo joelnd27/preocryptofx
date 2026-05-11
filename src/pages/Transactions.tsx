@@ -434,12 +434,26 @@ export default function Transactions() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <span className={cn(
-                          "text-[10px] font-bold font-mono",
-                          tx.type === 'DEPOSIT' ? "text-green-500" : "text-red-500"
-                        )}>
-                          {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className={cn(
+                            "text-[10px] font-bold font-mono",
+                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
+                          )}>
+                            {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
+                          </span>
+                          {tx.method?.toLowerCase().includes('payhero') && (
+                            <div className="flex flex-col">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">
+                                {tx.method.toLowerCase().includes('callback') || tx.method.toLowerCase().includes('status') 
+                                  ? 'PAYHERO CALLBACK' 
+                                  : 'PAYHERO'}
+                              </span>
+                              {tx.method.match(/\(([^)]+)\)/) && (
+                                <span className="text-[7px] text-slate-400 font-medium">({tx.method.match(/\(([^)]+)\)/)?.[1]})</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={cn(
@@ -451,20 +465,18 @@ export default function Transactions() {
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1.5">
-                          <div className="flex items-center gap-1">
-                            <div className={cn(
-                              "w-1 h-1 rounded-full",
-                              tx.status === 'completed' ? "bg-green-500" : 
-                              (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500" : 
-                              "bg-yellow-500 animate-pulse"
-                            )} />
-                            <span className={cn(
-                              "text-[8px] font-bold uppercase tracking-tighter",
-                              tx.status === 'completed' ? "text-green-500" : 
-                              (tx.status === 'failed' || tx.status === 'rejected') ? "text-red-500" : 
-                              "text-yellow-500"
-                            )}>{tx.status === 'pending' ? 'pending' : tx.status}</span>
-                          </div>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 w-fit",
+                            tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                            (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
+                            "bg-yellow-500/10 text-yellow-500"
+                          )}>
+                            {tx.status === 'completed' ? <CheckCircle2 size={10} /> : 
+                             (tx.status === 'failed' || tx.status === 'rejected') ? 
+                             <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div> :
+                             <Clock size={10} />}
+                            {tx.status === 'pending' ? 'pending' : tx.status.toUpperCase()}
+                          </span>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                             <div className="flex items-center gap-1">
                               <button
@@ -566,10 +578,22 @@ export default function Transactions() {
                     <div className="text-right">
                       <p className={cn(
                         "text-sm font-bold font-mono",
-                        tx.type === 'DEPOSIT' ? "text-green-500" : "text-red-500"
+                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
                       )}>
                         {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </p>
+                      {tx.method?.toLowerCase().includes('payhero') && (
+                        <div className="flex flex-col items-end">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                            {tx.method.toLowerCase().includes('callback') || tx.method.toLowerCase().includes('status') 
+                              ? 'PAYHERO CALLBACK' 
+                              : 'PAYHERO'}
+                          </p>
+                          {tx.method.match(/\(([^)]+)\)/) && (
+                            <p className="text-[9px] text-slate-400 font-medium">({tx.method.match(/\(([^)]+)\)/)?.[1]})</p>
+                          )}
+                        </div>
+                      )}
                       <p className="text-[10px] text-slate-500">{formatDate(tx.timestamp)}</p>
                     </div>
                   </div>
@@ -582,19 +606,18 @@ export default function Transactions() {
                     </span>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1.5">
-                        {tx.status === 'completed' ? (
-                          <CheckCircle2 size={12} className="text-green-500" />
-                        ) : (tx.status === 'failed' || tx.status === 'rejected') ? (
-                          <XCircle size={12} className="text-red-500" />
-                        ) : (
-                          <Clock size={12} className="text-yellow-500 animate-pulse" />
-                        )}
                         <span className={cn(
-                          "text-[10px] font-bold uppercase tracking-tighter",
-                          tx.status === 'completed' ? "text-green-500" : 
-                          (tx.status === 'failed' || tx.status === 'rejected') ? "text-red-500" : 
-                          "text-yellow-500"
-                        )}>{tx.status === 'pending' ? 'Pending' : tx.status}</span>
+                          "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit",
+                          tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                          (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
+                          "bg-yellow-500/10 text-yellow-500"
+                        )}>
+                          {tx.status === 'completed' ? <CheckCircle2 size={12} /> : 
+                           (tx.status === 'failed' || tx.status === 'rejected') ? 
+                           <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div> :
+                           <Clock size={12} className="animate-pulse" />}
+                          {tx.status === 'pending' ? 'is pending' : tx.status.toUpperCase()}
+                        </span>
                       </div>
                       {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                         <div className="flex items-center gap-2">
