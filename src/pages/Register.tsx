@@ -20,7 +20,7 @@ export default function Register() {
   React.useEffect(() => {
     console.log('[Register] Component mounted. Ref code from URL:', refCodeFromUrl);
     if (refCodeFromUrl) {
-      setReferralCodeInput(refCodeFromUrl);
+      setReferralCodeInput(refCodeFromUrl.toUpperCase().trim());
     }
     const detectCountry = async () => {
       try {

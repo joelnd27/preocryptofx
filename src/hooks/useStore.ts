@@ -299,8 +299,8 @@ export function useStore() {
         // Fetch referrals properly from DB
         if (isSupabaseConfigured() && formattedUser.referralCode) {
           try {
-            console.log('[Referral] Fetching referred users for:', formattedUser.referralCode);
-            // Search by EITHER referral code OR user ID to be super robust
+            console.log('[Referral] Fetching referred users for:', formattedUser.referralCode, formattedUser.id);
+            // Search by EITHER referral code OR user ID or email to be super robust
             const { data: referredUsers, error: referralError } = await supabase
               .from('users')
               .select(`
@@ -308,17 +308,19 @@ export function useStore() {
                 username, 
                 email,
                 created_at, 
+                referred_by,
                 transactions (
                   type, 
                   amount, 
                   status
                 )
               `)
-              .or(`referred_by.eq.${formattedUser.referralCode},referred_by.eq.${formattedUser.id}`);
+              .or(`referred_by.eq.${formattedUser.referralCode},referred_by.eq.${formattedUser.id},referred_by.eq.${formattedUser.referralCode.toLowerCase()},referred_by.eq.${formattedUser.referralCode.toUpperCase()},referred_by.eq.${formattedUser.email}`);
             
             if (referralError) throw referralError;
 
             if (referredUsers) {
+              console.log(`[Referral] Found ${referredUsers.length} referrals for user ${formattedUser.id}`);
               formattedUser.referrals = referredUsers.map((ru: any) => {
                 const deps = (ru.transactions || []).filter((t: any) => 
                   t.type === 'DEPOSIT' && t.status === 'completed'
@@ -345,14 +347,11 @@ export function useStore() {
         }
 
         // Ensure referral code is persisted if it was missing
-        if (!userData.referral_code && isSupabaseConfigured()) {
-          console.log('[Referral] Generating and saving missing referral code for user...');
-          supabase.from('users')
+        if (!userData.referral_code && formattedUser.referralCode && isSupabaseConfigured()) {
+          console.log('[Referral] Persisting missing referral code for user...', formattedUser.referralCode);
+          await supabase.from('users')
             .update({ referral_code: formattedUser.referralCode })
-            .eq('id', userData.id)
-            .then(({ error }) => {
-              if (error) console.error('Failed to save generated referral code:', error);
-            });
+            .eq('id', userData.id);
         }
 
         // 1. Reconcile trades (Handle trades that expired while offline)
@@ -1643,6 +1642,8 @@ export function useStore() {
             verificationStatus: currentStatus,
             active_account: u.active_account,
             created_at: u.created_at,
+            referral_code: u.referral_code,
+            referred_by: u.referred_by,
             total_deposits: deposits + (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
             total_withdrawals: withdrawals
           };

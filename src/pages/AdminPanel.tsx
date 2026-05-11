@@ -208,6 +208,7 @@ export default function AdminPanel() {
                   <tr className="bg-slate-50/50 dark:bg-slate-800/30">
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">User Details</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Role & Status</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Referrals</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Account Balances</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Cash Flow</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Actions</th>
@@ -262,6 +263,17 @@ export default function AdminPanel() {
                               </button>
                             </div>
                           )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col items-center gap-1">
+                          <p className="text-[10px] font-bold text-slate-900 dark:text-white font-mono">{u.referral_code || '---'}</p>
+                          {u.referred_by && (
+                            <p className="text-[8px] text-slate-400 italic">By: {u.referred_by}</p>
+                          )}
+                          <div className="mt-1 px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[9px] font-bold">
+                            {users.filter(usr => (usr.referred_by && (usr.referred_by === u.referral_code || usr.referred_by === u.id))).length} Refs
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-5">
