@@ -110,6 +110,13 @@ export function useStore() {
         if (user.lastProfitResetDate && user.lastProfitResetDate !== today && hasSyncedRef.current) {
           console.log('Resetting daily statistics for new day:', today);
           
+          const resetBotStats = {
+            scalping: { profit: 0, trades: 0 },
+            trend: { profit: 0, trades: 0 },
+            ai: { profit: 0, trades: 0 },
+            custom: { profit: 0, trades: 0 }
+          };
+
           setUser(prev => {
             if (!prev) return null;
             return {
@@ -120,11 +127,14 @@ export function useStore() {
               dailyTrades: 0,
               dailyTradesReal: 0,
               dailyTradesDemo: 0,
+              botLogs: [],
+              botStats: resetBotStats,
               lastProfitResetDate: today
             };
           });
 
           if (isSupabaseConfigured()) {
+            // Update daily stats on users table
             await supabase.from('users').update({
               daily_profit_real: 0,
               daily_profit_demo: 0,
@@ -132,6 +142,12 @@ export function useStore() {
               daily_trades_demo: 0,
               last_profit_reset_date: today
             }).eq('id', user.id);
+
+            // Update bot activity on bot_settings table
+            await supabase.from('bot_settings').update({
+              bot_logs: [],
+              bot_stats: resetBotStats
+            }).eq('user_id', user.id);
           }
         }
     };
@@ -186,19 +202,23 @@ export function useStore() {
           errorMessage.includes('Refresh Token Not Found') || 
           errorMessage.includes('invalid_refresh_token') ||
           errorMessage.includes('Refresh Token has already been used') ||
-          errorMessage.includes('Invalid Refresh Token')
+          errorMessage.includes('Invalid Refresh Token') ||
+          errorMessage.includes('session_not_found') ||
+          errorMessage.includes('User not found')
         ) {
-          console.error('CRITICAL AUTH ERROR: Invalid Refresh Token detected. Force clearing session.');
+          console.error('CRITICAL AUTH ERROR: Invalid/Expired session detected. Force clearing session.');
           localStorage.removeItem('preocrypto_user');
           
           // Clear all supabase-related auth keys to be sure
           try {
+            const keysToRemove: string[] = [];
             for (let i = 0; i < localStorage.length; i++) {
               const key = localStorage.key(i);
               if (key?.startsWith('sb-') && (key.includes('-auth-token') || key.includes('.token'))) {
-                localStorage.removeItem(key);
+                keysToRemove.push(key);
               }
             }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
           } catch (e) {
             console.warn('Failed to clear some local storage keys', e);
           }
@@ -210,13 +230,14 @@ export function useStore() {
       }
 
       if (session?.user) {
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('*, transactions(*), trades(*), bot_settings(*)')
-        .eq('id', session.user.id)
-        .maybeSingle();
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('*, transactions(*), trades(*), bot_settings(*)')
+          .eq('id', session.user.id)
+          .maybeSingle();
 
-      if (userData) {
+        if (userData) {
+          // ... (existing sync logic)
         // Sort locally to ensure correct order
         const sortedTrades = (userData.trades || [])
           .sort((a: any, b: any) => {
@@ -622,6 +643,27 @@ export function useStore() {
     }
   }, [setUser]);
 
+  const getSafeSession = useCallback(async () => {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('refresh token not found') || msg.includes('invalid refresh token') || msg.includes('expired')) {
+          console.error('[Auth] Safe session check failed with refresh error. Forcing re-sync.');
+          await syncWithSupabase();
+          return null;
+        }
+        console.warn('[Auth] Session error:', error.message);
+        return null;
+      }
+      return session;
+    } catch (e) {
+      console.error('[Auth] Unexpected error getting session:', e);
+      return null;
+    }
+  }, [syncWithSupabase]);
+
   useEffect(() => {
     // Call auto-process RPC on load to sync DB
     if (isSupabaseConfigured()) {
@@ -717,19 +759,39 @@ export function useStore() {
 
     // Set up auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log(`[Auth Event] ${event}`, session ? 'Session Active' : 'No Session');
+      
       if (session?.user) {
         syncWithSupabase();
-      } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
-        setUser(null);
-        localStorage.removeItem('preocrypto_user');
-        supabase.removeAllChannels();
-        userSubscription = null;
-        transactionsSubscription = null;
+      } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session) || event === 'USER_UPDATED') {
+        // Only clear if we explicitly don't have a session
+        if (!session) {
+          setUser(null);
+          localStorage.removeItem('preocrypto_user');
+          supabase.removeAllChannels();
+          userSubscription = null;
+          transactionsSubscription = null;
+        }
       }
     });
 
+    // Periodically check session health to catch refresh token issues early
+    const healthCheck = setInterval(async () => {
+      if (isSupabaseConfigured()) {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error && (
+          error.message.includes('Refresh Token Not Found') || 
+          error.message.includes('invalid_refresh_token')
+        )) {
+          console.error('Session health check failed:', error.message);
+          syncWithSupabase(); // This will trigger the force logout logic
+        }
+      }
+    }, 60000); // Check every minute
+
     return () => {
       subscription.unsubscribe();
+      clearInterval(healthCheck);
       supabase.removeAllChannels();
     };
   }, [syncWithSupabase, user?.id, user?.referralCode]);
@@ -1112,7 +1174,7 @@ export function useStore() {
     // 1. Sync with Supabase first via secure API
     if (isSupabaseConfigured()) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await getSafeSession();
         
         console.log(`[Supabase] Closing trade ${tradeId} via secure API...`);
         const response = await axios.post('/api/trades/close', {
@@ -1771,7 +1833,7 @@ export function useStore() {
       if (user?.role !== 'admin') return false;
       
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await getSafeSession();
         const response = await axios.post('/api/admin/update-user', {
           userId,
           updates: { [field]: amount }
@@ -1817,7 +1879,7 @@ export function useStore() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSafeSession();
       const response = await axios.post('/api/admin/update-user', {
         userId,
         updates
@@ -1855,7 +1917,7 @@ export function useStore() {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSafeSession();
       const response = await axios.post('/api/admin/update-user', {
         userId,
         updates: { verification_status: status }
@@ -2273,7 +2335,7 @@ export function useStore() {
     updateTransactionStatus,
     adminCreditUser: async (userId: string, amount: number, transactionId?: string) => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await getSafeSession();
         if (!session) return false;
 
         isInternalUpdate.current = true;

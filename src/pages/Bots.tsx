@@ -442,8 +442,8 @@ export default function Bots() {
               
               <div className="grid grid-cols-2 gap-2.5">
                 {[
-                  { label: 'Total Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500' : 'text-red-500' },
-                  { label: 'Total Trades', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500' },
+                  { label: 'Daily Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500' : 'text-red-500' },
+                  { label: 'Daily Trades', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500' },
                 ].map((stat, i) => (
                   <div key={i} className="bg-slate-100 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
                     <p className="text-[7px] text-slate-500 uppercase font-bold mb-0.5 tracking-tight">{stat.label}</p>
