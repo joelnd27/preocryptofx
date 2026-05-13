@@ -11,6 +11,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Request Logger
+app.use((req, res, next) => {
+  console.log(`[Request] ${new Date().toISOString()} ${req.method} ${req.url}`);
+  next();
+});
+
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -228,8 +234,24 @@ router.post('/trades/open', async (req, res) => {
   if (!supabaseAdmin) return res.status(503).json({ error: 'System configuration error' });
 
   try {
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
+    // Authenticate user with a timeout to prevent hanging
+    const authPromise = supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    const authTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase Auth Timeout')), 10000));
+    
+    let authUser, authError;
+    try {
+      const authResult = await Promise.race([authPromise, authTimeout]) as any;
+      authUser = authResult.data.user;
+      authError = authResult.error;
+    } catch (e: any) {
+      console.error('[TradeOpen] Auth check exception:', e.message);
+      return res.status(504).json({ error: 'Authentication service timeout' });
+    }
+
+    if (authError || !authUser) {
+      console.error('[TradeOpen] Auth Error:', authError);
+      return res.status(401).json({ error: 'Unauthorized: Invalid session' });
+    }
 
     const { amount, coin, type, price, accountType, duration, source } = req.body;
     

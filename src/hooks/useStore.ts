@@ -831,19 +831,60 @@ export function useStore() {
         const session = await getSafeSession();
         if (!session) throw new Error('Session expired or invalid. Please log in again.');
         
-        const response = await axios.post('/api/trades/open', {
-          coin: trade.coin,
-          amount: trade.amount,
-          type: trade.type,
-          price: trade.price,
-          accountType: trade.accountType,
-          duration: trade.duration,
-          source: trade.source
-        }, {
-          headers: { Authorization: `Bearer ${session?.access_token}` }
-        });
+        console.log('[SecureTrade] Target URL: /api/trades/open');
+        let response;
+        try {
+          response = await axios.post('/api/trades/open', {
+            coin: trade.coin,
+            amount: trade.amount,
+            type: trade.type,
+            price: trade.price,
+            accountType: trade.accountType,
+            duration: trade.duration,
+            source: trade.source
+          }, {
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+            timeout: 15000 // 15s timeout
+          });
+        } catch (axiosErr: any) {
+          console.error('[SecureTrade] Axios Error Detail:', {
+            message: axiosErr.message,
+            code: axiosErr.code,
+            status: axiosErr.response?.status,
+            data: axiosErr.response?.data
+          });
+          
+          if (axiosErr.message === 'Network Error') {
+            console.warn('[SecureTrade] Network Error detected, attempting fetch fallback...');
+            const fetchRes = await fetch('/api/trades/open', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+              },
+              body: JSON.stringify({
+                coin: trade.coin,
+                amount: trade.amount,
+                type: trade.type,
+                price: trade.price,
+                accountType: trade.accountType,
+                duration: trade.duration,
+                source: trade.source
+              })
+            });
+            
+            if (!fetchRes.ok) {
+              const errorData = await fetchRes.json().catch(() => ({ error: fetchRes.statusText }));
+              throw new Error(errorData.error || `Fetch failed with status ${fetchRes.status}`);
+            }
+            
+            response = { data: await fetchRes.json(), status: fetchRes.status };
+          } else {
+            throw axiosErr;
+          }
+        }
 
-        if (response.status === 200) {
+        if (response && (response.status === 200 || response.status === 201)) {
           const insertedTrade = response.data;
           newTrade.id = insertedTrade.id;
           newTrade.targetProfit = insertedTrade.target_profit;
