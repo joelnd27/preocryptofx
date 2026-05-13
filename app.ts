@@ -834,6 +834,56 @@ setInterval(async () => {
   }
 }, 60 * 1000); 
 
+// Background Task: Automatic Withdrawal Completion
+// Normal users' withdrawals are auto-completed after 15-20 minutes
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    const now = Date.now();
+    const fifteenMinutesInMs = 15 * 60 * 1000;
+    const twentyMinutesInMs = 20 * 60 * 1000;
+
+    // Fetch pending withdrawals for normal users ('user' role)
+    const { data: pendingWithdrawals, error } = await supabaseAdmin
+      .from('transactions')
+      .select('id, user_id, timestamp, users!inner(role)')
+      .eq('type', 'WITHDRAW')
+      .eq('status', 'pending')
+      .eq('users.role', 'user');
+
+    if (error) {
+      console.error('[Offline-Withdraw] Sync Error:', error);
+      return;
+    }
+
+    if (!pendingWithdrawals || pendingWithdrawals.length === 0) return;
+
+    for (const tx of pendingWithdrawals) {
+      // Parse timestamp - handle both ISO strings and numeric timestamps
+      const createdAt = isNaN(Number(tx.timestamp)) ? new Date(tx.timestamp).getTime() : Number(tx.timestamp);
+      const ageInMs = now - createdAt;
+
+      // Deterministic threshold (15-20 minutes)
+      const seed = parseInt(tx.id.slice(0, 8), 36) || 0;
+      const threshold = fifteenMinutesInMs + ((seed % 1000) / 1000 * (twentyMinutesInMs - fifteenMinutesInMs));
+
+      if (ageInMs >= threshold) {
+        console.log(`[Offline-Withdraw] Automatically completing withdrawal ${tx.id} for user ${tx.user_id} (Waited: ${Math.round(ageInMs/60000)}m)`);
+        await supabaseAdmin
+          .from('transactions')
+          .update({ 
+            status: 'completed',
+            method: 'Auto-Processing (System)'
+          })
+          .eq('id', tx.id);
+      }
+    }
+  } catch (err) {
+    console.error('[Offline-Withdraw] Exception:', err);
+  }
+}, 60 * 1000);
+
 // Background Task: Global Trade Reconciliation & Bot Simulation
 // Ensures trades close on time and bots generate profit even when users are offline
 setInterval(async () => {
