@@ -432,16 +432,24 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-6 py-5">
                         <span className={cn(
-                          "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit",
-                          t.status === 'completed' ? "bg-green-500/10 text-green-500" :
-                          t.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
-                          "bg-red-500/10 text-red-500"
+                          "px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-2 w-fit shadow-sm",
+                          t.status === 'completed' 
+                            ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" 
+                            : t.status === 'pending' 
+                              ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" 
+                              : "bg-rose-500/10 text-rose-600 border border-rose-500/20 shadow-rose-500/5"
                         )}>
-                          {t.status === 'completed' ? <CheckCircle2 size={10} /> : 
-                           t.status === 'pending' ? <Clock size={10} /> : 
-                           <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div>}
-                          {t.status === 'pending' ? 'is pending' : t.status === 'rejected' ? 'REJECTED' : t.status.toUpperCase()}
+                          {t.status === 'completed' ? (
+                            <><CheckCircle2 size={12} className="text-emerald-500" /> SUCCESSFUL</>
+                          ) : t.status === 'pending' ? (
+                            <><Clock size={12} className="text-amber-500" /> PENDING</>
+                          ) : (
+                            <><XCircle size={12} className="text-rose-500" /> {t.status.toUpperCase()}</>
+                          )}
                         </span>
+                        {t.status === 'rejected' && (
+                          <p className="text-[9px] text-rose-400 font-bold mt-1 ml-1 uppercase tracking-tighter italic">Transaction Failed/Rejected</p>
+                        )}
                       </td>
                       <td className="px-6 py-5 text-right">
                         {t.status === 'pending' && (

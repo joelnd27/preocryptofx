@@ -187,29 +187,24 @@ export function useStore() {
     processPending();
   }, [user?.id, user?.role, user?.transactions?.length]);
 
-  // Sync with Supabase if configured
-  const syncWithSupabase = useCallback(async () => {
-    if (!isSupabaseConfigured()) return;
-
+  const getSafeSession = useCallback(async () => {
+    if (!isSupabaseConfigured()) return null;
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.warn('Session sync error:', sessionError.message);
-        // CRITICAL: Handle Invalid Refresh Token error by force-clearing state
-        const errorMessage = sessionError.message || '';
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        const msg = error.message.toLowerCase();
         if (
-          errorMessage.includes('Refresh Token Not Found') || 
-          errorMessage.includes('invalid_refresh_token') ||
-          errorMessage.includes('Refresh Token has already been used') ||
-          errorMessage.includes('Invalid Refresh Token') ||
-          errorMessage.includes('session_not_found') ||
-          errorMessage.includes('User not found')
+          msg.includes('refresh token not found') || 
+          msg.includes('invalid refresh token') || 
+          msg.includes('expired') ||
+          msg.includes('refresh_token_not_found') ||
+          msg.includes('invalid_refresh_token') ||
+          msg.includes('session_not_found')
         ) {
-          console.error('CRITICAL AUTH ERROR: Invalid/Expired session detected. Force clearing session.');
-          localStorage.removeItem('preocrypto_user');
+          console.error('[Auth] Safe session check failed with unrecoverable error. Forcing cleanup.', error.message);
           
-          // Clear all supabase-related auth keys to be sure
+          // Clear everything
+          localStorage.removeItem('preocrypto_user');
           try {
             const keysToRemove: string[] = [];
             for (let i = 0; i < localStorage.length; i++) {
@@ -219,14 +214,38 @@ export function useStore() {
               }
             }
             keysToRemove.forEach(k => localStorage.removeItem(k));
-          } catch (e) {
-            console.warn('Failed to clear some local storage keys', e);
-          }
+          } catch (e) {}
           
-          await supabase.auth.signOut().catch(() => {});
           setUser(null);
-          return;
+          await supabase.auth.signOut().catch(() => {});
+          return null;
         }
+        console.warn('[Auth] Session error:', error.message);
+        return null;
+      }
+      return session;
+    } catch (e: any) {
+      const msg = (e.message || '').toLowerCase();
+      if (msg.includes('refresh token not found') || msg.includes('invalid refresh token')) {
+         setUser(null);
+         localStorage.removeItem('preocrypto_user');
+      }
+      console.error('[Auth] Unexpected error getting session:', e);
+      return null;
+    }
+  }, []);
+
+  // Sync with Supabase if configured
+  const syncWithSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured()) return;
+
+    try {
+      const session = await getSafeSession();
+      
+      if (!session) {
+        // If getSafeSession returned null, it might have already handled a critical error
+        // or there just isn't a session.
+        return;
       }
 
       if (session?.user) {
@@ -317,52 +336,20 @@ export function useStore() {
           createdAt: new Date(userData.created_at).getTime()
         };
 
-        // Fetch referrals properly from DB
+        // Fetch referrals properly from DB via secure API (bypasses RLS)
         if (isSupabaseConfigured() && formattedUser.referralCode) {
           try {
-            console.log('[Referral] Fetching referred users for:', formattedUser.referralCode, formattedUser.id);
-            // Search by EITHER referral code OR user ID or email to be super robust
-            const { data: referredUsers, error: referralError } = await supabase
-              .from('users')
-              .select(`
-                id, 
-                username, 
-                email,
-                created_at, 
-                referred_by,
-                transactions (
-                  type, 
-                  amount, 
-                  status
-                )
-              `)
-              .or(`referred_by.eq.${formattedUser.referralCode},referred_by.eq.${formattedUser.id},referred_by.eq.${formattedUser.referralCode.toLowerCase()},referred_by.eq.${formattedUser.referralCode.toUpperCase()},referred_by.eq.${formattedUser.email}`);
+            const session = await getSafeSession();
+            const response = await axios.get('/api/user/referrals', {
+              headers: { Authorization: `Bearer ${session?.access_token}` }
+            });
             
-            if (referralError) throw referralError;
-
-            if (referredUsers) {
-              console.log(`[Referral] Found ${referredUsers.length} referrals for user ${formattedUser.id}`);
-              formattedUser.referrals = referredUsers.map((ru: any) => {
-                const deps = (ru.transactions || []).filter((t: any) => 
-                  t.type === 'DEPOSIT' && t.status === 'completed'
-                );
-                const hasDeposited = deps.length > 0;
-                const totalDeposited = deps.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-                
-                return {
-                  userId: ru.id,
-                  username: ru.username,
-                  email: ru.email,
-                  joinedAt: new Date(ru.created_at).getTime(),
-                  status: hasDeposited ? 'confirmed' : 'pending',
-                  hasDeposited,
-                  totalDeposited
-                };
-              });
+            if (response.status === 200) {
+              formattedUser.referrals = response.data;
+              console.log(`[Referral] Found ${formattedUser.referrals.length} referrals via secure API`);
             }
           } catch (err) {
-            console.error('[Referral] Error fetching referrals:', err);
-            // Don't block login if referrals fail to fetch
+            console.error('[Referral] Error fetching referrals via API:', err);
             formattedUser.referrals = [];
           }
         }
@@ -643,27 +630,6 @@ export function useStore() {
     }
   }, [setUser]);
 
-  const getSafeSession = useCallback(async () => {
-    if (!isSupabaseConfigured()) return null;
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        const msg = error.message.toLowerCase();
-        if (msg.includes('refresh token not found') || msg.includes('invalid refresh token') || msg.includes('expired')) {
-          console.error('[Auth] Safe session check failed with refresh error. Forcing re-sync.');
-          await syncWithSupabase();
-          return null;
-        }
-        console.warn('[Auth] Session error:', error.message);
-        return null;
-      }
-      return session;
-    } catch (e) {
-      console.error('[Auth] Unexpected error getting session:', e);
-      return null;
-    }
-  }, [syncWithSupabase]);
-
   useEffect(() => {
     // Call auto-process RPC on load to sync DB
     if (isSupabaseConfigured()) {
@@ -758,11 +724,15 @@ export function useStore() {
     }
 
     // Set up auth listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`[Auth Event] ${event}`, session ? 'Session Active' : 'No Session');
       
       if (session?.user) {
-        syncWithSupabase();
+        // Double check session health even if event provides one
+        const safeSession = await getSafeSession();
+        if (safeSession) {
+          syncWithSupabase();
+        }
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session) || event === 'USER_UPDATED') {
         // Only clear if we explicitly don't have a session
         if (!session) {
@@ -778,14 +748,7 @@ export function useStore() {
     // Periodically check session health to catch refresh token issues early
     const healthCheck = setInterval(async () => {
       if (isSupabaseConfigured()) {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error && (
-          error.message.includes('Refresh Token Not Found') || 
-          error.message.includes('invalid_refresh_token')
-        )) {
-          console.error('Session health check failed:', error.message);
-          syncWithSupabase(); // This will trigger the force logout logic
-        }
+        await getSafeSession();
       }
     }, 60000); // Check every minute
 
@@ -1110,7 +1073,8 @@ export function useStore() {
     
     if (isSupabaseConfigured()) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await getSafeSession();
+        if (!session) throw new Error('Session expired or invalid. Please log in again.');
         
         const response = await axios.post('/api/trades/open', {
           coin: trade.coin,

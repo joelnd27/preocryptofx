@@ -27,6 +27,71 @@ const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PA
 // API Routes
 const router = express.Router();
 
+// User Referrals (Bypasses RLS for the referring user)
+router.get('/user/referrals', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  if (!supabaseAdmin) return res.status(503).json({ error: 'System configuration error' });
+
+  try {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
+
+    // 1. Fetch user's own referral code to search for
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('referral_code, email')
+      .eq('id', authUser.id)
+      .single();
+      
+    if (userError || !userData) return res.status(404).json({ error: 'User info not found' });
+
+    const refCode = userData.referral_code;
+    if (!refCode) return res.json([]);
+
+    // 2. Fetch referrals using admin client
+    const { data: referredUsers, error: referralError } = await supabaseAdmin
+      .from('users')
+      .select(`
+        id,
+        username,
+        email,
+        created_at,
+        transactions (
+          type,
+          amount,
+          status
+        )
+      `)
+      .or(`referred_by.eq.${refCode},referred_by.eq.${authUser.id},referred_by.eq.${refCode.toLowerCase()},referred_by.eq.${refCode.toUpperCase()},referred_by.eq.${userData.email}`);
+
+    if (referralError) throw referralError;
+
+    // 3. Format and return
+    const formatted = (referredUsers || []).map((ru: any) => {
+      const deposits = (ru.transactions || [])
+        .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed');
+      
+      const totalDeposited = deposits.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+      
+      return {
+        userId: ru.id,
+        username: ru.username || ru.email?.split('@')[0] || 'Unknown',
+        email: ru.email,
+        joinedAt: new Date(ru.created_at).getTime(),
+        status: deposits.length > 0 ? 'active' : 'pending',
+        hasDeposited: deposits.length > 0,
+        totalDeposited: totalDeposited
+      };
+    });
+
+    res.json(formatted);
+  } catch (err: any) {
+    console.error('Error fetching referrals:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/payhero/initiate', async (req, res) => {
   const { amount, phone, userId, username } = req.body;
 
