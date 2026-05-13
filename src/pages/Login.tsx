@@ -21,18 +21,20 @@ export default function Login() {
     
     try {
       await login(email, password);
-      // STRICT: Only redirect to admin if the email matches the authorized list exactly
-      const adminEmails = ['josphatndungu122@gmail.com', 'josphatndungu1022@gmail.com'];
-      const isAdmin = adminEmails.includes(email.toLowerCase());
-      navigate(isAdmin ? '/admin' : '/dashboard');
+      // No need for local isAdmin check anymore as useStore handles the role correctly after sync
+      navigate('/dashboard');
     } catch (err: any) {
       console.error('Login error:', err);
-      if (err.message.includes('rate limit exceeded')) {
-        setError('Security limit reached. Please wait 15 minutes or disable "Rate Limits" in your Supabase Auth settings.');
-      } else if (err.message === 'Invalid login credentials' || err.message.includes('Invalid login credentials')) {
+      const errorMessage = err.message || 'An unexpected error occurred';
+      
+      if (errorMessage.includes('rate limit exceeded')) {
+        setError('Security limit reached. Please wait a few minutes or disable "Rate Limits" in your Supabase Auth settings.');
+      } else if (errorMessage.includes('Invalid login credentials') || errorMessage.includes('Invalid credentials')) {
         setError('Invalid email or password. Please check your credentials.');
+      } else if (errorMessage.includes('Email not confirmed')) {
+        setError('Please confirm your email address before logging in.');
       } else {
-        setError('Invalid email or password. Please check your credentials.');
+        setError(errorMessage);
       }
     } finally {
       setLoading(false);

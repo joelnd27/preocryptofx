@@ -235,7 +235,11 @@ router.post('/trades/open', async (req, res) => {
     
     // 1. Fetch current balance securely
     const { data: userData, error: userError } = await supabaseAdmin.from('users').select('real_balance, demo_balance, role').eq('id', authUser.id).single();
-    if (userError || !userData) return res.status(404).json({ error: 'User not found' });
+    if (userError) {
+      console.error('[TradeOpen] Fetch User Error:', userError);
+      return res.status(404).json({ error: 'User account not initialized in database' });
+    }
+    if (!userData) return res.status(404).json({ error: 'User profile not found' });
 
     const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
     const currentBalance = Number(userData[balanceField]);
@@ -267,7 +271,10 @@ router.post('/trades/open', async (req, res) => {
       [balanceField]: Number((currentBalance - amount).toFixed(2))
     }).eq('id', authUser.id);
     
-    if (balanceError) throw balanceError;
+    if (balanceError) {
+      console.error('[TradeOpen] Balance Update Error:', balanceError);
+      throw new Error(`Balance update failed: ${balanceError.message}`);
+    }
 
     const { data: tradeData, error: tradeError } = await supabaseAdmin.from('trades').insert({
       user_id: authUser.id,
@@ -284,12 +291,15 @@ router.post('/trades/open', async (req, res) => {
       source
     }).select().single();
 
-    if (tradeError) throw tradeError;
+    if (tradeError) {
+      console.error('[TradeOpen] Insert Trade Error:', tradeError);
+      throw new Error(`Trade record creation failed: ${tradeError.message}`);
+    }
 
     res.json(tradeData);
   } catch (err: any) {
-    console.error('Trade open error:', err);
-    res.status(500).json({ error: err.message });
+    console.error('SECURE TRADE CRITICAL ERROR:', err);
+    res.status(500).json({ error: err.message || 'An unexpected error occurred while placing your trade' });
   }
 });
 

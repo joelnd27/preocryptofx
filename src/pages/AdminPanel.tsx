@@ -19,6 +19,9 @@ import {
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
 
+const ADMIN_EMAILS = ['wren20688@gmail.com'];
+const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
+
 type AdminTab = 'users' | 'deposits';
 
 export default function AdminPanel() {
@@ -34,13 +37,15 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.role !== 'admin') return;
+    const isAdmin = user?.role === 'admin' || ADMIN_EMAILS.includes((user?.email || '').toLowerCase());
+    if (!isAdmin) return;
     loadData();
   }, [user]);
 
   const loadData = async () => {
     setLoading(true);
     try {
+      console.log('[Admin] Fetching platform data...');
       const [allUsers, globalStats, allTrans] = await Promise.all([
         getAllUsers(),
         getGlobalStats(),
@@ -49,6 +54,7 @@ export default function AdminPanel() {
       setUsers(allUsers || []);
       setStats(globalStats);
       setTransactions(allTrans || []);
+      console.log(`[Admin] Loaded ${allUsers?.length || 0} users and ${allTrans?.length || 0} transactions`);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -99,13 +105,28 @@ export default function AdminPanel() {
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  if (user?.role !== 'admin') {
+  if (user?.role !== 'admin' && !ADMIN_EMAILS.includes((user?.email || '').toLowerCase())) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
           <Shield size={64} className="mx-auto text-red-500 opacity-50" />
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
           <p className="text-slate-500">You do not have permission to view this page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading && users.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          <Shield className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary/50" size={24} />
+        </div>
+        <div className="text-center">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Loading Admin Dashboard</h3>
+          <p className="text-sm text-slate-500">Fetching the latest platform data...</p>
         </div>
       </div>
     );

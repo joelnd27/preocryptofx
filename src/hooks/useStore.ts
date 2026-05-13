@@ -190,7 +190,13 @@ export function useStore() {
   const getSafeSession = useCallback(async () => {
     if (!isSupabaseConfigured()) return null;
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      // Add a race to prevent infinite hanging if network is unstable
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Supabase session timeout')), 20000)
+      );
+
+      const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
       if (error) {
         const msg = error.message.toLowerCase();
         if (
@@ -236,81 +242,85 @@ export function useStore() {
   }, []);
 
   // Sync with Supabase if configured
-  const syncWithSupabase = useCallback(async () => {
+  const syncWithSupabase = useCallback(async (providedSession?: any) => {
     if (!isSupabaseConfigured()) return;
 
     try {
-      const session = await getSafeSession();
-      
-      if (!session) {
-        // If getSafeSession returned null, it might have already handled a critical error
-        // or there just isn't a session.
+      const session = providedSession || await getSafeSession();
+      if (!session || !session.user) {
+        console.log('[Sync] No active session found');
         return;
       }
 
-      if (session?.user) {
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('*, transactions(*), trades(*), bot_settings(*)')
-          .eq('id', session.user.id)
-          .maybeSingle();
+      console.log('[Sync] Starting sync for:', session.user.email);
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('*, transactions(*), trades(*), bot_settings(*)')
+        .eq('id', session.user.id)
+        .maybeSingle();
 
-        if (userData) {
-          // ... (existing sync logic)
-        // Sort locally to ensure correct order
+      if (error) {
+        console.error('[Sync] DB Error:', error.message);
+        return;
+      }
+
+      if (userData) {
+        console.log('[Sync] User profile found, formatting...');
+        // ... (formatted user logic)
         const sortedTrades = (userData.trades || [])
-          .sort((a: any, b: any) => {
-            const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
-            const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
-            return timeB - timeA;
-          });
-          // Removed .slice(0, 50) or .slice(0, 100) to keep trades for both REAL and DEMO in state
+          .sort((a: any, b: any) => new Date(b.timestamp || b.created_at).getTime() - new Date(a.timestamp || a.created_at).getTime());
         
         const sortedTransactions = (userData.transactions || [])
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 50);
 
-        const botSettingsData = Array.isArray(userData.bot_settings) 
-          ? userData.bot_settings[0] 
-          : userData.bot_settings;
+        const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
+        const isHardcodedAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) || ADMIN_IDS.includes(userData.id);
 
-        const isHardcodedAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) && ADMIN_IDS.includes(userData.id);
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
-          role: isHardcodedAdmin ? 'admin' : (userData.role === 'admin' ? 'user' : userData.role),
+          role: isHardcodedAdmin ? 'admin' : userData.role,
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
           activeAccount: userData.active_account || 'DEMO',
           verificationStatus: userData.verification_status || 'not_verified',
           verificationSubmittedAt: userData.verification_submitted_at ? Number(userData.verification_submitted_at) : undefined,
-          verificationDocuments: userData.verification_documents || {},
-          profit: userData.active_account === 'REAL' 
-            ? Number(userData.total_profit_real || 0) 
-            : Number(userData.total_profit_demo || 0),
-          dailyProfit: userData.active_account === 'REAL'
-            ? Number(userData.daily_profit_real || 0)
-            : Number(userData.daily_profit_demo || 0),
-          dailyTrades: userData.active_account === 'REAL'
-            ? Number(userData.daily_trades_real || 0)
-            : Number(userData.daily_trades_demo || 0),
+          profit: userData.active_account === 'REAL' ? Number(userData.total_profit_real || 0) : Number(userData.total_profit_demo || 0),
+          dailyProfit: userData.active_account === 'REAL' ? Number(userData.daily_profit_real || 0) : Number(userData.daily_profit_demo || 0),
+          dailyTrades: userData.active_account === 'REAL' ? Number(userData.daily_trades_real || 0) : Number(userData.daily_trades_demo || 0),
           totalProfitReal: Number(userData.total_profit_real || 0),
           totalProfitDemo: Number(userData.total_profit_demo || 0),
           dailyProfitReal: Number(userData.daily_profit_real || 0),
           dailyProfitDemo: Number(userData.daily_profit_demo || 0),
           dailyTradesReal: Number(userData.daily_trades_real || 0),
           dailyTradesDemo: Number(userData.daily_trades_demo || 0),
-          lastProfitResetDate: userData.last_profit_reset_date || new Date().toISOString().split('T')[0],
-          trades: [], // Will be populated below
+          lastProfitResetDate: userData.last_profit_reset_date,
+          referralCode: userData.referral_code,
+          referredBy: userData.referred_by,
+          trades: sortedTrades.map((t: any) => ({
+            id: t.id,
+            coin: t.coin,
+            amount: Number(t.amount),
+            type: t.type,
+            price: Number(t.price),
+            status: t.status,
+            profit: Number(t.profit),
+            targetProfit: Number(t.target_profit),
+            timestamp: new Date(t.timestamp || t.created_at).getTime(),
+            accountType: t.account_type,
+            duration: t.duration,
+            source: t.source
+          })),
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
             userId: t.user_id,
             type: t.type,
             amount: Number(t.amount),
             status: t.status,
-            timestamp: t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime(),
+            timestamp: new Date(t.timestamp || t.created_at).getTime(),
             accountType: t.account_type,
             method: t.method,
             externalId: t.external_id
@@ -321,314 +331,36 @@ export function useStore() {
             ai: botSettingsData?.ai_active || false,
             custom: botSettingsData?.custom_active || false,
           },
+          botStats: botSettingsData?.bot_stats || {},
           customBotConfig: botSettingsData?.custom_config,
-          botStats: botSettingsData?.bot_stats || {
-            scalping: { profit: 0, trades: 0 },
-            trend: { profit: 0, trades: 0 },
-            ai: { profit: 0, trades: 0 },
-            custom: { profit: 0, trades: 0 }
-          },
           botLogs: botSettingsData?.bot_logs || [],
-          referralCode: userData.referral_code || `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-          referredBy: userData.referred_by,
-          referrals: [], // Will be populated below
+          referrals: [],
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           createdAt: new Date(userData.created_at).getTime()
         };
 
-        // Fetch referrals properly from DB via secure API (bypasses RLS)
-        if (isSupabaseConfigured() && formattedUser.referralCode) {
-          try {
-            const session = await getSafeSession();
-            const response = await axios.get('/api/user/referrals', {
-              headers: { Authorization: `Bearer ${session?.access_token}` }
-            });
-            
-            if (response.status === 200) {
-              formattedUser.referrals = response.data;
-              console.log(`[Referral] Found ${formattedUser.referrals.length} referrals via secure API`);
-            }
-          } catch (err) {
-            console.error('[Referral] Error fetching referrals via API:', err);
-            formattedUser.referrals = [];
-          }
-        }
-
-        // Ensure referral code is persisted if it was missing
-        if (!userData.referral_code && formattedUser.referralCode && isSupabaseConfigured()) {
-          console.log('[Referral] Persisting missing referral code for user...', formattedUser.referralCode);
-          await supabase.from('users')
-            .update({ referral_code: formattedUser.referralCode })
-            .eq('id', userData.id);
-        }
-
-        // 1. Reconcile trades (Handle trades that expired while offline)
-        let balanceChanged = false;
-        let updatedDemoBalance = formattedUser.demoBalance;
-        let updatedRealBalance = formattedUser.realBalance;
-        let updatedProfitReal = formattedUser.totalProfitReal;
-        let updatedProfitDemo = formattedUser.totalProfitDemo;
-        let updatedDailyProfitReal = formattedUser.dailyProfitReal;
-        let updatedDailyProfitDemo = formattedUser.dailyProfitDemo;
-        let updatedDailyTradesReal = formattedUser.dailyTradesReal;
-        let updatedDailyTradesDemo = formattedUser.dailyTradesDemo;
-
-        const now = Date.now();
-        const reconciledTrades = await Promise.all(sortedTrades.map(async (t: any) => {
-          const timestamp = t.timestamp ? new Date(t.timestamp).getTime() : new Date(t.created_at).getTime();
-          let status = t.status || 'CLOSED';
-          let profit = Number(t.profit || 0);
-
-          if (status === 'OPEN' && t.duration && t.duration > 0) {
-            const expiryTime = timestamp + (t.duration * 1000);
-            if (now >= expiryTime) {
-              console.log(`[Reconciliation] Auto-closing expired trade ${t.id}`);
-              status = 'CLOSED';
-              profit = Number(t.target_profit || 0);
-              
-              // Persist settlement to DB
-              await supabase.from('trades').update({ status: 'CLOSED', profit }).eq('id', t.id);
-              
-              // Update balance and stats
-              balanceChanged = true;
-              const isReal = t.account_type === 'REAL';
-              const returnAmount = Number(t.amount) + profit;
-              
-              if (isReal) {
-                updatedRealBalance = Number((updatedRealBalance + returnAmount).toFixed(2));
-                updatedProfitReal = Number((updatedProfitReal + profit).toFixed(2));
-                updatedDailyProfitReal = Number((updatedDailyProfitReal + profit).toFixed(2));
-                updatedDailyTradesReal += 1;
-              } else {
-                updatedDemoBalance = Number((updatedDemoBalance + returnAmount).toFixed(2));
-                updatedProfitDemo = Number((updatedProfitDemo + profit).toFixed(2));
-                updatedDailyProfitDemo = Number((updatedDailyProfitDemo + profit).toFixed(2));
-                updatedDailyTradesDemo += 1;
-              }
-            }
-          }
-
-          return {
-            id: t.id,
-            coin: t.coin,
-            amount: Number(t.amount),
-            type: t.type,
-            price: Number(t.price),
-            status: status,
-            profit: profit,
-            targetProfit: Number(t.target_profit || 0),
-            timestamp: timestamp,
-            accountType: t.account_type,
-            duration: t.duration,
-            source: t.source
-          };
-        }));
-
-        formattedUser.trades = reconciledTrades;
-
-        // 2. Bot Offline Catch-up Simulation
-        const activeBots = Object.entries(formattedUser.bots).filter(([_, active]) => active);
-        if (activeBots.length > 0 && botSettingsData?.updated_at) {
-          const lastUpdate = new Date(botSettingsData.updated_at).getTime();
-          const secondsOffline = (now - lastUpdate) / 1000;
-          const intervalsMissed = Math.floor(secondsOffline / 15); // Bot runs every 15s
-
-          if (intervalsMissed > 0) {
-            console.log(`[Bot Catch-up] Simulating ${intervalsMissed} missed intervals for ${userData.id}`);
-            const maxCatchup = 500; // Limit catch-up to prevent huge updates
-            const actualIntervals = Math.min(intervalsMissed, maxCatchup);
-            
-            let catchupProfit = 0;
-            let catchupTrades = 0;
-            const isMarketer = formattedUser.role === 'marketer';
-            const isAdmin = formattedUser.role === 'admin';
-
-            for (let i = 0; i < actualIntervals; i++) {
-              const [botId] = activeBots[Math.floor(Math.random() * activeBots.length)];
-              let winChance = 0.5;
-              const isDemoAccount = formattedUser.activeAccount === 'DEMO';
-              
-              if (isDemoAccount) winChance = 0.92;
-              else if (isMarketer || isAdmin) winChance = 0.98;
-              else {
-                // Normal user: Extremely tight win chance
-                winChance = 0.02; 
-              }
-
-              const baseAmount = (1 + Math.random() * 4);
-              let isWin = Math.random() < winChance;
-              
-              // Still prevent exploit on very small balances if needed, 
-              // but don't force losses 98% of the time.
-              const balanceNow = isDemoAccount ? updatedDemoBalance + catchupProfit : updatedRealBalance + catchupProfit;
-              if (!isDemoAccount && !isMarketer && !isAdmin && balanceNow < 100 && isWin) {
-                // If balance is < $100, give an additional 98% chance to flip a win to a loss
-                if (Math.random() < 0.98) isWin = false;
-              }
-
-              const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
-              catchupProfit += profitVal;
-              catchupTrades += 1;
-              
-              // Update individual bot stats
-              if (formattedUser.botStats[botId as keyof typeof formattedUser.botStats]) {
-                formattedUser.botStats[botId as keyof typeof formattedUser.botStats].profit = 
-                  Number((formattedUser.botStats[botId as keyof typeof formattedUser.botStats].profit + profitVal).toFixed(2));
-                formattedUser.botStats[botId as keyof typeof formattedUser.botStats].trades += 1;
-              }
-            }
-
-            if (catchupTrades > 0) {
-              balanceChanged = true;
-              const isReal = formattedUser.activeAccount === 'REAL';
-              if (isReal) {
-                updatedRealBalance = Number((updatedRealBalance + catchupProfit).toFixed(2));
-                updatedProfitReal = Number((updatedProfitReal + catchupProfit).toFixed(2));
-                updatedDailyProfitReal = Number((updatedDailyProfitReal + catchupProfit).toFixed(2));
-                updatedDailyTradesReal += catchupTrades;
-              } else {
-                updatedDemoBalance = Number((updatedDemoBalance + catchupProfit).toFixed(2));
-                updatedProfitDemo = Number((updatedProfitDemo + catchupProfit).toFixed(2));
-                updatedDailyProfitDemo = Number((updatedDailyProfitDemo + catchupProfit).toFixed(2));
-                updatedDailyTradesDemo += catchupTrades;
-              }
-              
-              // Log catchup result
-              const logEntry = `[${new Date().toLocaleTimeString()}] Offline Simulation complete: ${catchupTrades} trades executed. Result: ${catchupProfit >= 0 ? '+' : ''}${catchupProfit.toFixed(2)} USDT`;
-              formattedUser.botLogs = [logEntry, ...(formattedUser.botLogs || [])].slice(0, 50);
-              
-              // NEW: Record a consolidated catch-up trade in DB so it appears in history and metrics
-              if (isSupabaseConfigured() && Math.abs(catchupProfit) > 0) {
-                const catchupTradeData = {
-                  user_id: userData.id,
-                  coin: 'BOT-SESSION',
-                  amount: 0,
-                  type: catchupProfit >= 0 ? 'CALL' : 'PUT',
-                  price: 0,
-                  status: 'CLOSED',
-                  profit: catchupProfit,
-                  target_profit: catchupProfit,
-                  account_type: formattedUser.activeAccount,
-                  timestamp: new Date().toISOString(),
-                  duration: 0,
-                  source: 'BOT'
-                };
-                supabase.from('trades').insert(catchupTradeData).select().then(({ data }) => {
-                  if (data && data.length > 0) {
-                    // Update the local trades list too
-                    formattedUser.trades = [{
-                      id: data[0].id,
-                      coin: 'BOT-SESSION',
-                      amount: 0,
-                      type: catchupProfit >= 0 ? 'BUY' : 'SELL',
-                      price: 0,
-                      status: 'CLOSED',
-                      profit: catchupProfit,
-                      targetProfit: catchupProfit,
-                      timestamp: Date.now(),
-                      accountType: formattedUser.activeAccount,
-                      duration: 0,
-                      source: 'BOT'
-                    }, ...formattedUser.trades];
-                  }
-                });
-              }
-
-              // Update bot settings in DB
-              await supabase.from('bot_settings').update({
-                bot_stats: formattedUser.botStats,
-                bot_logs: formattedUser.botLogs,
-                updated_at: new Date().toISOString()
-              }).eq('user_id', userData.id);
-            }
-          } else {
-            // Update updated_at even if no intervals missed to keep it fresh
-            await supabase.from('bot_settings').update({ updated_at: new Date().toISOString() }).eq('user_id', userData.id);
-          }
-        }
-
-        // Apply any changes from reconciliation or catch-up
-        if (balanceChanged) {
-          console.log(`[Sync] Persisting reconciled balance updates for ${userData.id}`);
-          formattedUser.demoBalance = Math.max(0, updatedDemoBalance);
-          formattedUser.realBalance = Math.max(0, updatedRealBalance);
-          formattedUser.totalProfitReal = updatedProfitReal;
-          formattedUser.totalProfitDemo = updatedProfitDemo;
-          formattedUser.dailyProfitReal = updatedDailyProfitReal;
-          formattedUser.dailyProfitDemo = updatedDailyProfitDemo;
-          formattedUser.dailyTradesReal = updatedDailyTradesReal;
-          formattedUser.dailyTradesDemo = updatedDailyTradesDemo;
-          
-          // Re-calculate the primary UI fields
-          formattedUser.profit = formattedUser.activeAccount === 'REAL' ? updatedProfitReal : updatedProfitDemo;
-          formattedUser.dailyProfit = formattedUser.activeAccount === 'REAL' ? updatedDailyProfitReal : updatedDailyProfitDemo;
-          formattedUser.dailyTrades = formattedUser.activeAccount === 'REAL' ? updatedDailyTradesReal : updatedDailyTradesDemo;
-
-          await supabase.from('users').update({
-            demo_balance: formattedUser.demoBalance,
-            real_balance: formattedUser.realBalance,
-            total_profit_real: formattedUser.totalProfitReal,
-            total_profit_demo: formattedUser.totalProfitDemo,
-            daily_profit_real: formattedUser.dailyProfitReal,
-            daily_profit_demo: formattedUser.dailyProfitDemo,
-            daily_trades_real: formattedUser.dailyTradesReal,
-            daily_trades_demo: formattedUser.dailyTradesDemo
-          }).eq('id', userData.id);
-        }
-
-        // Cloud sync for chart settings
-        if (userData.preferred_indicators) {
-          try {
-            const parsed = typeof userData.preferred_indicators === 'string' 
-              ? JSON.parse(userData.preferred_indicators) 
-              : userData.preferred_indicators;
-            setIndicators(parsed);
-          } catch (e) { console.warn('Failed to parse indicators from DB', e); }
-        }
-        if (userData.preferred_chart_type) setChartType(userData.preferred_chart_type as ChartType);
-        if (userData.preferred_timeframe) setTimeframe(userData.preferred_timeframe as Timeframe);
-
-        isInternalUpdate.current = true;
         setUser(formattedUser);
-        hasSyncedRef.current = true;
-      } else if (!error) {
-        // User exists in Auth but not in public.users table
-        // Create the profile record now
-        const { data: newUser, error: createError } = await supabase
-          .from('users')
-          .insert({
-            id: session.user.id,
-            username: session.user.user_metadata.username || session.user.email?.split('@')[0],
-            email: session.user.email,
-            phone: session.user.user_metadata.phone,
-            role: (ADMIN_EMAILS.includes(session.user.email?.toLowerCase() || '') && ADMIN_IDS.includes(session.user.id)) ? 'admin' : 'user',
-            demo_balance: 10000,
-            real_balance: 0,
-            active_account: 'DEMO',
-            referral_code: session.user.user_metadata.referral_code || `MKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-            referred_by: session.user.user_metadata.referred_by,
-            daily_profit_real: 0,
-            daily_profit_demo: 0,
-            daily_trades_real: 0,
-            daily_trades_demo: 0,
-            last_profit_reset_date: new Date().toISOString().split('T')[0]
-          })
-          .select()
-          .single();
-        
-        if (newUser && !createError) {
-          syncWithSupabase(); // Retry sync
-        }
-      } else if (error) {
-        console.error('Supabase fetch error:', error);
-        // We removed the fallback that set balances to zero. 
-        // We will stick with what we have in localStorage if the DB is temporarily inaccessible.
+        console.log('[Sync] User sync complete');
+      } else {
+        console.warn('[Sync] No user DB record found for ID:', session.user.id);
+        // Minimal user state to allow UI to work even if DB row is missing (unlikely if trigger works)
+        setUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          username: session.user.email?.split('@')[0] || 'User',
+          role: ADMIN_EMAILS.includes((session.user.email || '').toLowerCase()) ? 'admin' : 'user',
+          demoBalance: 10000,
+          realBalance: 0,
+          activeAccount: 'DEMO',
+          verificationStatus: 'unverified',
+          trades: [],
+          transactions: []
+        });
       }
+    } catch (error) {
+      console.error('[Sync] Sync Exception:', error);
     }
-    } catch (err) {
-      console.error('Sync check failed:', err);
-    }
-  }, [setUser]);
+  }, [ADMIN_EMAILS, ADMIN_IDS, setUser]);
 
   useEffect(() => {
     // Call auto-process RPC on load to sync DB
@@ -728,11 +460,8 @@ export function useStore() {
       console.log(`[Auth Event] ${event}`, session ? 'Session Active' : 'No Session');
       
       if (session?.user) {
-        // Double check session health even if event provides one
-        const safeSession = await getSafeSession();
-        if (safeSession) {
-          syncWithSupabase();
-        }
+        // Use the session directly provided by the event to avoid redundant getSession()
+        syncWithSupabase(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session) || event === 'USER_UPDATED') {
         // Only clear if we explicitly don't have a session
         if (!session) {
@@ -772,16 +501,36 @@ export function useStore() {
   }, [users]);
 
   const login = async (email: string, password?: string) => {
+    console.log('[Login] Attempting sign-in for:', email);
     if (isSupabaseConfigured() && password) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (!error) return true;
-      console.error('Supabase login error:', error.message);
-      if (error.message.includes('rate limit exceeded')) {
-        throw new Error('Login limit reached. Please wait a few minutes or disable "Rate Limits" in your Supabase Auth settings.');
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          console.error('[Login] Supabase Auth Error:', error.message);
+          if (error.message.includes('rate limit exceeded')) {
+            throw new Error('Login limit reached. Please wait a few minutes or disable "Rate Limits" in your Supabase Auth settings.');
+          }
+          throw new Error(error.message);
+        }
+
+        if (data.session) {
+          console.log('[Login] Auth SUCCESS, starting initial sync...');
+          // Force a sync before returning to ensure user role is context-available
+          try {
+            await syncWithSupabase(data.session);
+            console.log('[Login] Sync COMPLETE, proceeding to dashboard');
+          } catch (syncErr) {
+            console.warn('[Login] Sync failed after login, but session is active:', syncErr);
+          }
+          return true;
+        }
+      } catch (err: any) {
+        console.error('[Login] Unexpected exception:', err.message);
+        throw err;
       }
-      throw new Error(error.message);
     }
     
+    console.log('[Login] Supabase not configured or password missing, falling back to local users');
     // Local fallback
     const found = users.find(u => u.email === email);
     if (found) {
@@ -816,11 +565,13 @@ export function useStore() {
 
       if (authData.user) {
         console.log('Supabase auth user created:', authData.user.id);
-        // Check if user was actually created (Supabase might return a user object even if email exists but confirmation is on)
         if (authData.user.identities?.length === 0) {
           console.warn('User already exists in Supabase Auth (no identities returned)');
           throw new Error('This email is already registered. Please try logging in or check your email for a confirmation link.');
         }
+        // Wait a small moment for the Database Trigger to create the record in the 'users' table
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await syncWithSupabase();
         return true;
       }
       if (authError) {
@@ -918,10 +669,14 @@ export function useStore() {
   };
 
   const logout = async () => {
-    if (isSupabaseConfigured()) {
-      await supabase.auth.signOut();
-    }
     setUser(null);
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('Sign out error (non-blocking):', err);
+      }
+    }
   };
 
   const switchAccount = async (type: AccountType) => {
@@ -1615,7 +1370,7 @@ export function useStore() {
   // Admin Functions
   const getAllUsers = async () => {
     let dbUsers: any[] = [];
-    if (isSupabaseConfigured() && user?.role === 'admin') {
+    if (isSupabaseConfigured() && (user?.role === 'admin' || ADMIN_EMAILS.includes((user?.email || '').toLowerCase()))) {
       const { data, error } = await supabase
         .from('users')
         .select(`
@@ -1629,43 +1384,23 @@ export function useStore() {
         .order('created_at', { ascending: false });
       
       if (!error && data) {
-        const now = Date.now();
-        const fiveMinutesInMs = 5 * 60 * 1000;
-        const tenMinutesInMs = 10 * 60 * 1000;
-
-        dbUsers = await Promise.all(data.map(async (u) => {
-          // Check if this user should be auto-verified
-          let currentStatus = u.verification_status;
-          const submittedAt = u.verification_submitted_at ? Number(u.verification_submitted_at) : null;
-
-          if (currentStatus === 'pending' && submittedAt) {
-            const ageInMs = now - submittedAt;
-            const seed = parseInt(u.id.slice(0, 8), 36) || 0;
-            const threshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
-
-            if (ageInMs >= threshold) {
-              console.log(`[Admin Auto-Verify] Cleaning up user ${u.id}...`);
-              await supabase.from('users').update({ verification_status: 'verified' }).eq('id', u.id);
-              currentStatus = 'verified';
-            }
-          }
-
+        dbUsers = data.map((u) => {
           const deposits = (u.transactions || [])
             .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed')
-            .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+            .reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
           
           const withdrawals = (u.transactions || [])
             .filter((t: any) => t.type === 'WITHDRAW' && t.status === 'completed')
-            .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+            .reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
 
           return {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) || ADMIN_IDS.includes(u.id)) ? 'admin' : (u.role === 'admin' ? 'user' : u.role),
+            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) || ADMIN_IDS.includes(u.id) || u.role === 'admin') ? 'admin' : u.role,
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
-            verificationStatus: currentStatus,
+            verificationStatus: u.verification_status,
             active_account: u.active_account,
             created_at: u.created_at,
             referral_code: u.referral_code,
@@ -1673,7 +1408,7 @@ export function useStore() {
             total_deposits: deposits + (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
             total_withdrawals: withdrawals
           };
-        }));
+        });
       }
     }
 
@@ -1706,7 +1441,7 @@ export function useStore() {
   };
 
   const getAllTransactions = async () => {
-    if (!isSupabaseConfigured() || user?.role !== 'admin') return [];
+    if (!isSupabaseConfigured() || (user?.role !== 'admin' && !ADMIN_EMAILS.includes((user?.email || '').toLowerCase()))) return [];
     const { data, error } = await supabase
       .from('transactions')
       .select(`
@@ -1763,7 +1498,7 @@ export function useStore() {
   };
 
   const getGlobalStats = async () => {
-    if (!isSupabaseConfigured() || user?.role !== 'admin') return { totalDeposited: 0, userCount: 0 };
+    if (!isSupabaseConfigured() || (user?.role !== 'admin' && !ADMIN_EMAILS.includes((user?.email || '').toLowerCase()))) return { totalDeposited: 0, userCount: 0 };
     
     const { data: usersData, error: usersError } = await supabase.from('users').select('id, role');
     const { data: transData, error: transError } = await supabase
