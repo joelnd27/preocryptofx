@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
+import { MIN_DEPOSIT_USD } from '../types.ts';
 
 export default function Referrals() {
   const { user, isDarkMode } = useStore();
@@ -121,7 +122,7 @@ export default function Referrals() {
               "text-[11px] leading-relaxed",
               isDarkMode ? "text-slate-500" : "text-slate-400"
             )}>
-              Share this link. You earn a referral when the user signs up <span className="font-semibold text-slate-400 dark:text-slate-300">AND</span> makes a successful deposit of at least $17.
+              Share this link. You earn a referral when the user signs up <span className="font-semibold text-slate-400 dark:text-slate-300">AND</span> makes a successful deposit of at least ${MIN_DEPOSIT_USD}.
             </p>
           </div>
         </div>

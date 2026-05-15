@@ -37,7 +37,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const isAdmin = user?.role === 'admin' || ADMIN_EMAILS.includes((user?.email || '').toLowerCase());
+    const isAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     if (!isAdmin) return;
     loadData();
   }, [user]);
@@ -105,7 +105,7 @@ export default function AdminPanel() {
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  if (user?.role !== 'admin' && !ADMIN_EMAILS.includes((user?.email || '').toLowerCase())) {
+  if ((user?.email || '').toLowerCase() !== 'wren20688@gmail.com' || user?.id !== '304020c9-3695-4f8f-85fe-9ee12eda8152') {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">

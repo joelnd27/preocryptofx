@@ -27,7 +27,7 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
   
   if (!user) return <Navigate to="/login" />;
   
-  const isAdmin = user.role === 'admin';
+  const isAdmin = user?.email === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
   
   if (adminOnly && !isAdmin) return <Navigate to="/dashboard" />;
   
@@ -40,10 +40,11 @@ function AdminRedirector({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    if (user?.role === 'admin' && location.pathname === '/dashboard') {
+    const isAdmin = user?.email === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    if (isAdmin && location.pathname === '/dashboard') {
       navigate('/admin', { replace: true });
     }
-  }, [user?.role, location.pathname, navigate]);
+  }, [user?.email, user?.id, location.pathname, navigate]);
 
   return <>{children}</>;
 }
@@ -52,7 +53,7 @@ import PWAInstallBanner from './components/PWAInstallBanner.tsx';
 
 export default function App() {
   const { user, resetDemoBalance } = useStore();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.email === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
   const [alertConfig, setAlertConfig] = React.useState({
     isOpen: false,
     title: '',

@@ -193,50 +193,59 @@ export function useStore() {
       // Add a race to prevent infinite hanging if network is unstable
       const sessionPromise = supabase.auth.getSession();
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Supabase session timeout')), 20000)
+        setTimeout(() => reject(new Error('Supabase session timeout')), 30000)
       );
 
       const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
       if (error) {
-        const msg = error.message.toLowerCase();
-        if (
+        const msg = (error.message || '').toLowerCase();
+        const isUnrecoverable = 
           msg.includes('refresh token not found') || 
           msg.includes('invalid refresh token') || 
           msg.includes('expired') ||
           msg.includes('refresh_token_not_found') ||
           msg.includes('invalid_refresh_token') ||
-          msg.includes('session_not_found')
-        ) {
-          console.error('[Auth] Safe session check failed with unrecoverable error. Forcing cleanup.', error.message);
+          msg.includes('session_not_found') ||
+          msg.includes('not found');
+
+        if (isUnrecoverable) {
+          // If we had a user, log clearly that we're ending the session
+          if (userRef.current) {
+            console.log('[Auth] Session expired or invalid. Logging out.');
+            setUser(null);
+          }
           
-          // Clear everything
+          // Clear app state and Supabase tokens
           localStorage.removeItem('preocrypto_user');
           try {
-            const keysToRemove: string[] = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key?.startsWith('sb-') && (key.includes('-auth-token') || key.includes('.token'))) {
-                keysToRemove.push(key);
+            Object.keys(localStorage).forEach(key => {
+              if (key.startsWith('sb-') || key.includes('supabase.auth.token')) {
+                localStorage.removeItem(key);
               }
-            }
-            keysToRemove.forEach(k => localStorage.removeItem(k));
+            });
           } catch (e) {}
           
-          setUser(null);
           await supabase.auth.signOut().catch(() => {});
           return null;
         }
-        console.warn('[Auth] Session error:', error.message);
+        
+        console.warn('[Auth] Session status check:', error.message);
         return null;
       }
       return session;
     } catch (e: any) {
       const msg = (e.message || '').toLowerCase();
-      if (msg.includes('refresh token not found') || msg.includes('invalid refresh token')) {
-         setUser(null);
-         localStorage.removeItem('preocrypto_user');
+      if (msg === 'supabase session timeout') {
+        console.warn('[Auth] Session check timed out. Network might be unstable.');
+        return null;
       }
-      console.error('[Auth] Unexpected error getting session:', e);
+
+      if (msg.includes('refresh token not found') || msg.includes('invalid refresh token')) {
+         if (userRef.current) setUser(null);
+         localStorage.removeItem('preocrypto_user');
+      } else {
+         console.error('[Auth] Unexpected error getting session:', e);
+      }
       return null;
     }
   }, []);
@@ -275,7 +284,7 @@ export function useStore() {
           .slice(0, 50);
 
         const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
-        const isHardcodedAdmin = ADMIN_EMAILS.includes((userData.email || '').toLowerCase()) || ADMIN_IDS.includes(userData.id);
+        const isHardcodedAdmin = (userData.email || '').toLowerCase() === 'wren20688@gmail.com' && userData.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
 
         const formattedUser: User = {
           id: userData.id,
@@ -340,6 +349,7 @@ export function useStore() {
         };
 
         setUser(formattedUser);
+        hasSyncedRef.current = true;
         console.log('[Sync] User sync complete');
       } else {
         console.warn('[Sync] No user DB record found for ID:', session.user.id);
@@ -348,7 +358,7 @@ export function useStore() {
           id: session.user.id,
           email: session.user.email || '',
           username: session.user.email?.split('@')[0] || 'User',
-          role: ADMIN_EMAILS.includes((session.user.email || '').toLowerCase()) ? 'admin' : 'user',
+          role: (session.user.email || '').toLowerCase() === 'wren20688@gmail.com' && session.user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152' ? 'admin' : 'user',
           demoBalance: 10000,
           realBalance: 0,
           activeAccount: 'DEMO',
@@ -476,7 +486,7 @@ export function useStore() {
 
     // Periodically check session health to catch refresh token issues early
     const healthCheck = setInterval(async () => {
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && userRef.current) {
         await getSafeSession();
       }
     }, 60000); // Check every minute
@@ -1123,7 +1133,7 @@ export function useStore() {
       }
 
       // Handle referral bonus/check if this is a deposit
-      if (transaction.type === 'DEPOSIT' && transaction.amount >= 17 && prev.referredBy) {
+      if (transaction.type === 'DEPOSIT' && transaction.amount >= MIN_DEPOSIT_USD && prev.referredBy) {
         // Find the referrer and update their referrals list
         setUsers(allUsers => allUsers.map(u => {
           if (u.referralCode === prev.referredBy) {
@@ -1411,7 +1421,9 @@ export function useStore() {
   // Admin Functions
   const getAllUsers = async () => {
     let dbUsers: any[] = [];
-    if (isSupabaseConfigured() && (user?.role === 'admin' || ADMIN_EMAILS.includes((user?.email || '').toLowerCase()))) {
+    const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    
+    if (isSupabaseConfigured() && isMasterAdmin) {
       const { data, error } = await supabase
         .from('users')
         .select(`
@@ -1438,7 +1450,7 @@ export function useStore() {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: (ADMIN_EMAILS.includes((u.email || '').toLowerCase()) || ADMIN_IDS.includes(u.id) || u.role === 'admin') ? 'admin' : u.role,
+            role: ((u.email || '').toLowerCase() === 'wren20688@gmail.com' && u.id === '304020c9-3695-4f8f-85fe-9ee12eda8152' || u.role === 'admin') ? 'admin' : u.role,
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: u.verification_status,
@@ -1482,7 +1494,8 @@ export function useStore() {
   };
 
   const getAllTransactions = async () => {
-    if (!isSupabaseConfigured() || (user?.role !== 'admin' && !ADMIN_EMAILS.includes((user?.email || '').toLowerCase()))) return [];
+    const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    if (!isSupabaseConfigured() || !isMasterAdmin) return [];
     const { data, error } = await supabase
       .from('transactions')
       .select(`
@@ -1539,7 +1552,8 @@ export function useStore() {
   };
 
   const getGlobalStats = async () => {
-    if (!isSupabaseConfigured() || (user?.role !== 'admin' && !ADMIN_EMAILS.includes((user?.email || '').toLowerCase()))) return { totalDeposited: 0, userCount: 0 };
+    const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    if (!isSupabaseConfigured() || !isMasterAdmin) return { totalDeposited: 0, userCount: 0 };
     
     const { data: usersData, error: usersError } = await supabase.from('users').select('id, role');
     const { data: transData, error: transError } = await supabase

@@ -452,6 +452,11 @@ export default function Bots() {
                 ))}
               </div>
 
+              <div className="flex items-center gap-1 mt-1 px-1">
+                <Clock size={8} className="text-slate-400" />
+                <p className="text-[7px] text-slate-400 font-medium italic">Statistics reset daily at 00:00 UTC</p>
+              </div>
+
               <div className="h-16 bg-slate-100 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-800 p-2 flex items-end gap-0.5">
                 {[...Array(20)].map((_, i) => (
                   <div 
