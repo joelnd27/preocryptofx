@@ -1426,26 +1426,11 @@ export function useStore() {
     if (isSupabaseConfigured() && isMasterAdmin) {
       const { data, error } = await supabase
         .from('users')
-        .select(`
-          *,
-          transactions (
-            type,
-            amount,
-            status
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
       
       if (!error && data) {
         dbUsers = data.map((u) => {
-          const deposits = (u.transactions || [])
-            .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed')
-            .reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
-          
-          const withdrawals = (u.transactions || [])
-            .filter((t: any) => t.type === 'WITHDRAW' && t.status === 'completed')
-            .reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
-
           return {
             id: u.id,
             username: u.username,
@@ -1455,11 +1440,12 @@ export function useStore() {
             demo_balance: u.demo_balance || 0,
             verificationStatus: u.verification_status,
             active_account: u.active_account,
+            bottom_limit: u.bottom_limit,
             created_at: u.created_at,
             referral_code: u.referral_code,
             referred_by: u.referred_by,
-            total_deposits: deposits + (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
-            total_withdrawals: withdrawals
+            total_deposits: (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
+            total_withdrawals: 0
           };
         });
       }
@@ -1505,7 +1491,8 @@ export function useStore() {
           email
         )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(3000);
     
     if (error) {
       console.error('Error fetching all transactions:', error);
@@ -1560,7 +1547,8 @@ export function useStore() {
       .from('transactions')
       .select('amount')
       .eq('type', 'DEPOSIT')
-      .eq('status', 'completed');
+      .eq('status', 'completed')
+      .limit(5000); // Guard against massive data sets for basic stats
 
     if (usersError || transError) return { totalDeposited: 0, userCount: 0 };
 

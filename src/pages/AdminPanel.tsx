@@ -51,10 +51,27 @@ export default function AdminPanel() {
         getGlobalStats(),
         getAllTransactions()
       ]);
-      setUsers(allUsers || []);
+
+      // Optimize: Map transactions to users for faster lookup
+      const userTotals: Record<string, { deposits: number, withdrawals: number }> = {};
+      (allTrans || []).forEach((t: any) => {
+        if (!userTotals[t.user_id]) userTotals[t.user_id] = { deposits: 0, withdrawals: 0 };
+        if (t.status === 'completed') {
+          if (t.type === 'DEPOSIT') userTotals[t.user_id].deposits += Number(t.amount || 0);
+          if (t.type === 'WITHDRAW') userTotals[t.user_id].withdrawals += Number(t.amount || 0);
+        }
+      });
+
+      const enrichedUsers = (allUsers || []).map((u: any) => ({
+        ...u,
+        total_deposits: (u.total_deposits || 0) + (userTotals[u.id]?.deposits || 0),
+        total_withdrawals: userTotals[u.id]?.withdrawals || 0
+      }));
+
+      setUsers(enrichedUsers);
       setStats(globalStats);
       setTransactions(allTrans || []);
-      console.log(`[Admin] Loaded ${allUsers?.length || 0} users and ${allTrans?.length || 0} transactions`);
+      console.log(`[Admin] Loaded ${enrichedUsers.length} users and ${allTrans?.length || 0} transactions`);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -468,9 +485,6 @@ export default function AdminPanel() {
                             <><XCircle size={12} className="text-rose-500" /> {t.status.toUpperCase()}</>
                           )}
                         </span>
-                        {t.status === 'rejected' && (
-                          <p className="text-[9px] text-rose-400 font-bold mt-1 ml-1 uppercase tracking-tighter italic">Transaction Failed/Rejected</p>
-                        )}
                       </td>
                       <td className="px-6 py-5 text-right">
                         {t.status === 'pending' && (

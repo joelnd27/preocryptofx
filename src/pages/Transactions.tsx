@@ -413,7 +413,6 @@ export default function Transactions() {
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Amount</th>
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Alias</th>
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Status</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">ID</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -441,18 +440,6 @@ export default function Transactions() {
                           )}>
                             {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                           </span>
-                          {tx.method?.toLowerCase().includes('payhero') && (
-                            <div className="flex flex-col">
-                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">
-                                {tx.method.toLowerCase().includes('callback') || tx.method.toLowerCase().includes('status') 
-                                  ? 'PAYHERO CALLBACK' 
-                                  : 'PAYHERO'}
-                              </span>
-                              {tx.method.match(/\(([^)]+)\)/) && (
-                                <span className="text-[7px] text-slate-400 font-medium">({tx.method.match(/\(([^)]+)\)/)?.[1]})</span>
-                              )}
-                            </div>
-                          )}
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
@@ -539,9 +526,6 @@ export default function Transactions() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="text-[10px] font-mono text-slate-400 group-hover:text-blue-500 transition-colors">#{tx.id.substring(0, 12).toUpperCase()}...</span>
-                      </td>
                     </tr>
                   ))}
                   {filteredTransactions.length === 0 && (
@@ -572,7 +556,6 @@ export default function Transactions() {
                       </div>
                       <div>
                         <p className="text-sm font-bold">{tx.type}</p>
-                        <p className="text-[10px] font-mono text-slate-500">#{tx.id}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -582,18 +565,6 @@ export default function Transactions() {
                       )}>
                         {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </p>
-                      {tx.method?.toLowerCase().includes('payhero') && (
-                        <div className="flex flex-col items-end">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
-                            {tx.method.toLowerCase().includes('callback') || tx.method.toLowerCase().includes('status') 
-                              ? 'PAYHERO CALLBACK' 
-                              : 'PAYHERO'}
-                          </p>
-                          {tx.method.match(/\(([^)]+)\)/) && (
-                            <p className="text-[9px] text-slate-400 font-medium">({tx.method.match(/\(([^)]+)\)/)?.[1]})</p>
-                          )}
-                        </div>
-                      )}
                       <p className="text-[10px] text-slate-500">{formatDate(tx.timestamp)}</p>
                     </div>
                   </div>
