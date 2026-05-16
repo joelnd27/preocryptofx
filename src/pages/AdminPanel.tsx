@@ -88,6 +88,10 @@ export default function AdminPanel() {
   };
 
   const handleUpdateTransaction = async (id: string, status: 'completed' | 'rejected') => {
+    if (status === 'rejected') {
+      const confirm = window.confirm("Are you sure you want to reject this transaction?");
+      if (!confirm) return;
+    }
     const success = await updateTransactionStatus(id, status);
     if (success) {
       loadData();
@@ -294,7 +298,11 @@ export default function AdminPanel() {
                               </button>
                               <span className="text-[8px] text-slate-300">|</span>
                               <button 
-                                onClick={() => handleUpdateVerification(u.id, 'rejected')}
+                                onClick={() => {
+                                  if (window.confirm("Reject this verification?")) {
+                                    handleUpdateVerification(u.id, 'rejected');
+                                  }
+                                }}
                                 className="text-[8px] font-bold text-red-500 hover:underline"
                               >
                                 Reject
@@ -482,7 +490,7 @@ export default function AdminPanel() {
                           ) : t.status === 'pending' ? (
                             <><Clock size={12} className="text-amber-500" /> PENDING</>
                           ) : (
-                            <><XCircle size={12} className="text-rose-500" /> {t.status.toUpperCase()}</>
+                            <><XCircle size={12} className="text-rose-500" /> REJECTED</>
                           )}
                         </span>
                       </td>

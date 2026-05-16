@@ -411,7 +411,6 @@ export default function Transactions() {
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Timestamp</th>
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Type</th>
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Amount</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Alias</th>
                     <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Status</th>
                   </tr>
                 </thead>
@@ -443,14 +442,6 @@ export default function Transactions() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border",
-                          tx.accountType === 'REAL' ? "bg-green-500/5 border-green-500/20 text-green-500" : "bg-blue-500/5 border-blue-500/20 text-blue-500"
-                        )}>
-                          {tx.accountType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <span className={cn(
                             "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 w-fit",
@@ -462,7 +453,7 @@ export default function Transactions() {
                              (tx.status === 'failed' || tx.status === 'rejected') ? 
                              <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div> :
                              <Clock size={10} />}
-                            {tx.status === 'pending' ? 'pending' : tx.status.toUpperCase()}
+                            {tx.status === 'pending' ? 'pending' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
                           </span>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                             <div className="flex items-center gap-1">
@@ -587,7 +578,7 @@ export default function Transactions() {
                            (tx.status === 'failed' || tx.status === 'rejected') ? 
                            <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div> :
                            <Clock size={12} className="animate-pulse" />}
-                          {tx.status === 'pending' ? 'is pending' : tx.status.toUpperCase()}
+                          {tx.status === 'pending' ? 'PENDING' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
                         </span>
                       </div>
                       {tx.status === 'pending' && tx.type === 'DEPOSIT' && (

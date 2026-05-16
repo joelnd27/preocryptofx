@@ -1504,6 +1504,7 @@ export function useStore() {
   const updateTransactionStatus = async (transactionId: string, status: 'completed' | 'rejected') => {
     if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
     
+    // 1. Fetch transaction with service-role level integrity if possible, but at least fresh
     const { data: trans, error: fetchError } = await supabase
       .from('transactions')
       .select('*')
@@ -1511,31 +1512,38 @@ export function useStore() {
       .single();
       
     if (fetchError || !trans) return false;
+    if (trans.status === status) return true; // Already processed
     
-    if (status === 'completed' && trans.status !== 'completed') {
-      if (trans.type === 'DEPOSIT') {
-        const { data: userData } = await supabase.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
-        if (userData) {
-          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
-          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
-          await supabase.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
-        }
-      }
-      // For WITHDRAW, balance is already deducted on creation. 
-      // Completing it just means the admin confirmed the payout.
-    } else if (status === 'rejected' && trans.status === 'pending') {
-      if (trans.type === 'WITHDRAW') {
-        const { data: userData } = await supabase.from('users').select('real_balance, demo_balance').eq('id', trans.user_id).single();
-        if (userData) {
-          const balanceKey = trans.account_type === 'REAL' ? 'real_balance' : 'demo_balance';
-          const newBalance = Number((userData[balanceKey] + trans.amount).toFixed(2));
-          await supabase.from('users').update({ [balanceKey]: newBalance }).eq('id', trans.user_id);
-        }
-      }
+    // 2. Perform atomic update to prevent race conditions
+    // Only update if current status is NOT completed
+    const { data: updatedTxs, error: updateError } = await supabase
+      .from('transactions')
+      .update({ status })
+      .eq('id', transactionId)
+      .neq('status', 'completed') // INVARIANT: Never process a completed transaction twice
+      .select();
+
+    if (updateError || !updatedTxs || updatedTxs.length === 0) {
+      console.warn('Transaction already completed or update failed.');
+      return false;
+    }
+
+    // 3. Handle balance consequences atomically using RPCs
+    if (status === 'completed' && trans.type === 'DEPOSIT') {
+      // Use the atomic RPC to increment balance
+      await supabase.rpc('increment_balance', {
+        user_id: trans.user_id,
+        amount: Number(trans.amount)
+      });
+    } else if (status === 'rejected' && trans.type === 'WITHDRAW') {
+      // Return funds for rejected withdrawal
+      await supabase.rpc('increment_balance', {
+        user_id: trans.user_id,
+        amount: Number(trans.amount)
+      });
     }
     
-    const { error } = await supabase.from('transactions').update({ status }).eq('id', transactionId);
-    return !error;
+    return true;
   };
 
   const getGlobalStats = async () => {
