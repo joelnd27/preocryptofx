@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
+  TrendingUp,
+  Lock,
   DollarSign, 
   Shield, 
   Edit2, 
@@ -22,10 +24,10 @@ import { formatCurrency, cn } from '../lib/utils';
 const ADMIN_EMAILS = ['wren20688@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
-type AdminTab = 'users' | 'deposits';
+type AdminTab = 'users' | 'deposits' | 'copy-traders';
 
 export default function AdminPanel() {
-  const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus } = useStore();
+  const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus, copyTraders, updateCopyTrader, deleteCopyTrader } = useStore();
   const [users, setUsers] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalDeposited: 0, userCount: 0 });
@@ -205,7 +207,8 @@ export default function AdminPanel() {
           <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
             {[
               { id: 'users', label: 'Users', icon: Users },
-              { id: 'deposits', label: 'Transactions', icon: RefreshCw }
+              { id: 'deposits', label: 'Transactions', icon: RefreshCw },
+              { id: 'copy-traders', label: 'Copy Traders', icon: TrendingUp }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -399,7 +402,7 @@ export default function AdminPanel() {
                   )}
                 </tbody>
               </motion.table>
-            ) : (
+            ) : activeTab === 'deposits' ? (
               <motion.table 
                 key="trans-table"
                 initial={{ opacity: 0 }}
@@ -513,6 +516,126 @@ export default function AdminPanel() {
                             </button>
                           </div>
                         )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </motion.table>
+            ) : (
+              <motion.table 
+                key="copy-traders-table"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="w-full text-left border-collapse"
+              >
+                <thead>
+                  <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trader Details</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Performance</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Security (Pass)</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Investment</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {copyTraders.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black text-sm border border-blue-500/20">
+                            {t.name[0]?.toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-white text-sm">{t.name}</p>
+                            <p className="text-[10px] text-slate-500 font-medium">Created by: {t.createdBy}</p>
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest mt-1 inline-block",
+                              t.isSimulated ? "bg-purple-500/10 text-purple-500" : "bg-blue-500/10 text-blue-500"
+                            )}>
+                              {t.isSimulated ? 'Simulated' : 'User Created'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="text-center">
+                          <p className="text-xs font-bold text-green-500">{t.winRate}% Win Rate</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{t.followers} Followers</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <Lock size={12} className="text-amber-500" />
+                          <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{t.password}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        <div>
+                          <p className="text-sm font-black text-slate-900 dark:text-white">{formatCurrency(t.minInvestment)}</p>
+                          <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Min. Copy</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={async () => {
+                              const newName = window.prompt("Enter new name:", t.name);
+                              if (newName === null) return;
+                              
+                              const newWinRateStr = window.prompt("Enter new win rate:", t.winRate.toString());
+                              if (newWinRateStr === null) return;
+                              const newWinRate = parseFloat(newWinRateStr);
+                              
+                              const newProfitStr = window.prompt("Enter new total profit:", t.totalProfit.toString());
+                              if (newProfitStr === null) return;
+                              const newProfit = parseFloat(newProfitStr);
+                              
+                              const newFollowersStr = window.prompt("Enter new followers:", t.followers.toString());
+                              if (newFollowersStr === null) return;
+                              const newFollowers = parseInt(newFollowersStr);
+                              
+                              const newMinInvStr = window.prompt("Enter new min investment:", t.minInvestment.toString());
+                              if (newMinInvStr === null) return;
+                              const newMinInv = parseFloat(newMinInvStr);
+                              
+                              const newPass = window.prompt("Enter new access password (leave empty for none):", t.password || "");
+                              if (newPass === null) return;
+
+                              await updateCopyTrader(t.id, {
+                                name: newName || t.name,
+                                winRate: isNaN(newWinRate) ? t.winRate : newWinRate,
+                                totalProfit: isNaN(newProfit) ? t.totalProfit : newProfit,
+                                followers: isNaN(newFollowers) ? t.followers : newFollowers,
+                                minInvestment: isNaN(newMinInv) ? t.minInvestment : newMinInv,
+                                password: newPass
+                              });
+                              
+                              alert("Profile updated successfully");
+                            }}
+                            className="p-1.5 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500 hover:text-white transition-all"
+                            title="Edit Stats & Password"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm(`Are you sure you want to PERMANENTLY delete ${t.name}? This cannot be undone.`)) {
+                                try {
+                                  await deleteCopyTrader(t.id);
+                                  alert("Trader deleted successfully");
+                                } catch (err) {
+                                  console.error("Delete failed:", err);
+                                  alert("Failed to delete trader profile.");
+                                }
+                              }
+                            }}
+                            className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                            title="Delete Permanently"
+                          >
+                            <XCircle size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   real_balance numeric DEFAULT 0,
   demo_balance numeric DEFAULT 10000,
   active_account text DEFAULT 'DEMO',
+  copying_trader_id text,
   referral_code text,
   referred_by text,
   total_profit_real numeric DEFAULT 0,
@@ -33,6 +34,21 @@ CREATE TABLE IF NOT EXISTS public.users (
   daily_trades_demo integer DEFAULT 0,
   created_at timestamp with time zone DEFAULT now()
 );
+
+-- Ensure copying_trader_id exists and is text type
+DO $$ 
+BEGIN 
+  -- Drop the foreign key constraint if it exists to allow type change
+  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE table_name='users' AND constraint_name='users_copying_trader_id_fkey') THEN
+    ALTER TABLE public.users DROP CONSTRAINT users_copying_trader_id_fkey;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='copying_trader_id') THEN
+    ALTER TABLE public.users ADD COLUMN copying_trader_id text;
+  ELSE
+    ALTER TABLE public.users ALTER COLUMN copying_trader_id TYPE text USING copying_trader_id::text;
+  END IF;
+END $$;
 
 -- Ensure bot_settings exists
 CREATE TABLE IF NOT EXISTS public.bot_settings (
@@ -79,11 +95,28 @@ CREATE TABLE IF NOT EXISTS public.transactions (
   created_at timestamp with time zone DEFAULT now()
 );
 
+-- Ensure copy_traders exists
+CREATE TABLE IF NOT EXISTS public.copy_traders (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  win_rate numeric DEFAULT 0,
+  total_profit numeric DEFAULT 0,
+  followers integer DEFAULT 0,
+  password text,
+  min_investment numeric DEFAULT 100,
+  description text,
+  status text DEFAULT 'active',
+  is_simulated boolean DEFAULT true,
+  created_by uuid REFERENCES auth.users ON DELETE SET NULL,
+  created_at timestamp with time zone DEFAULT now()
+);
+
 -- 3. ENABLE RLS
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bot_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.copy_traders ENABLE ROW LEVEL SECURITY;
 
 -- 4. NON-RECURSIVE SECURITY HELPERS
 CREATE OR REPLACE FUNCTION public.is_admin()
@@ -115,6 +148,10 @@ CREATE POLICY "admin_all_trades" ON public.trades FOR ALL TO authenticated USING
 -- TRANSACTIONS
 CREATE POLICY "user_trans_access" ON public.transactions FOR ALL TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "admin_all_trans" ON public.transactions FOR ALL TO authenticated USING (public.is_admin());
+
+-- COPY TRADERS
+CREATE POLICY "public_read_traders" ON public.copy_traders FOR SELECT TO authenticated USING (true);
+CREATE POLICY "admin_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
 
 -- 6. RPCs FOR ATOMIC UPDATES
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id uuid, amount numeric)

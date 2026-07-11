@@ -45,6 +45,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
     { icon: TrendingUp, label: 'Trade', path: '/trade' },
     { icon: Bot, label: 'Bots', path: '/bots' },
+    { icon: Users, label: 'Copy Trading', path: '/copy-trading' },
     { icon: Wallet, label: 'Finances', path: '/transactions' },
     { icon: History, label: 'History', path: '/trades' },
     { icon: UserIcon, label: 'Profile', path: '/profile' },

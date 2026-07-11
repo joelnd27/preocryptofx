@@ -1,3 +1,19 @@
+export interface CopyTrader {
+  id: string;
+  name: string;
+  avatar?: string;
+  winRate: number;
+  totalProfit: number;
+  followers: number;
+  password?: string; // Visible to admin
+  minInvestment: number;
+  description?: string;
+  status: 'active' | 'inactive';
+  isSimulated: boolean;
+  createdBy: string; // User ID of the marketer/admin
+  createdAt: number;
+}
+
 export type AccountType = 'DEMO' | 'REAL';
 export type ChartType = 'LINE' | 'CANDLE' | 'HOLLOW' | 'AREA';
 export type Timeframe = '1S' | '1M' | '15M' | '1H' | '4H' | '1D' | '1W';
@@ -47,6 +63,7 @@ export interface User {
   botStats?: Record<string, { profit: number, trades: number }>;
   botLogs?: string[];
   referralCode: string;
+  copyingTraderId?: string;
   referredBy?: string;
   referralBonusClaimed?: boolean;
   referrals?: {

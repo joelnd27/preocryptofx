@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Bot, 
@@ -9,6 +10,7 @@ import {
   Play, 
   Square, 
   ChevronRight,
+  Users,
   Cpu,
   BarChart3,
   History,
@@ -92,11 +94,11 @@ export default function Bots() {
   ];
 
   const logs = user?.botLogs || [];
-  const stats = user?.botStats || {
-    scalping: { profit: 0, trades: 0 },
-    trend: { profit: 0, trades: 0 },
-    ai: { profit: 0, trades: 0 },
-    custom: { profit: 0, trades: 0 }
+  const stats = {
+    scalping: { profit: 0, trades: 0, ...(user?.botStats?.scalping || {}) },
+    trend: { profit: 0, trades: 0, ...(user?.botStats?.trend || {}) },
+    ai: { profit: 0, trades: 0, ...(user?.botStats?.ai || {}) },
+    custom: { profit: 0, trades: 0, ...(user?.botStats?.custom || {}) }
   };
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -611,7 +613,34 @@ export default function Bots() {
                   </div>
 
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      if (!newBotConfig.name.trim()) {
+                        setAlertConfig({
+                          isOpen: true,
+                          title: 'Name Required',
+                          message: 'Please provide a name for your custom bot.',
+                          type: 'warning'
+                        });
+                        return;
+                      }
+
+                      await importBot({
+                        name: newBotConfig.name,
+                        strategy: newBotConfig.strategy,
+                        risk: newBotConfig.risk,
+                        currency: 'BTC'
+                      });
+
+                      setSelectedBot({
+                        id: 'custom',
+                        name: newBotConfig.name,
+                        description: `Custom neural bot using ${newBotConfig.strategy} strategy.`,
+                        type: 'ai',
+                        winRate: 'Adaptive',
+                        risk: newBotConfig.risk as any,
+                        minDeposit: 10
+                      });
+
                       setAlertConfig({
                         isOpen: true,
                         title: 'Bot Created',

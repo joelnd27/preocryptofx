@@ -4,6 +4,7 @@ import {
   User, 
   Trade, 
   Transaction, 
+  CopyTrader,
   INITIAL_DEMO_BALANCE, 
   INITIAL_REAL_BALANCE, 
   AccountType, 
@@ -56,6 +57,45 @@ export function useStore() {
       if (saved) return JSON.parse(saved);
     } catch {}
     return [];
+  });
+
+  const [copyTraders, setCopyTraders] = useState<CopyTrader[]>(() => {
+    const saved = localStorage.getItem('preocrypto_copy_traders');
+    try {
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    
+    // Initial 10 simulated traders
+    return [
+      { id: 't1', name: 'Alpha Whale', winRate: 94.2, totalProfit: 125430, followers: 1240, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
+      { id: 't2', name: 'Bull Run Pro', winRate: 88.7, totalProfit: 84200, followers: 850, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'bull456', description: 'Momentum based trend following strategy.' },
+      { id: 't3', name: 'Crypto Sensei', winRate: 91.5, totalProfit: 210500, followers: 2100, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
+      { id: 't4', name: 'Ether Knight', winRate: 86.4, totalProfit: 65800, followers: 640, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
+      { id: 't5', name: 'Binance Bot', winRate: 95.8, totalProfit: 432000, followers: 5200, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'binance', description: 'Automated scalping across multiple pairs.' },
+      { id: 't6', name: 'Moon Walker', winRate: 82.1, totalProfit: 45000, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'moon', description: 'Low risk growth for long term holders.' },
+      { id: 't7', name: 'Solana Shark', winRate: 93.4, totalProfit: 189000, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'shark', description: 'High performance trading on the Solana network.' },
+      { id: 't8', name: 'Scalp Master', winRate: 89.9, totalProfit: 78500, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'scalp', description: 'Quick trades with tight stop losses.' },
+      { id: 't9', name: 'DeFi Degen', winRate: 78.5, totalProfit: 320000, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
+      { id: 't10', name: 'Stable Earner', winRate: 97.2, totalProfit: 54000, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
+    ];
+  });
+
+  const [traderActivity] = useState(() => {
+    const activities: Record<string, any[]> = {};
+    const pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT'];
+    
+    // Generate some fake recent activity for each trader
+    ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10'].forEach(id => {
+      activities[id] = Array.from({ length: 5 }).map((_, i) => ({
+        id: `act-${id}-${i}`,
+        pair: pairs[Math.floor(Math.random() * pairs.length)],
+        type: Math.random() > 0.5 ? 'BUY' : 'SELL',
+        profit: (Math.random() * 500 + 50).toFixed(2),
+        time: new Date(Date.now() - i * 3600000).toLocaleTimeString(),
+        status: 'WIN'
+      }));
+    });
+    return activities;
   });
 
   // Automatic Verification Logic (5-10 mins)
@@ -269,7 +309,11 @@ export function useStore() {
         .maybeSingle();
 
       if (error) {
-        console.error('[Sync] DB Error:', error.message);
+        if (error.message === 'Failed to fetch') {
+          console.warn('[Sync] Supabase connection unavailable. Working offline with local state.');
+        } else {
+          console.error('[Sync] DB Error:', error.message);
+        }
         return;
       }
 
@@ -345,12 +389,39 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           referrals: [],
           referralBonusClaimed: userData.referral_bonus_claimed || false,
+          copyingTraderId: userData.copying_trader_id,
           createdAt: new Date(userData.created_at).getTime()
         };
 
         setUser(formattedUser);
         hasSyncedRef.current = true;
         console.log('[Sync] User sync complete');
+
+        // Fetch Global Copy Traders
+        const { data: tradersData, error: tradersError } = await supabase
+          .from('copy_traders')
+          .select('*')
+          .order('total_profit', { ascending: false });
+
+        if (tradersError) {
+          console.error('[Sync] Error fetching copy traders:', tradersError.message);
+        } else if (tradersData && tradersData.length > 0) {
+          setCopyTraders(tradersData.map(t => ({
+            id: t.id,
+            name: t.name,
+            winRate: Number(t.win_rate || 0),
+            totalProfit: Number(t.total_profit || 0),
+            followers: Number(t.followers || 0),
+            password: t.password,
+            minInvestment: Number(t.min_investment || 0),
+            description: t.description,
+            status: t.status,
+            isSimulated: t.is_simulated,
+            createdBy: t.created_by,
+            createdAt: new Date(t.created_at).getTime()
+          })));
+          console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase`);
+        }
       } else {
         console.warn('[Sync] No user DB record found for ID:', session.user.id);
         // Minimal user state to allow UI to work even if DB row is missing (unlikely if trigger works)
@@ -509,6 +580,117 @@ export function useStore() {
   useEffect(() => {
     localStorage.setItem('preocrypto_users', JSON.stringify(users));
   }, [users]);
+
+  useEffect(() => {
+    localStorage.setItem('preocrypto_copy_traders', JSON.stringify(copyTraders));
+  }, [copyTraders]);
+
+  const addCopyTrader = async (trader: Omit<CopyTrader, 'id' | 'createdAt'>) => {
+    const newTrader: CopyTrader = {
+      ...trader,
+      id: Math.random().toString(36).substr(2, 9),
+      createdAt: Date.now()
+    };
+    
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase.from('copy_traders').insert({
+        name: trader.name,
+        win_rate: trader.winRate,
+        total_profit: trader.totalProfit,
+        followers: trader.followers,
+        password: trader.password,
+        min_investment: trader.minInvestment,
+        description: trader.description,
+        status: trader.status,
+        is_simulated: trader.isSimulated,
+        created_by: trader.createdBy
+      }).select().single();
+      
+      if (error) {
+        console.error('Error adding copy trader to Supabase:', error);
+      } else {
+        newTrader.id = data.id;
+      }
+    }
+    
+    setCopyTraders(prev => [newTrader, ...prev]);
+    return newTrader;
+  };
+
+  const updateCopyTrader = async (id: string, updates: Partial<CopyTrader>) => {
+    console.log(`[Store] Updating copy trader ${id}...`, updates);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    
+    if (isSupabaseConfigured() && isUuid) {
+      try {
+        const dbUpdates: any = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.winRate !== undefined) dbUpdates.win_rate = updates.winRate;
+        if (updates.totalProfit !== undefined) dbUpdates.total_profit = updates.totalProfit;
+        if (updates.followers !== undefined) dbUpdates.followers = updates.followers;
+        if (updates.password !== undefined) dbUpdates.password = updates.password;
+        if (updates.minInvestment !== undefined) dbUpdates.min_investment = updates.minInvestment;
+        if (updates.description !== undefined) dbUpdates.description = updates.description;
+        if (updates.status !== undefined) dbUpdates.status = updates.status;
+
+        const { error } = await supabase.from('copy_traders').update(dbUpdates).eq('id', id);
+        if (error) {
+          console.error('[Store] Supabase update error:', error.message);
+        } else {
+          console.log('[Store] Supabase update successful');
+        }
+      } catch (err) {
+        console.error('[Store] Unexpected error during Supabase update:', err);
+      }
+    }
+    
+    setCopyTraders(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  };
+
+  const deleteCopyTrader = async (id: string) => {
+    console.log(`[Store] Deleting copy trader ${id}...`);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    if (isSupabaseConfigured() && isUuid) {
+      try {
+        const { error } = await supabase.from('copy_traders').delete().eq('id', id);
+        if (error) {
+          console.error('[Store] Supabase delete error:', error.message);
+        } else {
+          console.log('[Store] Supabase delete successful');
+        }
+      } catch (err) {
+        console.error('[Store] Unexpected error during Supabase delete:', err);
+      }
+    }
+    setCopyTraders(prev => prev.filter(t => t.id !== id));
+  };
+
+  const startCopying = async (traderId: string) => {
+    if (!user) return;
+    console.log(`[Store] Starting to copy trader: ${traderId}`);
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('users').update({ copying_trader_id: traderId }).eq('id', user.id);
+      if (error) console.error('[Store] startCopying error:', error.message);
+    }
+    setUser(prev => prev ? { ...prev, copyingTraderId: traderId } : null);
+    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, copyingTraderId: traderId } : u));
+  };
+
+  const stopCopying = async () => {
+    if (!user) return;
+    console.log('[Store] Stopping copy trading');
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('users').update({ copying_trader_id: null }).eq('id', user.id);
+      if (error) console.error('[Store] stopCopying error:', error.message);
+    }
+    setUser(prev => prev ? { ...prev, copyingTraderId: undefined } : null);
+    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, copyingTraderId: undefined } : u));
+  };
+
+  const getTraderFollowers = (traderId: string) => {
+    return users.filter(u => u.copyingTraderId === traderId);
+  };
 
   const login = async (email: string, password?: string) => {
     console.log('[Login] Attempting sign-in for:', email);
@@ -1439,6 +1621,7 @@ export function useStore() {
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: u.verification_status,
+            copyingTraderId: u.copying_trader_id,
             active_account: u.active_account,
             bottom_limit: u.bottom_limit,
             created_at: u.created_at,
@@ -2083,6 +2266,14 @@ export function useStore() {
     updateUserVerificationStatus,
     getAllTransactions,
     updateTransactionStatus,
+    copyTraders,
+    addCopyTrader,
+    updateCopyTrader,
+    deleteCopyTrader,
+    traderActivity,
+    startCopying,
+    stopCopying,
+    getTraderFollowers,
     adminCreditUser: async (userId: string, amount: number, transactionId?: string) => {
       try {
         const session = await getSafeSession();

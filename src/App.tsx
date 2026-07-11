@@ -14,6 +14,7 @@ import Trade from './pages/Trade.tsx';
 import Bots from './pages/Bots.tsx';
 import Transactions from './pages/Transactions.tsx';
 import AllTrades from './pages/AllTrades.tsx';
+import CopyTrading from './pages/CopyTrading.tsx';
 import Profile from './pages/Profile.tsx';
 import Help from './pages/Help.tsx';
 import Referrals from './pages/Referrals.tsx';
@@ -107,6 +108,7 @@ export default function App() {
               <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout><Dashboard /></DashboardLayout></ProtectedRoute>} />
               <Route path="/trade" element={<ProtectedRoute><DashboardLayout><Trade /></DashboardLayout></ProtectedRoute>} />
               <Route path="/bots" element={<ProtectedRoute><DashboardLayout><Bots /></DashboardLayout></ProtectedRoute>} />
+              <Route path="/copy-trading" element={<ProtectedRoute><DashboardLayout><CopyTrading /></DashboardLayout></ProtectedRoute>} />
               <Route path="/transactions" element={<ProtectedRoute><DashboardLayout><Transactions /></DashboardLayout></ProtectedRoute>} />
               <Route path="/trades" element={<ProtectedRoute><DashboardLayout><AllTrades /></DashboardLayout></ProtectedRoute>} />
               <Route path="/referrals" element={<ProtectedRoute><DashboardLayout><Referrals /></DashboardLayout></ProtectedRoute>} />
