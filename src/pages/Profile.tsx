@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   User, 
@@ -29,8 +29,18 @@ export default function Profile() {
   const [username, setUsername] = useState(user?.username || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
+  const [avatar, setAvatar] = useState(user?.avatar || '');
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState('Personal Info');
+
+  useEffect(() => {
+    if (user) {
+      setUsername(user.username || '');
+      setEmail(user.email || '');
+      setPhone(user.phone || '');
+      setAvatar(user.avatar || '');
+    }
+  }, [user]);
   const [isUploading, setIsUploading] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     isOpen: boolean;
@@ -54,7 +64,7 @@ export default function Profile() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    await updateProfile({ username, email, phone });
+    await updateProfile({ username, email, phone, avatar });
     setIsEditing(false);
     setAlertConfig({
       isOpen: true,
@@ -121,10 +131,25 @@ export default function Profile() {
         
         <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
           <div className="relative group">
-            <div className="w-32 h-32 rounded-[40px] bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-5xl font-bold text-white shadow-2xl shadow-blue-600/20">
-              {user?.username ? String(user.username[0]).toUpperCase() : '?'}
-            </div>
-            <button className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center text-slate-600 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm">
+            {user?.avatar ? (
+              (user.avatar.startsWith('http://') || user.avatar.startsWith('https://') || user.avatar.startsWith('/')) ? (
+                <div className="w-32 h-32 rounded-[40px] overflow-hidden border border-slate-200 dark:border-slate-800 bg-white flex items-center justify-center shadow-2xl shadow-blue-600/20">
+                  <img src={user.avatar} alt={user.username} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                </div>
+              ) : (
+                <div className="w-32 h-32 rounded-[40px] bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-6xl font-bold text-white shadow-2xl shadow-blue-600/20">
+                  {user.avatar}
+                </div>
+              )
+            ) : (
+              <div className="w-32 h-32 rounded-[40px] bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-5xl font-bold text-white shadow-2xl shadow-blue-600/20">
+                {user?.username ? String(user.username[0]).toUpperCase() : '?'}
+              </div>
+            )}
+            <button 
+              onClick={() => setIsEditing(true)}
+              className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center text-slate-600 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm"
+            >
               <Camera size={18} />
             </button>
           </div>
@@ -243,6 +268,37 @@ export default function Profile() {
                         onChange={(e) => setPhone(e.target.value)}
                         className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 transition-all disabled:opacity-50"
                       />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-sm font-medium text-slate-500 dark:text-slate-400 ml-1">Profile Picture or Emoji</label>
+                    <div className="relative flex flex-col gap-3">
+                      <input
+                        type="text"
+                        disabled={!isEditing}
+                        placeholder="Paste an Image URL or Enter an Emoji"
+                        value={avatar}
+                        onChange={(e) => setAvatar(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 transition-all disabled:opacity-50"
+                      />
+                      {isEditing && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {['🐳', '🐂', '🥷', '⚔️', '🤖', '🧑‍🚀', '🦈', '✂️', '🦁', '📈', '💎', '👑', '💰', '🔥'].map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => setAvatar(emoji)}
+                              className={cn(
+                                "w-10 h-10 rounded-xl flex items-center justify-center text-xl bg-slate-50 dark:bg-slate-800 border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all",
+                                avatar === emoji ? "border-blue-500 ring-2 ring-blue-500/30 bg-blue-500/5" : "border-slate-200 dark:border-slate-700"
+                              )}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

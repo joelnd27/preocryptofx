@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   email text,
   username text,
   role text DEFAULT 'user',
+  avatar text,
   verification_status text DEFAULT 'unverified',
   real_balance numeric DEFAULT 0,
   demo_balance numeric DEFAULT 10000,
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at timestamp with time zone DEFAULT now()
 );
 
--- Ensure copying_trader_id exists and is text type
+-- Ensure copying_trader_id and avatar exists on users table
 DO $$ 
 BEGIN 
   -- Drop the foreign key constraint if it exists to allow type change
@@ -47,6 +48,10 @@ BEGIN
     ALTER TABLE public.users ADD COLUMN copying_trader_id text;
   ELSE
     ALTER TABLE public.users ALTER COLUMN copying_trader_id TYPE text USING copying_trader_id::text;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='avatar') THEN
+    ALTER TABLE public.users ADD COLUMN avatar text;
   END IF;
 END $$;
 
@@ -99,6 +104,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 CREATE TABLE IF NOT EXISTS public.copy_traders (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   name text NOT NULL,
+  avatar text,
   win_rate numeric DEFAULT 0,
   total_profit numeric DEFAULT 0,
   followers integer DEFAULT 0,
@@ -110,6 +116,14 @@ CREATE TABLE IF NOT EXISTS public.copy_traders (
   created_by uuid REFERENCES auth.users ON DELETE SET NULL,
   created_at timestamp with time zone DEFAULT now()
 );
+
+-- Ensure avatar column exists on copy_traders
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='copy_traders' AND column_name='avatar') THEN
+    ALTER TABLE public.copy_traders ADD COLUMN avatar text;
+  END IF;
+END $$;
 
 -- 3. ENABLE RLS
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;

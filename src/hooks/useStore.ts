@@ -60,24 +60,34 @@ export function useStore() {
   });
 
   const [copyTraders, setCopyTraders] = useState<CopyTrader[]>(() => {
+    const initial = [
+      { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 125430, followers: 1240, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
+      { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 84200, followers: 850, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'bull456', description: 'Momentum based trend following strategy.' },
+      { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 210500, followers: 2100, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
+      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 65800, followers: 640, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
+      { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 432000, followers: 5200, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'binance', description: 'Automated scalping across multiple pairs.' },
+      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 45000, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'moon', description: 'Low risk growth for long term holders.' },
+      { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 189000, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'shark', description: 'High performance trading on the Solana network.' },
+      { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 78500, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'scalp', description: 'Quick trades with tight stop losses.' },
+      { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 320000, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
+      { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 54000, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
+    ];
+
     const saved = localStorage.getItem('preocrypto_copy_traders');
     try {
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved) as CopyTrader[];
+        return parsed.map(t => {
+          const matched = initial.find(init => init.id === t.id);
+          if (matched && !t.avatar) {
+            return { ...t, avatar: matched.avatar };
+          }
+          return t;
+        });
+      }
     } catch {}
     
-    // Initial 10 simulated traders
-    return [
-      { id: 't1', name: 'Alpha Whale', winRate: 94.2, totalProfit: 125430, followers: 1240, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
-      { id: 't2', name: 'Bull Run Pro', winRate: 88.7, totalProfit: 84200, followers: 850, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'bull456', description: 'Momentum based trend following strategy.' },
-      { id: 't3', name: 'Crypto Sensei', winRate: 91.5, totalProfit: 210500, followers: 2100, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
-      { id: 't4', name: 'Ether Knight', winRate: 86.4, totalProfit: 65800, followers: 640, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
-      { id: 't5', name: 'Binance Bot', winRate: 95.8, totalProfit: 432000, followers: 5200, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'binance', description: 'Automated scalping across multiple pairs.' },
-      { id: 't6', name: 'Moon Walker', winRate: 82.1, totalProfit: 45000, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'moon', description: 'Low risk growth for long term holders.' },
-      { id: 't7', name: 'Solana Shark', winRate: 93.4, totalProfit: 189000, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'shark', description: 'High performance trading on the Solana network.' },
-      { id: 't8', name: 'Scalp Master', winRate: 89.9, totalProfit: 78500, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'scalp', description: 'Quick trades with tight stop losses.' },
-      { id: 't9', name: 'DeFi Degen', winRate: 78.5, totalProfit: 320000, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
-      { id: 't10', name: 'Stable Earner', winRate: 97.2, totalProfit: 54000, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
-    ];
+    return initial;
   });
 
   const [traderActivity] = useState(() => {
@@ -335,6 +345,7 @@ export function useStore() {
           username: userData.username,
           email: userData.email,
           phone: userData.phone,
+          avatar: userData.avatar,
           role: isHardcodedAdmin ? 'admin' : userData.role,
           demoBalance: Number(userData.demo_balance || 0),
           realBalance: Number(userData.real_balance || 0),
@@ -409,6 +420,7 @@ export function useStore() {
           setCopyTraders(tradersData.map(t => ({
             id: t.id,
             name: t.name,
+            avatar: t.avatar,
             winRate: Number(t.win_rate || 0),
             totalProfit: Number(t.total_profit || 0),
             followers: Number(t.followers || 0),
@@ -595,6 +607,7 @@ export function useStore() {
     if (isSupabaseConfigured()) {
       const { data, error } = await supabase.from('copy_traders').insert({
         name: trader.name,
+        avatar: trader.avatar,
         win_rate: trader.winRate,
         total_profit: trader.totalProfit,
         followers: trader.followers,
@@ -625,6 +638,7 @@ export function useStore() {
       try {
         const dbUpdates: any = {};
         if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
         if (updates.winRate !== undefined) dbUpdates.win_rate = updates.winRate;
         if (updates.totalProfit !== undefined) dbUpdates.total_profit = updates.totalProfit;
         if (updates.followers !== undefined) dbUpdates.followers = updates.followers;
@@ -1996,7 +2010,7 @@ export function useStore() {
     } : null);
   };
   
-  const updateProfile = async (updates: Partial<Pick<User, 'username' | 'email' | 'phone'>>) => {
+  const updateProfile = async (updates: Partial<Pick<User, 'username' | 'email' | 'phone' | 'avatar'>>) => {
     if (!user) return;
     
     isInternalUpdate.current = true;

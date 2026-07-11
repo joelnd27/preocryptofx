@@ -41,6 +41,7 @@ export default function CopyTrading() {
 
   const [newTrader, setNewTrader] = useState({
     name: '',
+    avatar: '',
     winRate: 85,
     totalProfit: 1000,
     followers: 0,
@@ -146,6 +147,7 @@ export default function CopyTrading() {
     setIsCreateModalOpen(false);
     setNewTrader({
       name: '',
+      avatar: '',
       winRate: 85,
       totalProfit: 1000,
       followers: 0,
@@ -219,9 +221,21 @@ export default function CopyTrading() {
                 {/* Profile Info */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 font-black text-xs border border-blue-500/20">
-                      {trader.name[0].toUpperCase()}
-                    </div>
+                    {trader.avatar ? (
+                      (trader.avatar.startsWith('http://') || trader.avatar.startsWith('https://') || trader.avatar.startsWith('/')) ? (
+                        <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-white flex items-center justify-center">
+                          <img src={trader.avatar} alt={trader.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 font-black text-sm border border-blue-500/20">
+                          {trader.avatar}
+                        </div>
+                      )
+                    ) : (
+                      <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 font-black text-xs border border-blue-500/20">
+                        {trader.name[0].toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <h3 className="font-bold text-slate-900 dark:text-white text-[11px] leading-tight line-clamp-1">{trader.name}</h3>
                       <div className="flex items-center gap-1.5">
@@ -393,6 +407,32 @@ export default function CopyTrading() {
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Profile Picture or Emoji</label>
+                    <input
+                      type="text"
+                      placeholder="Paste Image URL or Enter Emoji"
+                      className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      value={newTrader.avatar}
+                      onChange={(e) => setNewTrader({ ...newTrader, avatar: e.target.value })}
+                    />
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {['🐳', '🐂', '🥷', '⚔️', '🤖', '🧑‍🚀', '🦈', '✂️', '🦁', '📈', '💎', '👑', '💰', '🔥'].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => setNewTrader({ ...newTrader, avatar: emoji })}
+                          className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center text-base bg-slate-50 dark:bg-slate-800 border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all",
+                            newTrader.avatar === emoji ? "border-blue-500 ring-1 ring-blue-500/30 bg-blue-500/5" : "border-slate-200 dark:border-slate-700"
+                          )}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Win Rate (%)</label>
@@ -478,9 +518,21 @@ export default function CopyTrading() {
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black">
-                    {traderToEdit?.name[0]?.toUpperCase()}
-                  </div>
+                  {traderToEdit?.avatar ? (
+                    (traderToEdit.avatar.startsWith('http://') || traderToEdit.avatar.startsWith('https://') || traderToEdit.avatar.startsWith('/')) ? (
+                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white flex items-center justify-center">
+                        <img src={traderToEdit.avatar} alt={traderToEdit.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black text-lg border border-blue-500/20">
+                        {traderToEdit.avatar}
+                      </div>
+                    )
+                  ) : (
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black border border-blue-500/20">
+                      {traderToEdit?.name?.[0]?.toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-white">Manage Master Profile</h3>
                     <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{traderToEdit?.name}</p>
@@ -516,6 +568,32 @@ export default function CopyTrading() {
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {manageTab === 'stats' && (
                   <div className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Profile Picture or Emoji</label>
+                      <input
+                        type="text"
+                        placeholder="Paste Image URL or Enter Emoji"
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-4 text-xs font-bold focus:outline-none focus:border-blue-500 transition-colors"
+                        value={traderToEdit?.avatar || ''}
+                        onChange={(e) => setTraderToEdit({ ...traderToEdit, avatar: e.target.value })}
+                      />
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {['🐳', '🐂', '🥷', '⚔️', '🤖', '🧑‍🚀', '🦈', '✂️', '🦁', '📈', '💎', '👑', '💰', '🔥'].map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => setTraderToEdit({ ...traderToEdit, avatar: emoji })}
+                            className={cn(
+                              "w-7 h-7 rounded-lg flex items-center justify-center text-sm bg-slate-50 dark:bg-slate-800 border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all",
+                              traderToEdit?.avatar === emoji ? "border-blue-500 ring-1 ring-blue-500/30 bg-blue-500/5" : "border-slate-200 dark:border-slate-700"
+                            )}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Win Rate (%)</label>
