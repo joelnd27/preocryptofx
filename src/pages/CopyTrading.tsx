@@ -74,6 +74,16 @@ export default function CopyTrading() {
   );
 
   const handleCopyClick = (trader: any) => {
+    if (user?.activeAccount !== 'REAL') {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Real Account Required',
+        message: 'Copy trading is only available for Real accounts. Please switch your active account to "Real" using the account selector in the top bar to follow master traders and copy their trades.',
+        type: 'warning'
+      });
+      return;
+    }
+
     if (user?.copyingTraderId === trader.id) {
       setAlertConfig({
         isOpen: true,
@@ -84,12 +94,12 @@ export default function CopyTrading() {
       return;
     }
 
-    const balance = user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance;
+    const balance = user?.realBalance || 0;
     if (balance < trader.minInvestment) {
       setAlertConfig({
         isOpen: true,
         title: 'Insufficient Balance',
-        message: `You need at least ${formatCurrency(trader.minInvestment)} to copy this trader.`,
+        message: `You need at least ${formatCurrency(trader.minInvestment)} in your Real Account to copy this trader.`,
         type: 'warning'
       });
       return;
@@ -176,6 +186,18 @@ export default function CopyTrading() {
           </button>
         )}
       </div>
+
+      {user?.activeAccount !== 'REAL' && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-3">
+          <Info className="text-amber-500 shrink-0 mt-0.5" size={16} />
+          <div>
+            <h4 className="text-[11px] font-black text-amber-500 uppercase tracking-wider">Demo Account Active</h4>
+            <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed mt-0.5">
+              Copy trading is strictly restricted to Real Accounts. Please switch your active account type to <span className="font-bold text-slate-900 dark:text-white">Real</span> using the account selector in the top bar to follow master traders and copy their trades.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Hero Stats - Compact */}
       <div className="grid grid-cols-3 gap-3">

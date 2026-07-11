@@ -682,6 +682,9 @@ export function useStore() {
 
   const startCopying = async (traderId: string) => {
     if (!user) return;
+    if (user.activeAccount !== 'REAL') {
+      throw new Error('Copy trading is only available for Real accounts. Please switch your active account to Real in the top bar.');
+    }
     console.log(`[Store] Starting to copy trader: ${traderId}`);
     if (isSupabaseConfigured()) {
       const { error } = await supabase.from('users').update({ copying_trader_id: traderId }).eq('id', user.id);
