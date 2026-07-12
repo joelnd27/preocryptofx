@@ -681,6 +681,7 @@ export function useStore() {
       
       if (error) {
         console.error('Error adding copy trader to Supabase:', error);
+        throw new Error(`Failed to save copy trading profile: ${error.message}`);
       } else {
         newTrader.id = data.id;
       }

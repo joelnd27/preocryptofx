@@ -166,6 +166,9 @@ CREATE POLICY "admin_all_trans" ON public.transactions FOR ALL TO authenticated 
 -- COPY TRADERS
 CREATE POLICY "public_read_traders" ON public.copy_traders FOR SELECT TO authenticated USING (true);
 CREATE POLICY "admin_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
+CREATE POLICY "marketer_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (
+  EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'marketer')
+);
 
 -- 6. RPCs FOR ATOMIC UPDATES
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id uuid, amount numeric)

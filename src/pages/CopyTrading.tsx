@@ -157,30 +157,39 @@ export default function CopyTrading() {
       return;
     }
 
-    await addCopyTrader({
-      ...newTrader,
-      status: 'active',
-      isSimulated: false,
-      createdBy: user?.id || 'unknown',
-    });
+    try {
+      await addCopyTrader({
+        ...newTrader,
+        status: 'active',
+        isSimulated: false,
+        createdBy: user?.id || 'unknown',
+      });
 
-    setAlertConfig({
-      isOpen: true,
-      title: 'Profile Created',
-      message: 'Your copy trading profile has been successfully created and is now visible to users.',
-      type: 'success'
-    });
-    setIsCreateModalOpen(false);
-    setNewTrader({
-      name: '',
-      avatar: '',
-      winRate: 85,
-      totalProfit: 1000,
-      followers: 0,
-      password: '',
-      minInvestment: 50,
-      description: '',
-    });
+      setAlertConfig({
+        isOpen: true,
+        title: 'Profile Created',
+        message: 'Your copy trading profile has been successfully created and is now visible to users.',
+        type: 'success'
+      });
+      setIsCreateModalOpen(false);
+      setNewTrader({
+        name: '',
+        avatar: '',
+        winRate: 85,
+        totalProfit: 1000,
+        followers: 0,
+        password: '',
+        minInvestment: 50,
+        description: '',
+      });
+    } catch (err: any) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Creation Failed',
+        message: err.message || 'Failed to create copy trading profile. Please try again.',
+        type: 'error'
+      });
+    }
   };
 
   return (
