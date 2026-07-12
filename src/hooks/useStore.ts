@@ -1266,7 +1266,7 @@ export function useStore() {
 
   // Auto-close trades based on duration
   useEffect(() => {
-    if (!user || user.trades.length === 0) return;
+    if (!user) return;
 
     const interval = setInterval(() => {
       const currentUser = userRef.current;
