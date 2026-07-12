@@ -12,6 +12,7 @@ export interface CopyTrader {
   isSimulated: boolean;
   createdBy: string; // User ID of the marketer/admin
   createdAt: number;
+  creatorRole?: 'user' | 'marketer' | 'admin';
 }
 
 export type AccountType = 'DEMO' | 'REAL';

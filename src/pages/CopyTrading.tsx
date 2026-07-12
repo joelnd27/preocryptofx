@@ -73,9 +73,21 @@ export default function CopyTrading() {
 
   const isMarketerOrAdmin = user?.role === 'marketer' || user?.role === 'admin';
 
-  const filteredTraders = copyTraders.filter(t => 
-    t.name.toLowerCase().includes(search.toLowerCase()) && t.status === 'active'
-  );
+  const filteredTraders = copyTraders.filter(t => {
+    // Search match & active status match
+    const matchesSearch = t.name.toLowerCase().includes(search.toLowerCase()) && t.status === 'active';
+    if (!matchesSearch) return false;
+
+    // Simulated, preloaded, and admin-system profiles are always visible to everyone
+    if (t.isSimulated || t.createdBy === 'admin' || t.createdBy === 'system') return true;
+
+    // If the profile was created by the logged-in user themselves, it is visible to them
+    if (user && t.createdBy === user.id) return true;
+
+    // Otherwise, it's only visible to others if the creator's role is 'marketer' or 'admin'
+    const isCreatorMarketerOrAdmin = t.creatorRole === 'marketer' || t.creatorRole === 'admin';
+    return isCreatorMarketerOrAdmin;
+  });
 
   const handleCopyClick = (trader: any) => {
     if (user?.activeAccount !== 'REAL') {
@@ -206,9 +218,9 @@ export default function CopyTrading() {
       {/* Hero Stats - Compact */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Total Masters', value: copyTraders.length, color: 'text-slate-900 dark:text-white' },
-          { label: 'Avg Win Rate', value: `${(copyTraders.reduce((acc, t) => acc + t.winRate, 0) / copyTraders.length || 0).toFixed(1)}%`, color: 'text-green-500' },
-          { label: 'Total Profit', value: formatCurrency(copyTraders.reduce((acc, t) => acc + t.totalProfit, 0)), color: 'text-blue-500' },
+          { label: 'Total Masters', value: filteredTraders.length, color: 'text-slate-900 dark:text-white' },
+          { label: 'Avg Win Rate', value: `${(filteredTraders.reduce((acc, t) => acc + t.winRate, 0) / filteredTraders.length || 0).toFixed(1)}%`, color: 'text-green-500' },
+          { label: 'Total Profit', value: formatCurrency(filteredTraders.reduce((acc, t) => acc + t.totalProfit, 0)), color: 'text-blue-500' },
         ].map((stat, i) => (
           <div key={i} className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl text-center">
             <p className="text-[7px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">{stat.label}</p>

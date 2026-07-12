@@ -445,6 +445,23 @@ export function useStore() {
               console.error('[Sync] Error fetching copy traders:', tradersError.message);
             }
           } else if (tradersData && tradersData.length > 0) {
+            // Retrieve roles for creators of these copy trading profiles
+            const creatorIds = Array.from(new Set(tradersData.map(t => t.created_by).filter(Boolean)));
+            const creatorRolesMap: Record<string, 'user' | 'marketer' | 'admin'> = {};
+            
+            if (creatorIds.length > 0) {
+              const { data: creatorsData } = await supabase
+                .from('users')
+                .select('id, role')
+                .in('id', creatorIds);
+              
+              if (creatorsData) {
+                creatorsData.forEach((c: any) => {
+                  creatorRolesMap[c.id] = c.role;
+                });
+              }
+            }
+
             setCopyTraders(tradersData.map(t => ({
               id: t.id,
               name: t.name,
@@ -458,9 +475,10 @@ export function useStore() {
               status: t.status,
               isSimulated: t.is_simulated,
               createdBy: t.created_by,
-              createdAt: new Date(t.created_at).getTime()
+              createdAt: new Date(t.created_at).getTime(),
+              creatorRole: creatorRolesMap[t.created_by] || 'user'
             })));
-            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase`);
+            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase with creator roles resolved`);
           }
         } catch (fetchErr: any) {
           console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);
@@ -629,10 +647,21 @@ export function useStore() {
   }, [copyTraders]);
 
   const addCopyTrader = async (trader: Omit<CopyTrader, 'id' | 'createdAt'>) => {
+    // Resolve the creator's role
+    const creatorUser = users.find(u => u.id === trader.createdBy);
+    const resolvedRole = creatorUser?.role || user?.role || 'user';
+
+    // Enforce that only marketers and admins can create profiles
+    if (resolvedRole !== 'marketer' && resolvedRole !== 'admin') {
+      console.error('[Store] Access denied: Only marketers and admins can create copy trading profiles');
+      throw new Error('Only marketers and admins can create copy trading profiles');
+    }
+
     const newTrader: CopyTrader = {
       ...trader,
       id: Math.random().toString(36).substr(2, 9),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      creatorRole: resolvedRole
     };
     
     if (isSupabaseConfigured()) {
