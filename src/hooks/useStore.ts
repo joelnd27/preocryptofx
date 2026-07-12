@@ -155,22 +155,45 @@ export function useStore() {
     const checkReset = async () => {
         const today = new Date().toISOString().split('T')[0];
         
-        // Only run checkReset if we have a valid date and we've synced at least once
-        // or if the user is explicitly a new user (which we can't always tell here easily)
-        if (user.lastProfitResetDate && user.lastProfitResetDate !== today && hasSyncedRef.current) {
-          console.log('Resetting daily statistics for new day:', today);
-          
-          const resetBotStats = {
-            scalping: { profit: 0, trades: 0 },
-            trend: { profit: 0, trades: 0 },
-            ai: { profit: 0, trades: 0 },
-            custom: { profit: 0, trades: 0 }
-          };
+        // Only run checkReset if we have synced at least once to avoid premature resets
+        if (hasSyncedRef.current) {
+          if (!user.lastProfitResetDate) {
+            // If the reset date is unset, initialize it to today without clearing current stats
+            console.log('Initializing lastProfitResetDate to today:', today);
+            setUser(prev => prev ? { ...prev, lastProfitResetDate: today } : null);
+            setUsers(prev => prev.map(u => u.id === user.id ? { ...u, lastProfitResetDate: today } : u));
+            if (isSupabaseConfigured()) {
+              await supabase.from('users').update({ last_profit_reset_date: today }).eq('id', user.id);
+            }
+          } else if (user.lastProfitResetDate !== today) {
+            // It's a new day! Reset daily statistics and clear bot activity logs
+            console.log('Resetting daily statistics for new day:', today);
+            
+            const resetBotStats = {
+              scalping: { profit: 0, trades: 0 },
+              trend: { profit: 0, trades: 0 },
+              ai: { profit: 0, trades: 0 },
+              custom: { profit: 0, trades: 0 }
+            };
 
-          setUser(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
+            setUser(prev => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                dailyProfit: 0,
+                dailyProfitReal: 0,
+                dailyProfitDemo: 0,
+                dailyTrades: 0,
+                dailyTradesReal: 0,
+                dailyTradesDemo: 0,
+                botLogs: [],
+                botStats: resetBotStats,
+                lastProfitResetDate: today
+              };
+            });
+
+            setUsers(prev => prev.map(u => u.id === user.id ? {
+              ...u,
               dailyProfit: 0,
               dailyProfitReal: 0,
               dailyProfitDemo: 0,
@@ -180,24 +203,24 @@ export function useStore() {
               botLogs: [],
               botStats: resetBotStats,
               lastProfitResetDate: today
-            };
-          });
+            } : u));
 
-          if (isSupabaseConfigured()) {
-            // Update daily stats on users table
-            await supabase.from('users').update({
-              daily_profit_real: 0,
-              daily_profit_demo: 0,
-              daily_trades_real: 0,
-              daily_trades_demo: 0,
-              last_profit_reset_date: today
-            }).eq('id', user.id);
+            if (isSupabaseConfigured()) {
+              // Update daily stats on users table
+              await supabase.from('users').update({
+                daily_profit_real: 0,
+                daily_profit_demo: 0,
+                daily_trades_real: 0,
+                daily_trades_demo: 0,
+                last_profit_reset_date: today
+              }).eq('id', user.id);
 
-            // Update bot activity on bot_settings table
-            await supabase.from('bot_settings').update({
-              bot_logs: [],
-              bot_stats: resetBotStats
-            }).eq('user_id', user.id);
+              // Update bot activity on bot_settings table
+              await supabase.from('bot_settings').update({
+                bot_logs: [],
+                bot_stats: resetBotStats
+              }).eq('user_id', user.id);
+            }
           }
         }
     };

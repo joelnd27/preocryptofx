@@ -17,7 +17,9 @@ import {
   UserPlus,
   CheckCircle2,
   Clock,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn, formatCurrency } from '../lib/utils';
@@ -30,6 +32,8 @@ export default function CopyTrading() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [showVerifyPassword, setShowVerifyPassword] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [traderToCopy, setTraderToCopy] = useState<any>(null);
 
   const [alertConfig, setAlertConfig] = useState({
@@ -371,13 +375,23 @@ export default function CopyTrading() {
                     <p className="text-xs text-slate-500">Copying {traderToCopy?.name} requires a secure access key provided by the master trader.</p>
                   </div>
 
-                  <input
-                    type="password"
-                    placeholder="Enter Access Password"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-3 px-4 text-center font-bold focus:outline-none focus:border-blue-500 transition-all"
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showVerifyPassword ? "text" : "password"}
+                      placeholder="Enter Access Password"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-3 pl-12 pr-12 text-center font-bold focus:outline-none focus:border-blue-500 transition-all"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowVerifyPassword(!showVerifyPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title={showVerifyPassword ? "Hide password" : "Show password"}
+                    >
+                      {showVerifyPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
 
                   <button
                     onClick={handleVerifyPassword}
@@ -488,13 +502,23 @@ export default function CopyTrading() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Access Password</label>
-                      <input
-                        type="text"
-                        placeholder="Required for users to copy"
-                        className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                        value={newTrader.password}
-                        onChange={(e) => setNewTrader({ ...newTrader, password: e.target.value })}
-                      />
+                      <div className="relative">
+                        <input
+                          type={showCreatePassword ? "text" : "password"}
+                          placeholder="Required for users to copy"
+                          className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-4 pr-10 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                          value={newTrader.password}
+                          onChange={(e) => setNewTrader({ ...newTrader, password: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCreatePassword(!showCreatePassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                          title={showCreatePassword ? "Hide password" : "Show password"}
+                        >
+                          {showCreatePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
