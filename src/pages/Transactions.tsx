@@ -701,7 +701,7 @@ export default function Transactions() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-900 dark:text-white">M-Pesa (Mobile)</p>
-                  <p className="text-[9px] text-slate-500 dark:text-slate-400">$1 = {USD_TO_KES} KES.</p>
+                  <p className="text-[9px] text-slate-500 dark:text-slate-400">Instant credit.</p>
                 </div>
               </div>
               <div className="flex items-start gap-2.5">

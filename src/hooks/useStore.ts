@@ -409,30 +409,38 @@ export function useStore() {
         console.log('[Sync] User sync complete');
 
         // Fetch Global Copy Traders
-        const { data: tradersData, error: tradersError } = await supabase
-          .from('copy_traders')
-          .select('*')
-          .order('total_profit', { ascending: false });
+        try {
+          const { data: tradersData, error: tradersError } = await supabase
+            .from('copy_traders')
+            .select('*')
+            .order('total_profit', { ascending: false });
 
-        if (tradersError) {
-          console.error('[Sync] Error fetching copy traders:', tradersError.message);
-        } else if (tradersData && tradersData.length > 0) {
-          setCopyTraders(tradersData.map(t => ({
-            id: t.id,
-            name: t.name,
-            avatar: t.avatar,
-            winRate: Number(t.win_rate || 0),
-            totalProfit: Number(t.total_profit || 0),
-            followers: Number(t.followers || 0),
-            password: t.password,
-            minInvestment: Number(t.min_investment || 0),
-            description: t.description,
-            status: t.status,
-            isSimulated: t.is_simulated,
-            createdBy: t.created_by,
-            createdAt: new Date(t.created_at).getTime()
-          })));
-          console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase`);
+          if (tradersError) {
+            if (tradersError.message?.includes('Failed to fetch') || tradersError.message?.includes('fetch')) {
+              console.warn('[Sync] Supabase connection unavailable for copy traders. Using local/simulated traders.');
+            } else {
+              console.error('[Sync] Error fetching copy traders:', tradersError.message);
+            }
+          } else if (tradersData && tradersData.length > 0) {
+            setCopyTraders(tradersData.map(t => ({
+              id: t.id,
+              name: t.name,
+              avatar: t.avatar,
+              winRate: Number(t.win_rate || 0),
+              totalProfit: Number(t.total_profit || 0),
+              followers: Number(t.followers || 0),
+              password: t.password,
+              minInvestment: Number(t.min_investment || 0),
+              description: t.description,
+              status: t.status,
+              isSimulated: t.is_simulated,
+              createdBy: t.created_by,
+              createdAt: new Date(t.created_at).getTime()
+            })));
+            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase`);
+          }
+        } catch (fetchErr: any) {
+          console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);
         }
       } else {
         console.warn('[Sync] No user DB record found for ID:', session.user.id);
