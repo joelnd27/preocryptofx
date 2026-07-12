@@ -178,39 +178,39 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative">
+      <div className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative", isDarkMode ? "bg-slate-950" : "bg-slate-50")}>
         <div className="sticky top-0 z-50 w-full shrink-0">
           <PWAInstallBanner />
           
           {/* Top Header */}
           <header className={cn(
-            "h-16 border-b flex items-center justify-between px-4 lg:px-8 shrink-0 relative z-10",
+            "h-16 border-b flex items-center justify-between px-2.5 sm:px-4 lg:px-8 shrink-0 relative z-10",
           isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white/80 border-slate-200",
           "backdrop-blur-md text-slate-900 dark:text-white"
         )}>
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <button 
               onClick={() => {
                 if (window.innerWidth >= 1024) setIsSidebarOpen(!isSidebarOpen);
                 else setIsMobileMenuOpen(true);
               }}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              className="p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
             >
               <Menu size={20} />
             </button>
-            <div className="flex items-center gap-2">
-              <img src="/favicon.svg" alt="Logo" className="w-7 h-7 rounded-lg shrink-0" />
-              <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-white lg:hidden">PreoCryptoFX</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <img src="/favicon.svg" alt="Logo" className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg shrink-0" />
+              <span className="text-xs sm:text-sm font-bold tracking-tight text-slate-900 dark:text-white hidden min-[380px]:inline lg:hidden shrink-0">PreoCryptoFX</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-6">
+          <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 shrink-0">
             {/* Account Switcher */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 sm:p-1 shrink-0">
               <button 
                 onClick={() => switchAccount('REAL')}
                 className={cn(
-                  "px-3 py-1 rounded-lg text-[10px] font-black transition-all",
+                  "px-2 sm:px-3 py-1 rounded-lg text-[10px] font-black transition-all shrink-0",
                   user?.activeAccount === 'REAL' 
                     ? "bg-white dark:bg-slate-700 text-primary shadow-sm" 
                     : "text-slate-500"
@@ -221,7 +221,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <button 
                 onClick={() => switchAccount('DEMO')}
                 className={cn(
-                  "px-3 py-1 rounded-lg text-[10px] font-black transition-all",
+                  "px-2 sm:px-3 py-1 rounded-lg text-[10px] font-black transition-all shrink-0",
                   user?.activeAccount === 'DEMO' 
                     ? "bg-white dark:bg-slate-700 text-primary shadow-sm" 
                     : "text-slate-500"
@@ -232,20 +232,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
 
             {/* Balance */}
-            <div className="hidden sm:block text-right">
+            <div className="hidden sm:block text-right shrink-0">
               <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Balance</p>
               <p className="text-sm font-bold text-primary tabular-nums">
                 ${(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors relative">
-                <Bell size={20} className="text-slate-500 dark:text-slate-400" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-800"></span>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button className="p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors relative shrink-0">
+                <Bell size={18} className="text-slate-500 dark:text-slate-400" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-800"></span>
               </button>
-              <Link to="/profile" className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
-                <UserIcon size={20} className="text-primary" />
+              <Link to="/profile" className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0">
+                <UserIcon size={18} className="text-primary" />
               </Link>
             </div>
           </div>
@@ -253,7 +253,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Page Content */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8">
+        <main className={cn("flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8", isDarkMode ? "bg-slate-950" : "bg-slate-50")}>
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

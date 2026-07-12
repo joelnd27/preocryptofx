@@ -6,7 +6,7 @@
     <title>PreoCryptoFX | AI Trading Platform</title>
     <meta name="description" content="PreoCryptoFX offers a secure, professional cryptocurrency trading experience with advanced AI-powered tools, real-time analytics, and 24/7 support for every level of trader." />
     <meta name="keywords" content="crypto trading, AI trading, bitcoin, ethereum, professional trading platform, PreoCryptoFX" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta id="meta-theme-color" name="theme-color" content="#0f172a" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -23,8 +23,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="mask-icon" href="/favicon.svg" color="#2563eb" />
-    <meta name="msapplication-TileColor" content="#0f172a" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta id="meta-tile-color" name="msapplication-TileColor" content="#0f172a" />
     
     <!-- Structured Data for Search Results -->
     <script type="application/ld+json">
@@ -62,13 +61,21 @@
         try {
           var theme = localStorage.getItem('preocrypto_theme');
           var supportDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (theme === 'dark' || (!theme && supportDarkMode)) {
-            document.documentElement.classList.add('dark');
-          } else if (theme === 'light') {
-            document.documentElement.classList.remove('dark');
-          } else {
-            document.documentElement.classList.add('dark');
+          var isDark = theme === 'dark' || (!theme && supportDarkMode) || (!theme && theme === null);
+          if (theme === 'light') {
+            isDark = false;
           }
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+          
+          var themeColor = isDark ? '#0f172a' : '#f8fafc';
+          var metaTheme = document.getElementById('meta-theme-color');
+          if (metaTheme) metaTheme.setAttribute('content', themeColor);
+          var metaTile = document.getElementById('meta-tile-color');
+          if (metaTile) metaTile.setAttribute('content', themeColor);
         } catch (e) {}
       })();
     </script>

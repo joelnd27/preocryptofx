@@ -2146,8 +2146,16 @@ export function useStore() {
     localStorage.setItem('preocrypto_theme', isDarkMode ? 'dark' : 'light');
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      const metaTheme = document.getElementById('meta-theme-color');
+      if (metaTheme) metaTheme.setAttribute('content', '#0f172a');
+      const metaTile = document.getElementById('meta-tile-color');
+      if (metaTile) metaTile.setAttribute('content', '#0f172a');
     } else {
       document.documentElement.classList.remove('dark');
+      const metaTheme = document.getElementById('meta-theme-color');
+      if (metaTheme) metaTheme.setAttribute('content', '#f8fafc');
+      const metaTile = document.getElementById('meta-tile-color');
+      if (metaTile) metaTile.setAttribute('content', '#f8fafc');
     }
   }, [isDarkMode]);
 
