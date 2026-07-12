@@ -316,17 +316,28 @@ export default function CopyTrading() {
                     </button>
                   ) : (
                     <button 
-                      onClick={() => handleCopyClick(trader)}
-                      disabled={user?.copyingTraderId === trader.id}
+                      onClick={() => {
+                        if (user?.copyingTraderId === trader.id) {
+                          stopCopying();
+                          setAlertConfig({
+                            isOpen: true,
+                            title: 'Stopped Copying',
+                            message: `You have successfully unfollowed and stopped copying ${trader.name}.`,
+                            type: 'info'
+                          });
+                        } else {
+                          handleCopyClick(trader);
+                        }
+                      }}
                       className={cn(
-                        "flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1 text-[9px] uppercase tracking-wider",
+                        "flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1 text-[9px] uppercase tracking-wider shadow-sm text-white",
                         user?.copyingTraderId === trader.id 
-                          ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed"
-                          : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                          ? "bg-red-650 hover:bg-red-700 bg-red-600"
+                          : "bg-blue-600 hover:bg-blue-700"
                       )}
                     >
-                      {user?.copyingTraderId === trader.id ? <CheckCircle2 size={10} /> : <Lock size={10} />}
-                      {user?.copyingTraderId === trader.id ? 'Following' : 'Copy'}
+                      {user?.copyingTraderId === trader.id ? <X size={10} /> : <Lock size={10} />}
+                      {user?.copyingTraderId === trader.id ? 'Unfollow' : 'Copy'}
                     </button>
                   )}
                   <button 
@@ -769,6 +780,159 @@ export default function CopyTrading() {
                 >
                   <CheckCircle2 size={18} /> Update Profile Statistics
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Selected Trader Details & Recent Trades Modal */}
+      <AnimatePresence>
+        {selectedTrader && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedTrader(null)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden max-h-[85vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                  {selectedTrader.avatar ? (
+                    (selectedTrader.avatar.startsWith('http://') || selectedTrader.avatar.startsWith('https://') || selectedTrader.avatar.startsWith('/')) ? (
+                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white flex items-center justify-center">
+                        <img src={selectedTrader.avatar} alt={selectedTrader.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black text-lg border border-blue-500/20">
+                        {selectedTrader.avatar}
+                      </div>
+                    )
+                  ) : (
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black border border-blue-500/20">
+                      {selectedTrader.name?.[0]?.toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-white">{selectedTrader.name}</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1">
+                      <Users size={10} /> {selectedTrader.followers + (getTraderFollowers(selectedTrader.id)?.length || 0)} Followers
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedTrader(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 text-center">
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-wider mb-1">Win Rate</p>
+                    <p className="text-sm font-black text-green-500">{selectedTrader.winRate}%</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 text-center">
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-wider mb-1">Total Profit</p>
+                    <p className="text-sm font-black text-blue-500 font-mono">{formatCurrency(selectedTrader.totalProfit)}</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 text-center">
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-wider mb-1">Min investment</p>
+                    <p className="text-sm font-black text-slate-900 dark:text-white font-mono">{formatCurrency(selectedTrader.minInvestment)}</p>
+                  </div>
+                </div>
+
+                {/* Strategy details */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trading Methodology</h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed italic bg-slate-50 dark:bg-slate-800/20 p-3 rounded-2xl border border-slate-100 dark:border-slate-850">
+                    {selectedTrader.description || "Consistent high-probability trading setups tailored to volatile macro conditions."}
+                  </p>
+                </div>
+
+                {/* Recent Trading History */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Executed Trades</h4>
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                    {!(traderActivity[selectedTrader.id] || []).length ? (
+                      <p className="text-[10px] text-slate-400 italic py-4 text-center">No trades found for this master trader.</p>
+                    ) : (
+                      (traderActivity[selectedTrader.id] || []).map((act: any) => (
+                        <div key={act.id} className="flex items-center justify-between p-2.5 bg-slate-50/50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800/50">
+                          <div className="flex items-center gap-2.5">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-wider",
+                              act.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+                            )}>
+                              {act.type}
+                            </span>
+                            <div>
+                              <p className="text-[11px] font-bold text-slate-900 dark:text-white">{act.pair}</p>
+                              <p className="text-[7px] text-slate-400 font-bold">{act.time}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] font-black text-green-500">+{formatCurrency(parseFloat(act.profit))}</p>
+                            <span className="text-[7px] text-slate-450 uppercase font-black">WIN</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Footer */}
+              <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center gap-3">
+                {selectedTrader.createdBy === user?.id ? (
+                  <button
+                    onClick={() => {
+                      setSelectedTrader(null);
+                      setTraderToEdit(selectedTrader);
+                      setManageTab('stats');
+                      setIsEditModalOpen(true);
+                    }}
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all text-xs flex items-center justify-center gap-2"
+                  >
+                    <Users size={16} /> Manage Master Profile
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (user?.copyingTraderId === selectedTrader.id) {
+                        stopCopying();
+                        setAlertConfig({
+                          isOpen: true,
+                          title: 'Stopped Copying',
+                          message: `You have successfully unfollowed and stopped copying ${selectedTrader.name}.`,
+                          type: 'info'
+                        });
+                        setSelectedTrader(null);
+                      } else {
+                        setSelectedTrader(null);
+                        handleCopyClick(selectedTrader);
+                      }
+                    }}
+                    className={cn(
+                      "w-full py-3.5 rounded-2xl font-bold transition-all text-xs flex items-center justify-center gap-2 text-white shadow-lg",
+                      user?.copyingTraderId === selectedTrader.id
+                        ? "bg-red-650 hover:bg-red-700 shadow-red-600/10 bg-red-600"
+                        : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/10"
+                    )}
+                  >
+                    {user?.copyingTraderId === selectedTrader.id ? <X size={16} /> : <Lock size={16} />}
+                    {user?.copyingTraderId === selectedTrader.id ? 'Unfollow & Stop Copying' : 'Copy Master Strategy'}
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

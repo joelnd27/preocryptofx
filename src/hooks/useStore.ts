@@ -90,7 +90,7 @@ export function useStore() {
     return initial;
   });
 
-  const [traderActivity] = useState(() => {
+  const [traderActivity, setTraderActivity] = useState<Record<string, any[]>>(() => {
     const activities: Record<string, any[]> = {};
     const pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT'];
     
@@ -657,6 +657,21 @@ export function useStore() {
       }
     }
     
+    // Pre-populate activity for newly created copy trader
+    const pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT'];
+    const fakeActivities = Array.from({ length: 5 }).map((_, i) => ({
+      id: `act-${newTrader.id}-${i}-${Date.now()}`,
+      pair: pairs[Math.floor(Math.random() * pairs.length)],
+      type: Math.random() > 0.5 ? 'BUY' : 'SELL',
+      profit: (Math.random() * 300 + 50).toFixed(2),
+      time: new Date(Date.now() - i * 3600000).toLocaleTimeString(),
+      status: 'WIN'
+    }));
+    setTraderActivity(prev => ({
+      ...prev,
+      [newTrader.id]: fakeActivities
+    }));
+
     setCopyTraders(prev => [newTrader, ...prev]);
     return newTrader;
   };
@@ -1252,6 +1267,15 @@ export function useStore() {
       };
     }));
 
+    if (currentUser.copyingTraderId) {
+      const targetTrader = copyTraders.find(t => t.id === currentUser.copyingTraderId);
+      if (targetTrader) {
+        updateCopyTrader(currentUser.copyingTraderId, {
+          totalProfit: Math.max(0, Number((targetTrader.totalProfit + currentProfit).toFixed(2)))
+        });
+      }
+    }
+
     // Trigger notification for closed trade
     const isWin = currentProfit > 0;
     const event = new CustomEvent('trade-closed', {
@@ -1288,6 +1312,70 @@ export function useStore() {
 
     return () => clearInterval(interval);
   }, [user?.id]); // Only depend on user.id, userRef will handle the rest
+
+  // Simulated copy traders behavior: changing followers, profits & adding trades over time
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCopyTraders(prev => {
+        return prev.map(trader => {
+          // 85% win rate simulation logic
+          const isWin = Math.random() < (trader.winRate / 100);
+          const profitChange = isWin 
+            ? Math.floor(Math.random() * 200 + 50) 
+            : -Math.floor(Math.random() * 100 + 20);
+          
+          const newTotalProfit = Math.max(100, trader.totalProfit + profitChange);
+          
+          // Follower change simulation: -2 to +4
+          const followerChange = Math.floor(Math.random() * 7) - 2; // -2, -1, 0, 1, 2, 3, 4
+          // Make sure followers doesn't drop below 10 for simulated
+          const minFollowers = trader.isSimulated ? 150 : 0;
+          const newFollowers = Math.max(minFollowers, trader.followers + followerChange);
+
+          // If there is any trade activity, add it to traderActivity
+          if (Math.random() < 0.4) {
+            const pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT'];
+            const newTrade = {
+              id: `act-${trader.id}-${Date.now()}`,
+              pair: pairs[Math.floor(Math.random() * pairs.length)],
+              type: Math.random() > 0.5 ? 'BUY' : 'SELL',
+              profit: Math.abs(profitChange).toFixed(2),
+              time: new Date().toLocaleTimeString(),
+              status: profitChange >= 0 ? 'WIN' : 'LOSS'
+            };
+
+            setTraderActivity(activityPrev => {
+              const list = activityPrev[trader.id] || [];
+              const updatedList = [newTrade, ...list].slice(0, 10); // Keep last 10
+              return {
+                ...activityPrev,
+                [trader.id]: updatedList
+              };
+            });
+          }
+
+          // If Supabase is configured and it is a UUID, update it in Supabase
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trader.id);
+          if (isSupabaseConfigured() && isUuid) {
+            supabase.from('copy_traders').update({
+              total_profit: newTotalProfit,
+              followers: newFollowers
+            }).eq('id', trader.id).then(({ error }) => {
+              if (error) console.error('[Store] Error auto-updating copy trader in Supabase:', error.message);
+            });
+          }
+
+          return {
+            ...trader,
+            totalProfit: newTotalProfit,
+            followers: newFollowers
+          };
+        });
+      });
+    }, 12000); // simulation runs every 12 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Marketer Auto-Process for existing pending withdrawals on load
   // (Consolidated into universal auto-process above)
