@@ -78,6 +78,9 @@
 }
 
 @layer base {
+  html {
+    font-size: 107.5%; /* Gentle global scale-up of root font size for enhanced readability */
+  }
   * {
     @apply border-border;
   }
