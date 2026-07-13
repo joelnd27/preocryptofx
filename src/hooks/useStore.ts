@@ -61,21 +61,21 @@ export function useStore() {
 
   const [copyTraders, setCopyTraders] = useState<CopyTrader[]>(() => {
     const initial = [
-      { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 4850, followers: 1240, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
-      { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 4200, followers: 850, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1), password: 'bull456', description: 'Momentum based trend following strategy.' },
-      { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 4950, followers: 2100, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 3), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
-      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 3800, followers: 640, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.5), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
-      { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 4120, followers: 5200, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 4), password: 'binance', description: 'Automated scalping across multiple pairs.' },
-      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 3500, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 5), password: 'moon', description: 'Low risk growth for long term holders.' },
-      { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 4600, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.5), password: 'shark', description: 'High performance trading on the Solana network.' },
-      { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 3850, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2.5), password: 'scalp', description: 'Quick trades with tight stop losses.' },
-      { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 4200, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
-      { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 3400, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.1), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
+      { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 4987.90, followers: 1432, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2.4), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
+      { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 2450.60, followers: 1051, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.8), password: 'bull456', description: 'Momentum based trend following strategy.' },
+      { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 3017.75, followers: 2302, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 4.2), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
+      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 1890.45, followers: 801, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.9), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
+      { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 4120.33, followers: 5353, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 5.1), password: 'binance', description: 'Automated scalping across multiple pairs.' },
+      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 1000.25, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6.5), password: 'moon', description: 'Low risk growth for long term holders.' },
+      { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 4630.12, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.2), password: 'shark', description: 'High performance trading on the Solana network.' },
+      { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 3540.60, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 3.1), password: 'scalp', description: 'Quick trades with tight stop losses.' },
+      { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 4250.00, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 7.8), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
+      { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 2100.55, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.4), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
     ];
 
     const saved = localStorage.getItem('preocrypto_copy_traders');
     try {
-      if (saved) {
+      if (saved && !isSupabaseConfigured()) {
         const parsed = JSON.parse(saved) as CopyTrader[];
         return parsed.map(t => {
           const matched = initial.find(init => init.id === t.id);
@@ -1401,20 +1401,21 @@ export function useStore() {
     const interval = setInterval(() => {
       setCopyTraders(prev => {
         return prev.map(trader => {
-          // Slow growth simulation logic
+          // Unique factors for variety
+          const traderSeed = parseInt(trader.id.replace(/\D/g, '') || '1', 10);
+          const growthFactor = 0.4 + (traderSeed % 8) / 10; 
+          const riskFactor = 0.7 + (traderSeed % 4) / 10;
+
           const isWin = Math.random() < (trader.winRate / 100);
           
-          // Reach $15000 in a month starting from ~$5000. 
-          // 30 days = 216,000 iterations (every 12s).
-          // Need to grow ~$10,000 total.
-          // ~$0.05 per iteration.
           const profitChange = isWin 
-            ? (Math.random() * 0.15 + 0.05) // $0.05 to $0.20
-            : -(Math.random() * 0.10 + 0.02); // -$0.02 to -$0.12
+            ? (Math.random() * 0.12 + 0.04) * growthFactor 
+            : -(Math.random() * 0.08 + 0.02) * riskFactor;
           
-          // Calculate dynamic cap based on time since creation (up to 30 days)
+          // Unique max caps per trader to prevent identical ceilings
           const daysOld = (Date.now() - (trader.createdAt || Date.now())) / (1000 * 60 * 60 * 24);
-          const currentMaxCap = Math.min(15000, 5000 + (Math.max(0, daysOld) * (10000 / 30)));
+          const traderCapOffset = (traderSeed % 15) * 200; 
+          const currentMaxCap = Math.min(15000 + traderCapOffset, 5000 + traderCapOffset + (Math.max(0, daysOld) * (10000 / 30)));
           
           const newTotalProfit = Math.min(currentMaxCap, Math.max(100, trader.totalProfit + profitChange));
           

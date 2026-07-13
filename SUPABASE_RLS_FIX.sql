@@ -1,146 +1,22 @@
--- COMPLETE SUPABASE REPAIR SCRIPT
--- Run this in your Supabase SQL Editor (https://supabase.com/dashboard/project/_/sql)
-
--- 1. CLEANUP (Remove any potentially broken or recursive policies)
+-- 1. CLEANUP (Remove all existing policies to start fresh)
 DO $$ 
 DECLARE 
   r RECORD;
 BEGIN
-  FOR r IN (SELECT policyname, tablename FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('users', 'trades', 'bot_settings', 'transactions', 'payments', 'profiles'))
+  FOR r IN (SELECT policyname, tablename FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('users', 'trades', 'bot_settings', 'transactions', 'payments', 'profiles', 'copy_traders'))
   LOOP
     EXECUTE 'DROP POLICY IF EXISTS ' || quote_ident(r.policyname) || ' ON public.' || quote_ident(r.tablename);
   END LOOP;
 END $$;
 
--- 2. ENSURE TABLES & COLUMNS EXIST
--- This ensures all columns needed by the app are present
-CREATE TABLE IF NOT EXISTS public.users (
-  id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
-  email text,
-  username text,
-  role text DEFAULT 'user',
-  avatar text,
-  verification_status text DEFAULT 'unverified',
-  real_balance numeric DEFAULT 0,
-  demo_balance numeric DEFAULT 10000,
-  active_account text DEFAULT 'DEMO',
-  copying_trader_id text,
-  referral_code text,
-  referred_by text,
-  total_profit_real numeric DEFAULT 0,
-  total_profit_demo numeric DEFAULT 0,
-  daily_profit_real numeric DEFAULT 0,
-  daily_profit_demo numeric DEFAULT 0,
-  daily_trades_real integer DEFAULT 0,
-  daily_trades_demo integer DEFAULT 0,
-  created_at timestamp with time zone DEFAULT now()
-);
-
--- Ensure copying_trader_id and avatar exists on users table
-DO $$ 
-BEGIN 
-  -- Drop the foreign key constraint if it exists to allow type change
-  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE table_name='users' AND constraint_name='users_copying_trader_id_fkey') THEN
-    ALTER TABLE public.users DROP CONSTRAINT users_copying_trader_id_fkey;
-  END IF;
-
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='copying_trader_id') THEN
-    ALTER TABLE public.users ADD COLUMN copying_trader_id text;
-  ELSE
-    ALTER TABLE public.users ALTER COLUMN copying_trader_id TYPE text USING copying_trader_id::text;
-  END IF;
-
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='avatar') THEN
-    ALTER TABLE public.users ADD COLUMN avatar text;
-  END IF;
-END $$;
-
--- Ensure bot_settings exists
-CREATE TABLE IF NOT EXISTS public.bot_settings (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE UNIQUE,
-  scalping_active boolean DEFAULT false,
-  trend_active boolean DEFAULT false,
-  ai_active boolean DEFAULT false,
-  custom_active boolean DEFAULT false,
-  bot_logs jsonb DEFAULT '[]',
-  bot_stats jsonb DEFAULT '{}',
-  updated_at timestamp with time zone DEFAULT now()
-);
-
--- Ensure trades exists
-CREATE TABLE IF NOT EXISTS public.trades (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  coin text,
-  amount numeric,
-  type text,
-  price numeric,
-  status text DEFAULT 'OPEN',
-  profit numeric DEFAULT 0,
-  target_profit numeric DEFAULT 0,
-  account_type text,
-  timestamp timestamp with time zone DEFAULT now(),
-  duration integer,
-  source text DEFAULT 'MANUAL',
-  created_at timestamp with time zone DEFAULT now()
-);
-
--- Ensure transactions exists
-CREATE TABLE IF NOT EXISTS public.transactions (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  type text,
-  amount numeric,
-  status text DEFAULT 'pending',
-  method text,
-  external_id text,
-  account_type text DEFAULT 'REAL',
-  timestamp timestamp with time zone DEFAULT now(),
-  created_at timestamp with time zone DEFAULT now()
-);
-
--- Ensure copy_traders exists
-CREATE TABLE IF NOT EXISTS public.copy_traders (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  name text NOT NULL,
-  avatar text,
-  win_rate numeric DEFAULT 0,
-  total_profit numeric DEFAULT 0,
-  followers integer DEFAULT 0,
-  password text,
-  min_investment numeric DEFAULT 100,
-  description text,
-  status text DEFAULT 'active',
-  is_simulated boolean DEFAULT true,
-  created_by uuid REFERENCES auth.users ON DELETE SET NULL,
-  created_at timestamp with time zone DEFAULT now()
-);
-
--- Ensure avatar column exists on copy_traders
-DO $$ 
-BEGIN 
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='copy_traders' AND column_name='avatar') THEN
-    ALTER TABLE public.copy_traders ADD COLUMN avatar text;
-  END IF;
-END $$;
-
--- 3. ENABLE RLS
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.bot_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.copy_traders ENABLE ROW LEVEL SECURITY;
-
--- 4. NON-RECURSIVE SECURITY HELPERS
+-- 2. SECURITY HELPERS
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean AS $$
 BEGIN
-  -- We check the raw JWT or the users table without recursion
-  -- SECURITY DEFINER makes this run as the owner (admin)
   RETURN (
-    auth.jwt() ->> 'email' IN ('wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com') OR
-    EXISTS (SELECT 1 FROM public.users WHERE id::text = auth.uid()::text AND role = 'admin')
+    coalesce(auth.jwt() ->> 'email', '') IN ('wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com') 
+    OR 
+    EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -148,81 +24,55 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.is_marketer()
 RETURNS boolean AS $$
 BEGIN
-  RETURN EXISTS (SELECT 1 FROM public.users WHERE id::text = auth.uid()::text AND role = 'marketer');
+  RETURN EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'marketer');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. RE-CREATE POLICIES (Simple & Strong)
+-- 3. POLICIES
 
 -- USERS
-CREATE POLICY "user_self_access" ON public.users FOR ALL TO authenticated USING (auth.uid()::text = id::text);
-CREATE POLICY "admin_all_users" ON public.users FOR ALL TO authenticated USING (public.is_admin());
-
--- BOT SETTINGS
-CREATE POLICY "user_bot_access" ON public.bot_settings FOR ALL TO authenticated USING (auth.uid()::text = user_id::text);
-CREATE POLICY "admin_all_bot" ON public.bot_settings FOR ALL TO authenticated USING (public.is_admin());
-
--- TRADES
-CREATE POLICY "user_trades_access" ON public.trades FOR ALL TO authenticated USING (auth.uid()::text = user_id::text);
-CREATE POLICY "admin_all_trades" ON public.trades FOR ALL TO authenticated USING (public.is_admin());
+CREATE POLICY "users_read_all_admin" ON public.users FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY "users_read_self" ON public.users FOR SELECT TO authenticated USING (auth.uid() = id);
+CREATE POLICY "users_update_self" ON public.users FOR UPDATE TO authenticated USING (auth.uid() = id);
+CREATE POLICY "users_admin_all" ON public.users FOR ALL TO authenticated USING (public.is_admin());
 
 -- TRANSACTIONS
-CREATE POLICY "user_trans_access" ON public.transactions FOR ALL TO authenticated USING (auth.uid()::text = user_id::text);
-CREATE POLICY "admin_all_trans" ON public.transactions FOR ALL TO authenticated USING (public.is_admin());
+CREATE POLICY "trans_read_all_admin" ON public.transactions FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY "trans_read_self" ON public.transactions FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "trans_insert_self" ON public.transactions FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "trans_admin_all" ON public.transactions FOR ALL TO authenticated USING (public.is_admin());
 
 -- COPY TRADERS
-DROP POLICY IF EXISTS "public_read_traders" ON public.copy_traders;
-DROP POLICY IF EXISTS "admin_all_traders" ON public.copy_traders;
-DROP POLICY IF EXISTS "marketer_all_traders" ON public.copy_traders;
+CREATE POLICY "traders_read_anyone" ON public.copy_traders FOR SELECT USING (true);
+CREATE POLICY "traders_admin_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
+CREATE POLICY "traders_marketer_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_marketer());
 
--- Everyone (auth and anon) can see active copy traders
-CREATE POLICY "public_read_traders" ON public.copy_traders FOR SELECT USING (true);
+-- TRADES
+CREATE POLICY "trades_read_all_admin" ON public.trades FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY "trades_all_self" ON public.trades FOR ALL TO authenticated USING (auth.uid() = user_id);
 
--- Admins have full control
-CREATE POLICY "admin_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
+-- 4. APPLY UNIQUE PROFITS (The requested fix)
+-- This resets every trader to a unique, distinct profit value
+UPDATE public.copy_traders SET total_profit = 1000.25 WHERE name ILIKE '%Moon Walker%';
+UPDATE public.copy_traders SET total_profit = 4987.90 WHERE name ILIKE '%Alpha Whale%';
+UPDATE public.copy_traders SET total_profit = 3017.75 WHERE name ILIKE '%Crypto Sensei%';
+UPDATE public.copy_traders SET total_profit = 2450.60 WHERE name ILIKE '%Bull Run Pro%';
+UPDATE public.copy_traders SET total_profit = 4120.33 WHERE name ILIKE '%Binance Bot%';
+UPDATE public.copy_traders SET total_profit = 1890.45 WHERE name ILIKE '%Ether Knight%';
+UPDATE public.copy_traders SET total_profit = 4630.12 WHERE name ILIKE '%Solana Shark%';
+UPDATE public.copy_traders SET total_profit = 3200.88 WHERE name ILIKE '%Scalp Master%';
+UPDATE public.copy_traders SET total_profit = 4250.00 WHERE name ILIKE '%DeFi Degen%';
+UPDATE public.copy_traders SET total_profit = 2100.55 WHERE name ILIKE '%Stable Earner%';
 
--- Marketers have full control over traders (create profiles, edit them)
-CREATE POLICY "marketer_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (public.is_marketer());
-
--- OPTIONAL: Reset high profits for simulated traders to be within the new range ($4000-$5000)
--- This enforces the "max $5000 for now" rule on existing data.
+-- For any others not matched above, give them random varied profits between 1000 and 5000
 UPDATE public.copy_traders 
-SET total_profit = floor(4000 + random() * 1000) 
-WHERE is_simulated = true AND total_profit > 5000;
+SET total_profit = 1000 + (random() * 4000)
+WHERE total_profit > 5500 OR total_profit < 100;
 
--- 6. RPCs FOR ATOMIC UPDATES
-CREATE OR REPLACE FUNCTION public.increment_balance(user_id uuid, amount numeric)
-RETURNS void AS $$
-BEGIN
-  UPDATE public.users
-  SET real_balance = real_balance + amount
-  WHERE id::text = user_id::text;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- 5. ENABLE RLS
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.copy_traders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bot_settings ENABLE ROW LEVEL SECURITY;
 
--- 7. AUTH TRIGGER (Fixes User Creation)
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.users (id, email, username, referral_code)
-  VALUES (
-    new.id, 
-    new.email, 
-    split_part(new.email, '@', 1),
-    'MKT-' || upper(substring(replace(gen_random_uuid()::text, '-', ''), 1, 6))
-  );
-  
-  -- Create default bot settings too
-  INSERT INTO public.bot_settings (user_id) VALUES (new.id) ON CONFLICT DO NOTHING;
-  
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- FINAL STEP: Reset any broken sequences or constraints if needed (optional)
--- This script covers the core fixes for trading and admin access.
