@@ -23,6 +23,19 @@ import { getMarketerDeposit } from '../lib/utils.ts';
 const ADMIN_EMAILS = ['wren20688@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
+const DEFAULT_TRADERS: CopyTrader[] = [
+  { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 4987.90, followers: 1432, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2.4), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
+  { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 2450.60, followers: 1051, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.8), password: 'bull456', description: 'Momentum based trend following strategy.' },
+  { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 3017.75, followers: 2302, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 4.2), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
+  { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 1000.20, followers: 801, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.9), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
+  { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 4120.33, followers: 5353, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 5.1), password: 'binance', description: 'Automated scalping across multiple pairs.' },
+  { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 3017.70, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6.5), password: 'moon', description: 'Low risk growth for long term holders.' },
+  { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 4630.12, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.2), password: 'shark', description: 'High performance trading on the Solana network.' },
+  { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 3540.60, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 3.1), password: 'scalp', description: 'Quick trades with tight stop losses.' },
+  { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 4250.00, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 7.8), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
+  { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 2100.55, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.4), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
+];
+
 export function useStore() {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('preocrypto_user');
@@ -60,25 +73,12 @@ export function useStore() {
   });
 
   const [copyTraders, setCopyTraders] = useState<CopyTrader[]>(() => {
-    const initial = [
-      { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 4987.90, followers: 1432, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2.4), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
-      { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 2450.60, followers: 1051, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.8), password: 'bull456', description: 'Momentum based trend following strategy.' },
-      { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 3017.75, followers: 2302, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 4.2), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
-      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 1000.20, followers: 801, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.9), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
-      { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 4120.33, followers: 5353, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 5.1), password: 'binance', description: 'Automated scalping across multiple pairs.' },
-      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 3017.70, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6.5), password: 'moon', description: 'Low risk growth for long term holders.' },
-      { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 4630.12, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.2), password: 'shark', description: 'High performance trading on the Solana network.' },
-      { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 3540.60, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 3.1), password: 'scalp', description: 'Quick trades with tight stop losses.' },
-      { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 4250.00, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 7.8), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
-      { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 2100.55, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.4), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
-    ];
-
     const saved = localStorage.getItem('preocrypto_copy_traders');
     try {
       if (saved && !isSupabaseConfigured()) {
         const parsed = JSON.parse(saved) as CopyTrader[];
         return parsed.map(t => {
-          const matched = initial.find(init => init.id === t.id);
+          const matched = DEFAULT_TRADERS.find(init => init.id === t.id);
           if (matched && !t.avatar) {
             return { ...t, avatar: matched.avatar };
           }
@@ -87,7 +87,7 @@ export function useStore() {
       }
     } catch {}
     
-    return initial;
+    return DEFAULT_TRADERS;
   });
 
   const [traderActivity, setTraderActivity] = useState<Record<string, any[]>>(() => {
@@ -465,7 +465,7 @@ export function useStore() {
               }
             }
 
-            setCopyTraders(tradersData.map(t => ({
+            const dbTraders = tradersData.map(t => ({
               id: t.id,
               name: t.name,
               avatar: t.avatar,
@@ -480,8 +480,14 @@ export function useStore() {
               createdBy: t.created_by,
               createdAt: new Date(t.created_at).getTime(),
               creatorRole: creatorRolesMap[t.created_by] || 'user'
-            })));
-            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase with creator roles resolved`);
+            }));
+
+            // Merge with default traders, prioritizing DB versions if IDs match (unlikely for default IDs)
+            setCopyTraders([
+              ...dbTraders,
+              ...DEFAULT_TRADERS.filter(def => !dbTraders.some(db => db.id === def.id))
+            ]);
+            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase. Total traders: ${dbTraders.length + DEFAULT_TRADERS.length}`);
           }
         } catch (fetchErr: any) {
           console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);

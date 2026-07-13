@@ -66,6 +66,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- GRANT EXECUTE permissions so authenticated users can call these functions in RLS
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_marketer() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon;
+GRANT EXECUTE ON FUNCTION public.is_marketer() TO anon;
+
+CREATE OR REPLACE FUNCTION public.is_support()
+RETURNS boolean AS $$
+BEGIN
+  RETURN false;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.is_support() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_support() TO anon;
+
 -- 3. POLICIES
 
 -- USERS
