@@ -64,9 +64,9 @@ export function useStore() {
       { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 4987.90, followers: 1432, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2.4), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
       { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 2450.60, followers: 1051, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.8), password: 'bull456', description: 'Momentum based trend following strategy.' },
       { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 3017.75, followers: 2302, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 4.2), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
-      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 1890.45, followers: 801, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.9), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
+      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 1000.20, followers: 801, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.9), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
       { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 4120.33, followers: 5353, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 5.1), password: 'binance', description: 'Automated scalping across multiple pairs.' },
-      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 1000.25, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6.5), password: 'moon', description: 'Low risk growth for long term holders.' },
+      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 3017.70, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6.5), password: 'moon', description: 'Low risk growth for long term holders.' },
       { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 4630.12, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.2), password: 'shark', description: 'High performance trading on the Solana network.' },
       { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 3540.60, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 3.1), password: 'scalp', description: 'Quick trades with tight stop losses.' },
       { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 4250.00, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 7.8), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
@@ -263,13 +263,9 @@ export function useStore() {
   const getSafeSession = useCallback(async () => {
     if (!isSupabaseConfigured()) return null;
     try {
-      // Add a race to prevent infinite hanging if network is unstable
-      const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Supabase session timeout')), 30000)
-      );
-
-      const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+      // Use getSession() but with extra care
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
       if (error) {
         const msg = (error.message || '').toLowerCase();
         const isUnrecoverable = 
@@ -285,62 +281,30 @@ export function useStore() {
         if (isUnrecoverable) {
           console.error('[Auth] Unrecoverable session error:', error.message);
           
-          // Clear app state
-          if (userRef.current) {
-            console.log('[Auth] Ending user session due to unrecoverable auth error.');
-            setUser(null);
-          }
-          
-          localStorage.removeItem('preocrypto_user');
-          
-          // Force clear all supabase related tokens from localStorage
-          try {
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key && (key.startsWith('sb-') || key.includes('supabase.auth.token'))) {
+          // Clear only if we are absolutely sure the session is gone
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (!retrySession) {
+            if (userRef.current) setUser(null);
+            localStorage.removeItem('preocrypto_user');
+            
+            // Clean auth storage
+            Object.keys(localStorage).forEach(key => {
+              if (key.startsWith('sb-') || key.includes('supabase.auth.token')) {
                 localStorage.removeItem(key);
-                i--; // Adjust index after removal
               }
-            }
-          } catch (e) {}
-          
-          // Attempt a formal sign out to notify Supabase and clear its internal state
-          await supabase.auth.signOut().catch(() => {});
+            });
+            
+            await supabase.auth.signOut().catch(() => {});
+          }
           return null;
         }
         
-        console.warn('[Auth] Session status check:', error.message);
+        console.warn('[Auth] Session check warning:', error.message);
         return null;
       }
       return session;
     } catch (e: any) {
-      const msg = (e.message || '').toLowerCase();
-      if (msg === 'supabase session timeout') {
-        console.warn('[Auth] Session check timed out. Network might be unstable.');
-        return null;
-      }
-
-      const isUnrecoverable = 
-        msg.includes('refresh token not found') || 
-        msg.includes('invalid refresh token') || 
-        msg.includes('invalid_grant') ||
-        msg.includes('refresh token is invalid');
-
-      if (isUnrecoverable) {
-         console.error('[Auth] Unrecoverable error in getSafeSession catch:', msg);
-         if (userRef.current) setUser(null);
-         localStorage.removeItem('preocrypto_user');
-         try {
-           Object.keys(localStorage).forEach(key => {
-             if (key.startsWith('sb-') || key.includes('supabase.auth.token')) {
-               localStorage.removeItem(key);
-             }
-           });
-         } catch (err) {}
-         await supabase.auth.signOut().catch(() => {});
-      } else {
-         console.error('[Auth] Unexpected error getting session:', e);
-      }
+      console.error('[Auth] Session exception:', e.message);
       return null;
     }
   }, []);
@@ -1409,13 +1373,13 @@ export function useStore() {
           const isWin = Math.random() < (trader.winRate / 100);
           
           const profitChange = isWin 
-            ? (Math.random() * 0.12 + 0.04) * growthFactor 
-            : -(Math.random() * 0.08 + 0.02) * riskFactor;
+            ? (Math.random() * 0.15 + 0.05) * growthFactor 
+            : -(Math.random() * 0.10 + 0.02) * riskFactor;
           
           // Unique max caps per trader to prevent identical ceilings
           const daysOld = (Date.now() - (trader.createdAt || Date.now())) / (1000 * 60 * 60 * 24);
-          const traderCapOffset = (traderSeed % 15) * 200; 
-          const currentMaxCap = Math.min(15000 + traderCapOffset, 5000 + traderCapOffset + (Math.max(0, daysOld) * (10000 / 30)));
+          const traderCapOffset = (traderSeed % 30) * 150; // More variety in offsets
+          const currentMaxCap = Math.min(15000 + traderCapOffset, 1000 + traderCapOffset + (Math.max(0, daysOld) * (14000 / 30)));
           
           const newTotalProfit = Math.min(currentMaxCap, Math.max(100, trader.totalProfit + profitChange));
           
@@ -2132,8 +2096,24 @@ export function useStore() {
       
       let finalMsg = details ? (typeof details === 'object' ? JSON.stringify(details) : details) : message;
       
-      if (finalMsg && finalMsg.includes('Too many unsuccessful requests')) {
-        finalMsg = 'Too many unsuccessful requests try after 24hrs';
+      // Try to parse JSON if it's a string that looks like JSON
+      if (typeof finalMsg === 'string' && (finalMsg.startsWith('{') || finalMsg.startsWith('['))) {
+        try {
+          const parsed = JSON.parse(finalMsg);
+          finalMsg = parsed.error_message || parsed.message || parsed.error || finalMsg;
+        } catch (e) {
+          // Not valid JSON, keep as is
+        }
+      }
+      
+      if (finalMsg && typeof finalMsg === 'string') {
+        if (finalMsg.includes('Too many unsuccessful requests')) {
+          finalMsg = 'Too many unsuccessful requests try after 24hrs';
+        } else if (finalMsg.toLowerCase().includes('not valid kenyan number')) {
+          finalMsg = 'The number is not a valid Kenyan number';
+        } else if (finalMsg.toLowerCase().includes('insufficient funds')) {
+          finalMsg = 'Merchant has insufficient funds';
+        }
       }
       
       throw new Error(finalMsg);

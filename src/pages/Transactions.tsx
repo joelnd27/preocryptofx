@@ -213,8 +213,24 @@ export default function Transactions() {
         const details = error.response?.data?.details;
         let msg = typeof details === 'object' ? JSON.stringify(details) : details;
         
-        if (msg && msg.includes('Too many unsuccessful requests')) {
-          msg = 'Too many unsuccessful requests try after 24hrs';
+        // Try to parse JSON if it's a string that looks like JSON
+        if (typeof msg === 'string' && (msg.startsWith('{') || msg.startsWith('['))) {
+          try {
+            const parsed = JSON.parse(msg);
+            msg = parsed.error_message || parsed.message || parsed.error || msg;
+          } catch (e) {
+            // Not valid JSON, keep as is
+          }
+        }
+        
+        if (msg && typeof msg === 'string') {
+          if (msg.includes('Too many unsuccessful requests')) {
+            msg = 'Too many unsuccessful requests try after 24hrs';
+          } else if (msg.toLowerCase().includes('not valid kenyan number')) {
+            msg = 'The number is not a valid Kenyan number';
+          } else if (msg.toLowerCase().includes('insufficient funds')) {
+            msg = 'Merchant has insufficient funds';
+          }
         }
         
         setErrorMessage(msg || error.message || 'An unexpected error occurred.');

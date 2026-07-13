@@ -1,4 +1,42 @@
--- 1. CLEANUP (Remove all existing policies to start fresh)
+-- 1. SCHEMA REPAIR (Ensures the table has all required columns)
+-- This fixes the "Could not find column" errors and ensures data consistency
+DO $$ 
+BEGIN
+    -- Ensure copy_traders table exists with correct types
+    CREATE TABLE IF NOT EXISTS public.copy_traders (
+        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+        name text NOT NULL,
+        win_rate float8 DEFAULT 0,
+        total_profit float8 DEFAULT 0,
+        followers integer DEFAULT 0,
+        min_investment float8 DEFAULT 0,
+        description text,
+        status text DEFAULT 'active',
+        is_simulated boolean DEFAULT false,
+        created_by text, -- Changed to text to support 'admin' string
+        created_at timestamptz DEFAULT now()
+    );
+
+    -- Ensure created_by is text (if table existed with uuid before)
+    ALTER TABLE public.copy_traders ALTER COLUMN created_by TYPE text USING created_by::text;
+
+    -- Add missing columns individually if they don't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='copy_traders' AND column_name='avatar') THEN
+        ALTER TABLE public.copy_traders ADD COLUMN avatar text;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='copy_traders' AND column_name='password') THEN
+        ALTER TABLE public.copy_traders ADD COLUMN password text;
+    END IF;
+
+    -- Ensure correct types for numeric columns
+    ALTER TABLE public.copy_traders ALTER COLUMN total_profit TYPE float8 USING total_profit::float8;
+    ALTER TABLE public.copy_traders ALTER COLUMN win_rate TYPE float8 USING win_rate::float8;
+    ALTER TABLE public.copy_traders ALTER COLUMN min_investment TYPE float8 USING min_investment::float8;
+
+END $$;
+
+-- 2. CLEANUP (Remove all existing policies to start fresh)
 DO $$ 
 DECLARE 
   r RECORD;
@@ -43,9 +81,13 @@ CREATE POLICY "trans_insert_self" ON public.transactions FOR INSERT TO authentic
 CREATE POLICY "trans_admin_all" ON public.transactions FOR ALL TO authenticated USING (public.is_admin());
 
 -- COPY TRADERS
+DROP POLICY IF EXISTS "traders_read_anyone" ON public.copy_traders;
+DROP POLICY IF EXISTS "traders_admin_all" ON public.copy_traders;
+DROP POLICY IF EXISTS "traders_marketer_all" ON public.copy_traders;
+
 CREATE POLICY "traders_read_anyone" ON public.copy_traders FOR SELECT USING (true);
-CREATE POLICY "traders_admin_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
-CREATE POLICY "traders_marketer_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_marketer());
+CREATE POLICY "traders_admin_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "traders_marketer_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_marketer()) WITH CHECK (public.is_marketer());
 
 -- TRADES
 CREATE POLICY "trades_read_all_admin" ON public.trades FOR SELECT TO authenticated USING (public.is_admin());
