@@ -75,7 +75,7 @@ export function useStore() {
   const [copyTraders, setCopyTraders] = useState<CopyTrader[]>(() => {
     const saved = localStorage.getItem('preocrypto_copy_traders');
     try {
-      if (saved && !isSupabaseConfigured()) {
+      if (saved) {
         const parsed = JSON.parse(saved) as CopyTrader[];
         return parsed.map(t => {
           const matched = DEFAULT_TRADERS.find(init => init.id === t.id);
@@ -482,12 +482,28 @@ export function useStore() {
               creatorRole: creatorRolesMap[t.created_by] || 'user'
             }));
 
-            // Merge with default traders, prioritizing DB versions if IDs match (unlikely for default IDs)
-            setCopyTraders([
-              ...dbTraders,
-              ...DEFAULT_TRADERS.filter(def => !dbTraders.some(db => db.id === def.id))
-            ]);
-            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase. Total traders: ${dbTraders.length + DEFAULT_TRADERS.length}`);
+            // Merge logic: DB traders take priority, then defaults, then current state (to preserve un-synced locals)
+            setCopyTraders(prev => {
+              const merged: CopyTrader[] = [...dbTraders];
+              
+              // Add default traders not in DB
+              DEFAULT_TRADERS.forEach(def => {
+                if (!merged.some(m => m.id === def.id)) {
+                  merged.push(def);
+                }
+              });
+              
+              // Add existing state traders not in DB and not default
+              // This preserves locally added traders that haven't been fetched from DB yet
+              prev.forEach(p => {
+                if (!merged.some(m => m.id === p.id)) {
+                  merged.push(p);
+                }
+              });
+              
+              return merged;
+            });
+            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase. Merged with defaults and local state.`);
           }
         } catch (fetchErr: any) {
           console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);
