@@ -61,16 +61,16 @@ export function useStore() {
 
   const [copyTraders, setCopyTraders] = useState<CopyTrader[]>(() => {
     const initial = [
-      { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 125430, followers: 1240, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
-      { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 84200, followers: 850, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'bull456', description: 'Momentum based trend following strategy.' },
-      { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 210500, followers: 2100, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
-      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 65800, followers: 640, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
-      { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 432000, followers: 5200, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'binance', description: 'Automated scalping across multiple pairs.' },
-      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 45000, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'moon', description: 'Low risk growth for long term holders.' },
-      { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 189000, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'shark', description: 'High performance trading on the Solana network.' },
-      { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 78500, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'scalp', description: 'Quick trades with tight stop losses.' },
-      { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 320000, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
-      { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 54000, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now(), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
+      { id: 't1', name: 'Alpha Whale', avatar: '🐳', winRate: 94.2, totalProfit: 4850, followers: 1240, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2), password: 'copy123', description: 'Institutional grade high-frequency trading.' },
+      { id: 't2', name: 'Bull Run Pro', avatar: '🐂', winRate: 88.7, totalProfit: 4200, followers: 850, minInvestment: 25, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1), password: 'bull456', description: 'Momentum based trend following strategy.' },
+      { id: 't3', name: 'Crypto Sensei', avatar: '🥷', winRate: 91.5, totalProfit: 4950, followers: 2100, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 3), password: 'sensei', description: 'Advanced technical analysis and sentiment tracking.' },
+      { id: 't4', name: 'Ether Knight', avatar: '⚔️', winRate: 86.4, totalProfit: 3800, followers: 640, minInvestment: 10, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.5), password: 'knight', description: 'Specialized in Ethereum ecosystem and DeFi.' },
+      { id: 't5', name: 'Binance Bot', avatar: '🤖', winRate: 95.8, totalProfit: 4120, followers: 5200, minInvestment: 200, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 4), password: 'binance', description: 'Automated scalping across multiple pairs.' },
+      { id: 't6', name: 'Moon Walker', avatar: '🧑‍🚀', winRate: 82.1, totalProfit: 3500, followers: 410, minInvestment: 5, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 5), password: 'moon', description: 'Low risk growth for long term holders.' },
+      { id: 't7', name: 'Solana Shark', avatar: '🦈', winRate: 93.4, totalProfit: 4600, followers: 1800, minInvestment: 50, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 1.5), password: 'shark', description: 'High performance trading on the Solana network.' },
+      { id: 't8', name: 'Scalp Master', avatar: '✂️', winRate: 89.9, totalProfit: 3850, followers: 920, minInvestment: 15, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 2.5), password: 'scalp', description: 'Quick trades with tight stop losses.' },
+      { id: 't9', name: 'DeFi Degen', avatar: '🦁', winRate: 78.5, totalProfit: 4200, followers: 3500, minInvestment: 500, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 6), password: 'degen', description: 'High risk, high reward yield farming and trading.' },
+      { id: 't10', name: 'Stable Earner', avatar: '📈', winRate: 97.2, totalProfit: 3400, followers: 750, minInvestment: 100, status: 'active', isSimulated: true, createdBy: 'admin', createdAt: Date.now() - (86400000 * 0.1), password: 'stable', description: 'Consistent returns using market neutral strategies.' },
     ];
 
     const saved = localStorage.getItem('preocrypto_copy_traders');
@@ -275,29 +275,36 @@ export function useStore() {
         const isUnrecoverable = 
           msg.includes('refresh token not found') || 
           msg.includes('invalid refresh token') || 
-          msg.includes('expired') ||
           msg.includes('refresh_token_not_found') ||
           msg.includes('invalid_refresh_token') ||
           msg.includes('session_not_found') ||
-          msg.includes('not found');
+          msg.includes('invalid_grant') ||
+          msg.includes('refresh token is invalid') ||
+          msg.includes('expired') && (msg.includes('refresh') || msg.includes('token'));
 
         if (isUnrecoverable) {
-          // If we had a user, log clearly that we're ending the session
+          console.error('[Auth] Unrecoverable session error:', error.message);
+          
+          // Clear app state
           if (userRef.current) {
-            console.log('[Auth] Session expired or invalid. Logging out.');
+            console.log('[Auth] Ending user session due to unrecoverable auth error.');
             setUser(null);
           }
           
-          // Clear app state and Supabase tokens
           localStorage.removeItem('preocrypto_user');
+          
+          // Force clear all supabase related tokens from localStorage
           try {
-            Object.keys(localStorage).forEach(key => {
-              if (key.startsWith('sb-') || key.includes('supabase.auth.token')) {
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && (key.startsWith('sb-') || key.includes('supabase.auth.token'))) {
                 localStorage.removeItem(key);
+                i--; // Adjust index after removal
               }
-            });
+            }
           } catch (e) {}
           
+          // Attempt a formal sign out to notify Supabase and clear its internal state
           await supabase.auth.signOut().catch(() => {});
           return null;
         }
@@ -313,9 +320,24 @@ export function useStore() {
         return null;
       }
 
-      if (msg.includes('refresh token not found') || msg.includes('invalid refresh token')) {
+      const isUnrecoverable = 
+        msg.includes('refresh token not found') || 
+        msg.includes('invalid refresh token') || 
+        msg.includes('invalid_grant') ||
+        msg.includes('refresh token is invalid');
+
+      if (isUnrecoverable) {
+         console.error('[Auth] Unrecoverable error in getSafeSession catch:', msg);
          if (userRef.current) setUser(null);
          localStorage.removeItem('preocrypto_user');
+         try {
+           Object.keys(localStorage).forEach(key => {
+             if (key.startsWith('sb-') || key.includes('supabase.auth.token')) {
+               localStorage.removeItem(key);
+             }
+           });
+         } catch (err) {}
+         await supabase.auth.signOut().catch(() => {});
       } else {
          console.error('[Auth] Unexpected error getting session:', e);
       }
@@ -342,6 +364,23 @@ export function useStore() {
         .maybeSingle();
 
       if (error) {
+        const msg = (error.message || '').toLowerCase();
+        const isAuthError = 
+          msg.includes('refresh token not found') || 
+          msg.includes('invalid refresh token') || 
+          msg.includes('invalid_grant') ||
+          msg.includes('refresh token is invalid') ||
+          msg.includes('session_not_found') ||
+          msg.includes('invalid_refresh_token');
+
+        if (isAuthError) {
+          console.error('[Sync] Unrecoverable auth error during DB sync:', error.message);
+          if (userRef.current) setUser(null);
+          localStorage.removeItem('preocrypto_user');
+          await supabase.auth.signOut().catch(() => {});
+          return;
+        }
+
         if (error.message === 'Failed to fetch') {
           console.warn('[Sync] Supabase connection unavailable. Working offline with local state.');
         } else {
@@ -616,6 +655,19 @@ export function useStore() {
       }
     });
 
+    // Global handler for the specific "Refresh Token Not Found" error that can happen in the background
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const msg = String(event.reason?.message || event.reason || '').toLowerCase();
+      if (msg.includes('refresh token not found') || msg.includes('invalid refresh token')) {
+        console.error('[Auth] Global catch: Unrecoverable refresh token error detected.');
+        setUser(null);
+        localStorage.removeItem('preocrypto_user');
+        supabase.auth.signOut().catch(() => {});
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
     // Periodically check session health to catch refresh token issues early
     const healthCheck = setInterval(async () => {
       if (isSupabaseConfigured() && userRef.current) {
@@ -627,6 +679,7 @@ export function useStore() {
       subscription.unsubscribe();
       clearInterval(healthCheck);
       supabase.removeAllChannels();
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     };
   }, [syncWithSupabase, user?.id, user?.referralCode]);
 
@@ -1348,13 +1401,22 @@ export function useStore() {
     const interval = setInterval(() => {
       setCopyTraders(prev => {
         return prev.map(trader => {
-          // 85% win rate simulation logic
+          // Slow growth simulation logic
           const isWin = Math.random() < (trader.winRate / 100);
-          const profitChange = isWin 
-            ? Math.floor(Math.random() * 200 + 50) 
-            : -Math.floor(Math.random() * 100 + 20);
           
-          const newTotalProfit = Math.max(100, trader.totalProfit + profitChange);
+          // Reach $15000 in a month starting from ~$5000. 
+          // 30 days = 216,000 iterations (every 12s).
+          // Need to grow ~$10,000 total.
+          // ~$0.05 per iteration.
+          const profitChange = isWin 
+            ? (Math.random() * 0.15 + 0.05) // $0.05 to $0.20
+            : -(Math.random() * 0.10 + 0.02); // -$0.02 to -$0.12
+          
+          // Calculate dynamic cap based on time since creation (up to 30 days)
+          const daysOld = (Date.now() - (trader.createdAt || Date.now())) / (1000 * 60 * 60 * 24);
+          const currentMaxCap = Math.min(15000, 5000 + (Math.max(0, daysOld) * (10000 / 30)));
+          
+          const newTotalProfit = Math.min(currentMaxCap, Math.max(100, trader.totalProfit + profitChange));
           
           // Follower change simulation: -2 to +4
           const followerChange = Math.floor(Math.random() * 7) - 2; // -2, -1, 0, 1, 2, 3, 4

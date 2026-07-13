@@ -78,15 +78,9 @@ export default function CopyTrading() {
     const matchesSearch = t.name.toLowerCase().includes(search.toLowerCase()) && t.status === 'active';
     if (!matchesSearch) return false;
 
-    // Simulated, preloaded, and admin-system profiles are always visible to everyone
-    if (t.isSimulated || t.createdBy === 'admin' || t.createdBy === 'system') return true;
-
-    // If the profile was created by the logged-in user themselves, it is visible to them
-    if (user && t.createdBy === user.id) return true;
-
-    // Otherwise, it's only visible to others if the creator's role is 'marketer' or 'admin'
-    const isCreatorMarketerOrAdmin = t.creatorRole === 'marketer' || t.creatorRole === 'admin';
-    return isCreatorMarketerOrAdmin;
+    // Show all active traders to all users, regardless of who created them or their role
+    // This ensures visibility 'without fail' as requested
+    return true;
   });
 
   const handleCopyClick = (trader: any) => {

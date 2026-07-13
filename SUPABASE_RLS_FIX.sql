@@ -140,35 +140,55 @@ BEGIN
   -- SECURITY DEFINER makes this run as the owner (admin)
   RETURN (
     auth.jwt() ->> 'email' IN ('wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com') OR
-    EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM public.users WHERE id::text = auth.uid()::text AND role = 'admin')
   );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_marketer()
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM public.users WHERE id::text = auth.uid()::text AND role = 'marketer');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 5. RE-CREATE POLICIES (Simple & Strong)
 
 -- USERS
-CREATE POLICY "user_self_access" ON public.users FOR ALL TO authenticated USING (auth.uid() = id);
+CREATE POLICY "user_self_access" ON public.users FOR ALL TO authenticated USING (auth.uid()::text = id::text);
 CREATE POLICY "admin_all_users" ON public.users FOR ALL TO authenticated USING (public.is_admin());
 
 -- BOT SETTINGS
-CREATE POLICY "user_bot_access" ON public.bot_settings FOR ALL TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "user_bot_access" ON public.bot_settings FOR ALL TO authenticated USING (auth.uid()::text = user_id::text);
 CREATE POLICY "admin_all_bot" ON public.bot_settings FOR ALL TO authenticated USING (public.is_admin());
 
 -- TRADES
-CREATE POLICY "user_trades_access" ON public.trades FOR ALL TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "user_trades_access" ON public.trades FOR ALL TO authenticated USING (auth.uid()::text = user_id::text);
 CREATE POLICY "admin_all_trades" ON public.trades FOR ALL TO authenticated USING (public.is_admin());
 
 -- TRANSACTIONS
-CREATE POLICY "user_trans_access" ON public.transactions FOR ALL TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "user_trans_access" ON public.transactions FOR ALL TO authenticated USING (auth.uid()::text = user_id::text);
 CREATE POLICY "admin_all_trans" ON public.transactions FOR ALL TO authenticated USING (public.is_admin());
 
 -- COPY TRADERS
-CREATE POLICY "public_read_traders" ON public.copy_traders FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "public_read_traders" ON public.copy_traders;
+DROP POLICY IF EXISTS "admin_all_traders" ON public.copy_traders;
+DROP POLICY IF EXISTS "marketer_all_traders" ON public.copy_traders;
+
+-- Everyone (auth and anon) can see active copy traders
+CREATE POLICY "public_read_traders" ON public.copy_traders FOR SELECT USING (true);
+
+-- Admins have full control
 CREATE POLICY "admin_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
-CREATE POLICY "marketer_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (
-  EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'marketer')
-);
+
+-- Marketers have full control over traders (create profiles, edit them)
+CREATE POLICY "marketer_all_traders" ON public.copy_traders FOR ALL TO authenticated USING (public.is_marketer());
+
+-- OPTIONAL: Reset high profits for simulated traders to be within the new range ($4000-$5000)
+-- This enforces the "max $5000 for now" rule on existing data.
+UPDATE public.copy_traders 
+SET total_profit = floor(4000 + random() * 1000) 
+WHERE is_simulated = true AND total_profit > 5000;
 
 -- 6. RPCs FOR ATOMIC UPDATES
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id uuid, amount numeric)
@@ -176,7 +196,7 @@ RETURNS void AS $$
 BEGIN
   UPDATE public.users
   SET real_balance = real_balance + amount
-  WHERE id = user_id;
+  WHERE id::text = user_id::text;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
