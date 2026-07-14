@@ -170,10 +170,10 @@ export function useStore() {
             console.log('Resetting daily statistics for new day:', today);
             
             const resetBotStats = {
-              scalping: { profit: 0, trades: 0 },
-              trend: { profit: 0, trades: 0 },
-              ai: { profit: 0, trades: 0 },
-              custom: { profit: 0, trades: 0 }
+              daily_profit_real: 0,
+              daily_profit_demo: 0,
+              daily_trades_real: 0,
+              daily_trades_demo: 0
             };
 
             setUser(prev => {
@@ -313,11 +313,14 @@ export function useStore() {
   const syncWithSupabase = useCallback(async (providedSession?: any) => {
     if (!isSupabaseConfigured()) return;
     
-    // Prevent sync from overwriting local state during an active user interaction
+    // Check internal update flag with a timestamp-based cooldown to avoid blocking forever
+    // but still protect against race conditions during user interaction
     if (isInternalUpdate.current) {
-      console.log('[Sync] Skipping sync: internal update in progress.');
+      console.log('[Sync] Skipping sync: user interaction or internal update in progress.');
       return;
     }
+
+    const syncStartTime = Date.now();
 
     try {
       const session = providedSession || await getSafeSession();
@@ -421,13 +424,18 @@ export function useStore() {
             method: t.method,
             externalId: t.external_id
           })),
-          bots: {
-            scalping: botSettingsData?.scalping_active || false,
-            trend: botSettingsData?.trend_active || false,
-            ai: botSettingsData?.ai_active || false,
-            custom: botSettingsData?.custom_active || false,
-          },
-          botStats: botSettingsData?.bot_stats || {},
+          bots: botSettingsData ? {
+            scalping: botSettingsData.scalping_active || false,
+            trend: botSettingsData.trend_active || false,
+            ai: botSettingsData.ai_active || false,
+            custom: botSettingsData.custom_active || false,
+          } : (userRef.current?.bots || {
+            scalping: false,
+            trend: false,
+            ai: false,
+            custom: false,
+          }),
+          botStats: botSettingsData?.bot_stats || (userRef.current?.botStats || {}),
           customBotConfig: botSettingsData?.custom_config,
           botLogs: botSettingsData?.bot_logs || [],
           referrals: [],
@@ -435,6 +443,12 @@ export function useStore() {
           copyingTraderId: userData.copying_trader_id,
           createdAt: new Date(userData.created_at).getTime()
         };
+
+        // Safety: If sync took too long and user interacted in between, skip applying to avoid flicker
+        if (isInternalUpdate.current || (Date.now() - syncStartTime > 5000)) {
+          console.log('[Sync] Discarding stale sync results to preserve local interactions.');
+          return;
+        }
 
         setUser(formattedUser);
         hasSyncedRef.current = true;
@@ -1598,9 +1612,14 @@ export function useStore() {
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
+    // Clear the internal update flag after a short delay to allow syncs to resume
+    setTimeout(() => {
+      isInternalUpdate.current = false;
+    }, 3000);
+
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').upsert({
+        const { error } = await supabase.from('bot_settings').upsert({
           user_id: user.id,
           scalping_active: updatedBots.scalping,
           trend_active: updatedBots.trend,
@@ -1609,7 +1628,13 @@ export function useStore() {
           custom_config: user.customBotConfig, // Preserve custom config on toggle
           bot_stats: user.botStats, // Persist stats
           updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
         });
+        
+        if (error) {
+          console.error('[Store] Supabase toggle error:', error.message);
+        }
       } catch (err) {
         console.error('[Store] Error toggling bot in Supabase:', err);
       }
@@ -1626,12 +1651,44 @@ export function useStore() {
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     const currentBalance = currentUser[balanceKey];
 
+    // Safety: Auto-stop bot if balance is below $10 threshold
+    if (currentBalance < 10) {
+      console.log(`[Store] Balance below $10 limit. Deactivating bots for safety.`);
+      const updatedBots = { scalping: false, trend: false, ai: false, custom: false };
+      
+      if (isSupabaseConfigured()) {
+        await supabase.from('bot_settings').update({
+          scalping_active: false,
+          trend_active: false,
+          ai_active: false,
+          custom_active: false,
+          updated_at: new Date().toISOString()
+        }).eq('user_id', currentUser.id);
+      }
+      
+      setUser(prev => prev ? { ...prev, bots: updatedBots } : null);
+      
+      window.dispatchEvent(new CustomEvent('trade-closed', {
+        detail: {
+          title: 'Bots Deactivated',
+          message: 'Trading bots have been stopped automatically because your balance is below $10.',
+          type: 'warning'
+        }
+      }));
+      return;
+    }
+
     // Pre-calculate for Supabase using latest REF data
     const newBalanceDB = Math.max(MIN_BALANCE_AFTER_LOSS, Number((currentBalance + finalAmount).toFixed(2)));
     const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
     const entryPrice = randomCoin.basePrice * (0.95 + Math.random() * 0.1);
     const updatedLogsDB = log ? [log, ...(currentUser.botLogs || [])].slice(0, 50) : (currentUser.botLogs || []);
+    
+    // Set internal update flag for a short window during profit update
     isInternalUpdate.current = true;
+    setTimeout(() => {
+      isInternalUpdate.current = false;
+    }, 2000);
     
     const calculatedUpdatedStatsDB = {
       ...(currentUser.botStats || {

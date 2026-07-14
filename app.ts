@@ -1066,6 +1066,19 @@ setInterval(async () => {
         const balanceField = isReal ? 'real_balance' : 'demo_balance';
         const currentBalance = Number(user[balanceField] || 0);
 
+        // Security check: Stop bot if balance is below minimum ($10)
+        if (currentBalance < 10) {
+          console.log(`[Bot-Offline] Balance too low ($${currentBalance}) for user ${setting.user_id}. Deactivating bots.`);
+          await supabaseAdmin.from('bot_settings').update({
+            scalping_active: false,
+            trend_active: false,
+            ai_active: false,
+            custom_active: false,
+            updated_at: new Date().toISOString()
+          }).eq('user_id', setting.user_id);
+          continue;
+        }
+
         // New day reset check for offline simulation
         const today = new Date().toISOString().split('T')[0];
         if (user.last_profit_reset_date && user.last_profit_reset_date !== today) {
