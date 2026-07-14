@@ -76,28 +76,9 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const calculateTotalProfit = () => {
-    if (!user) return 0;
-    // Calculate from the already limited trades history (top 50) of the ACTIVE account
-    return (user.trades || [])
-      .filter(t => t.status === 'CLOSED' && String(t.accountType).toUpperCase() === String(user.activeAccount).toUpperCase())
-      .slice(0, 1000)
-      .reduce((sum, t) => sum + (t.profit || 0), 0);
-  };
+  const totalProfit = user?.profit || 0;
 
-  const totalProfit = calculateTotalProfit();
-
-  const calculateDailyTrades = () => {
-    if (!user) return 0;
-    const todayStr = new Date().toISOString().split('T')[0];
-    return (user.trades || [])
-      .filter(t => {
-        const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
-        return tradeDate === todayStr && String(t.accountType).toUpperCase() === String(user.activeAccount).toUpperCase();
-      }).length;
-  };
-
-  const dailyTradesCount = calculateDailyTrades();
+  const dailyTradesCount = user?.dailyTrades || 0;
 
   const calculateWinRate = () => {
     if (!user || (user.trades || []).length === 0) return '0%';
@@ -109,18 +90,7 @@ export default function Dashboard() {
 
   const winRateNormalized = calculateWinRate();
 
-  const calculateDailyProfit = () => {
-    if (!user) return 0;
-    const todayStr = new Date().toISOString().split('T')[0];
-    return (user.trades || [])
-      .filter(t => {
-        const tradeDate = new Date(t.timestamp).toISOString().split('T')[0];
-        return tradeDate === todayStr && t.status === 'CLOSED' && String(t.accountType).toUpperCase() === String(user.activeAccount).toUpperCase();
-      })
-      .reduce((sum, t) => sum + (t.profit || 0), 0);
-  };
-
-  const currentDailyProfit = calculateDailyProfit();
+  const currentDailyProfit = user?.dailyProfit || 0;
 
   const calculateProfitPercentage = () => {
     if (!user) return 0;

@@ -1030,6 +1030,8 @@ setInterval(async () => {
           const newBalance = Number((currentBalance + trade.amount + profit).toFixed(2));
           const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
           const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+          const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
+          const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
 
           // Update Trade
           await supabaseAdmin.from('trades').update({
@@ -1041,7 +1043,8 @@ setInterval(async () => {
           await supabaseAdmin.from('users').update({
             [balanceField]: newBalance,
             [totalProfitField]: newTotalProfit,
-            [dailyProfitField]: newDailyProfit
+            [dailyProfitField]: newDailyProfit,
+            [dailyTradesField]: newDailyTrades
           }).eq('id', trade.user_id);
         }
       }
@@ -1063,17 +1066,23 @@ setInterval(async () => {
         const balanceField = isReal ? 'real_balance' : 'demo_balance';
         const currentBalance = Number(user[balanceField] || 0);
 
-        // Security check: Stop bot if balance is below minimum ($10)
-        if (currentBalance < 10) {
-          console.log(`[Bot-Offline] Balance too low ($${currentBalance}) for user ${setting.user_id}. Deactivating bots.`);
-          await supabaseAdmin.from('bot_settings').update({
-            scalping_active: false,
-            trend_active: false,
-            ai_active: false,
-            custom_active: false,
-            updated_at: new Date().toISOString()
-          }).eq('user_id', setting.user_id);
-          continue;
+        // New day reset check for offline simulation
+        const today = new Date().toISOString().split('T')[0];
+        if (user.last_profit_reset_date && user.last_profit_reset_date !== today) {
+          console.log(`[Bot-Offline] New day detected for user ${setting.user_id}. Resetting daily stats.`);
+          await supabaseAdmin.from('users').update({
+            daily_profit_real: 0,
+            daily_profit_demo: 0,
+            daily_trades_real: 0,
+            daily_trades_demo: 0,
+            last_profit_reset_date: today
+          }).eq('id', setting.user_id);
+          
+          // Re-fetch user data to get fresh 0 stats
+          const { data: refreshedUser } = await supabaseAdmin.from('users').select('*').eq('id', setting.user_id).single();
+          if (refreshedUser) {
+             Object.assign(user, refreshedUser);
+          }
         }
 
         console.log(`[Bot-Offline] Simulating bot profit for user ${setting.user_id}`);
@@ -1098,6 +1107,8 @@ setInterval(async () => {
         const newBalance = Math.max(0, Number((currentBalance + profit).toFixed(2)));
         const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
         const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+        const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
+        const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
 
         // Create consolidated bot trade record
         await supabaseAdmin.from('trades').insert({
@@ -1118,7 +1129,8 @@ setInterval(async () => {
         await supabaseAdmin.from('users').update({
           [balanceField]: newBalance,
           [totalProfitField]: newTotalProfit,
-          [dailyProfitField]: newDailyProfit
+          [dailyProfitField]: newDailyProfit,
+          [dailyTradesField]: newDailyTrades
         }).eq('id', setting.user_id);
 
         // Update Bot Settings (Timestamp is crucial for client catch-up prevention)
