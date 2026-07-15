@@ -22,14 +22,14 @@ export default function AlertModal({
     error: <AlertCircle className="text-red-500" size={18} />,
     success: <CheckCircle2 className="text-green-500" size={18} />,
     info: <Info className="text-blue-500" size={18} />,
-    warning: <AlertTriangle className="text-yellow-500" size={18} />
+    warning: <AlertTriangle className="text-yellow-600" size={18} />
   };
 
   const colors = {
-    error: 'border-red-500/20 bg-red-500/5',
-    success: 'border-green-500/20 bg-green-500/5',
-    info: 'border-blue-500/20 bg-blue-500/5',
-    warning: 'border-yellow-500/20 bg-yellow-500/5'
+    error: 'border-red-500/30 bg-red-500/5',
+    success: 'border-green-500/30 bg-green-500/5',
+    info: 'border-blue-500/30 bg-blue-500/5',
+    warning: 'border-yellow-500/50 bg-yellow-100/50 dark:bg-yellow-500/10'
   };
 
   // Auto-close after 5 seconds
@@ -61,8 +61,8 @@ export default function AlertModal({
 
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold text-slate-900 dark:text-white leading-tight">
-                <span className="font-bold uppercase tracking-wider mr-2">{title}:</span>
-                <span className="text-slate-500 dark:text-slate-400">{message}</span>
+                <span className="font-extrabold uppercase tracking-wider mr-2">{title}:</span>
+                <span className="text-slate-700 dark:text-slate-300 font-bold">{message}</span>
               </p>
             </div>
 

@@ -1652,8 +1652,8 @@ export function useStore() {
     const currentBalance = currentUser[balanceKey];
 
     // Safety: Auto-stop bot if balance is below $10 threshold
-    if (currentBalance < 10) {
-      console.log(`[Store] Balance below $10 limit. Deactivating bots for safety.`);
+    if (currentBalance <= 10) {
+      console.log(`[Store] Balance at or below $10 limit. Deactivating bots for safety.`);
       const updatedBots = { scalping: false, trend: false, ai: false, custom: false };
       
       if (isSupabaseConfigured()) {
@@ -1671,7 +1671,7 @@ export function useStore() {
       window.dispatchEvent(new CustomEvent('trade-closed', {
         detail: {
           title: 'Bots Deactivated',
-          message: 'Trading bots have been stopped automatically because your balance is below $10.',
+          message: 'Trading bots have been stopped automatically because your balance is at or below $10.',
           type: 'warning'
         }
       }));

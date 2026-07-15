@@ -127,7 +127,35 @@ UPDATE public.copy_traders
 SET total_profit = 1000 + (random() * 4000)
 WHERE total_profit > 5500 OR total_profit < 100;
 
--- 5. ENABLE RLS
+-- 6. RPC FUNCTIONS
+-- Simple balance increment to prevent hidden multipliers
+CREATE OR REPLACE FUNCTION public.increment_balance(user_id UUID, amount NUMERIC)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE public.users 
+  SET real_balance = COALESCE(real_balance, 0) + amount 
+  WHERE id = user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO anon;
+GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO service_role;
+
+-- Optional: Auto-process stale pending transactions (called on load)
+CREATE OR REPLACE FUNCTION public.auto_process_pending()
+RETURNS VOID AS $$
+BEGIN
+  -- We don't actually want to auto-complete them because we need payment verification
+  -- This is just a placeholder to prevent "function not found" errors
+  NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO anon;
+
+-- 7. ENABLE RLS
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.copy_traders ENABLE ROW LEVEL SECURITY;

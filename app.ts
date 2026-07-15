@@ -487,11 +487,14 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
         .eq('status', 'pending')
         .select();
 
+      console.log(`[StatusCheck] ATOMIC UPDATE result:`, JSON.stringify(updatedTx));
+
       if (!updateError && updatedTx && updatedTx.length > 0) {
         const completedTx = updatedTx[0];
-        console.log(`Transaction ${completedTx.id} successfully marked as completed via status check. Crediting user...`);
+        console.log(`[StatusCheck] Transaction ${completedTx.id} successfully marked as completed. Crediting user...`);
         
         // Use RPC for atomic balance increment
+        console.log(`[StatusCheck] Executing increment_balance RPC for user ${completedTx.user_id}. Amount: ${completedTx.amount} USD.`);
         const { error: rpcError } = await client.rpc('increment_balance', {
           user_id: completedTx.user_id,
           amount: Number(completedTx.amount)
@@ -683,15 +686,17 @@ router.post('/payhero/callback', async (req, res) => {
         .in('status', ['pending', 'rejected']) // Critical: Must be pending or rejected
         .select();
 
+      console.log(`[Callback] ATOMIC UPDATE result:`, JSON.stringify(updatedTxs));
+
       if (updateError || !updatedTxs || updatedTxs.length === 0) {
-        console.warn(`Transaction ${tx.id} was already processed or its status changed. Skipping balance update.`);
+        console.warn(`[Callback] Transaction ${tx.id} was already processed or its status changed. Skipping balance update.`);
         return res.json({ success: true, message: 'Already processed or status changed' });
       }
 
       const userId = tx.user_id;
       const amountUsd = Number(tx.amount); 
 
-      console.log(`Processing success for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
+      console.log(`[Callback] Executing increment_balance RPC for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
 
       // 2. Update balance atomically using RPC
       const { error: rpcError } = await client.rpc('increment_balance', {
@@ -1067,7 +1072,7 @@ setInterval(async () => {
         const currentBalance = Number(user[balanceField] || 0);
 
         // Security check: Stop bot if balance is below minimum ($10)
-        if (currentBalance < 10) {
+        if (currentBalance <= 10) {
           console.log(`[Bot-Offline] Balance too low ($${currentBalance}) for user ${setting.user_id}. Deactivating bots.`);
           await supabaseAdmin.from('bot_settings').update({
             scalping_active: false,
