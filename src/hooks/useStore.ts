@@ -1972,9 +1972,10 @@ export function useStore() {
 
     // 3. Handle balance consequences atomically using RPCs
     if (status === 'completed' && trans.type === 'DEPOSIT') {
-      // Use the atomic RPC to increment balance
-      await supabase.rpc('increment_balance', {
-        user_id: trans.user_id,
+      // Use the atomic RPC v2 to increment balance and mark transaction completed
+      await supabase.rpc('increment_balance_v2', {
+        t_id: transactionId,
+        u_id: trans.user_id,
         amount: Number(trans.amount)
       });
     } else if (status === 'rejected' && trans.type === 'WITHDRAW') {

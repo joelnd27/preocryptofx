@@ -127,8 +127,47 @@ UPDATE public.copy_traders
 SET total_profit = 1000 + (random() * 4000)
 WHERE total_profit > 5500 OR total_profit < 100;
 
+-- 5. CLEANUP OLD TRIGGERS (Prevent double crediting)
+DROP TRIGGER IF EXISTS on_transaction_completed ON public.transactions;
+DROP TRIGGER IF EXISTS tr_on_transaction_completed ON public.transactions;
+DROP FUNCTION IF EXISTS public.handle_transaction_completion();
+
 -- 6. RPC FUNCTIONS
--- Simple balance increment to prevent hidden multipliers
+-- Transaction-aware balance increment to prevent double crediting
+CREATE OR REPLACE FUNCTION public.increment_balance_v2(t_id UUID, u_id UUID, amount NUMERIC)
+RETURNS BOOLEAN AS $$
+DECLARE
+  already_completed BOOLEAN;
+BEGIN
+  -- 1. Check if transaction is already completed
+  SELECT (status = 'completed') INTO already_completed
+  FROM public.transactions
+  WHERE id = t_id;
+
+  IF already_completed THEN
+    RETURN FALSE;
+  END IF;
+
+  -- 2. Update transaction status to completed
+  UPDATE public.transactions
+  SET status = 'completed',
+      updated_at = NOW()
+  WHERE id = t_id AND status != 'completed';
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  -- 3. Increment user balance
+  UPDATE public.users 
+  SET real_balance = COALESCE(real_balance, 0) + amount 
+  WHERE id = u_id;
+
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Keep old version for backward compatibility but redirect logic if possible
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id UUID, amount NUMERIC)
 RETURNS VOID AS $$
 BEGIN
@@ -138,9 +177,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO anon;
-GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO service_role;
+GRANT EXECUTE ON FUNCTION public.increment_balance_v2(UUID, UUID, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.increment_balance_v2(UUID, UUID, NUMERIC) TO anon;
+GRANT EXECUTE ON FUNCTION public.increment_balance_v2(UUID, UUID, NUMERIC) TO service_role;
 
 -- Optional: Auto-process stale pending transactions (called on load)
 CREATE OR REPLACE FUNCTION public.auto_process_pending()

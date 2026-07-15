@@ -476,38 +476,20 @@ router.get('/payhero/status/:external_reference', async (req, res) => {
       
       console.log(`Manual status check success for ${external_reference}. Ref: ${ref}`);
 
-      // ATOMIC UPDATE: Only proceed if we successfully change status from pending to completed
-      const { data: updatedTx, error: updateError } = await client
-        .from('transactions')
-        .update({ 
-          status: 'completed', 
-          method: `Payhero status (${paymentId || 'M-Pesa'})` 
-        })
-        .or(`external_id.eq."${ref}",id.eq."${ref}"`)
-        .eq('status', 'pending')
-        .select();
+      // Use RPC v2 for atomic status update AND balance increment
+      console.log(`[StatusCheck] Executing increment_balance_v2 RPC for user ${tx.user_id}. Amount: ${tx.amount} USD. (Transaction ID: ${tx.id})`);
+      const { data: success, error: rpcError } = await client.rpc('increment_balance_v2', {
+        t_id: tx.id,
+        u_id: tx.user_id,
+        amount: Number(tx.amount)
+      });
 
-      console.log(`[StatusCheck] ATOMIC UPDATE result:`, JSON.stringify(updatedTx));
-
-      if (!updateError && updatedTx && updatedTx.length > 0) {
-        const completedTx = updatedTx[0];
-        console.log(`[StatusCheck] Transaction ${completedTx.id} successfully marked as completed. Crediting user...`);
-        
-        // Use RPC for atomic balance increment
-        console.log(`[StatusCheck] Executing increment_balance RPC for user ${completedTx.user_id}. Amount: ${completedTx.amount} USD.`);
-        const { error: rpcError } = await client.rpc('increment_balance', {
-          user_id: completedTx.user_id,
-          amount: Number(completedTx.amount)
-        });
-
-        if (rpcError) {
-          console.error('CRITICAL: Failed to increment balance via RPC in status check:', rpcError);
-          // Special case: if RPC fails, we might have a serious issue as status is already completed
-        } else {
-          console.log(`User ${completedTx.user_id} successfully credited with ${completedTx.amount} via status check.`);
-        }
+      if (rpcError) {
+        console.error('CRITICAL: Failed to increment balance via RPC v2 in status check:', rpcError);
+      } else if (!success) {
+        console.log(`[StatusCheck] Transaction ${tx.id} was already processed (RPC returned false).`);
       } else {
-        console.log(`Status check success for ${ref}, but transaction was already processed or is not in pending state.`);
+        console.log(`User ${tx.user_id} successfully credited with ${tx.amount} via status check.`);
       }
     } else if (payment && (payment.status === 'failed' || payment.ResultCode === 1032)) {
       // 1032 is Request Cancelled by User
@@ -698,19 +680,25 @@ router.post('/payhero/callback', async (req, res) => {
 
       console.log(`[Callback] Executing increment_balance RPC for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
 
-      // 2. Update balance atomically using RPC
-      const { error: rpcError } = await client.rpc('increment_balance', {
-        user_id: userId,
+      // 2. Update balance and status atomically using RPC v2
+      console.log(`[Callback] Executing increment_balance_v2 RPC for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
+      const { data: success, error: rpcError } = await client.rpc('increment_balance_v2', {
+        t_id: tx.id,
+        u_id: userId,
         amount: amountUsd
       });
       
       if (rpcError) {
-        console.error('CRITICAL: Failed to increment balance via RPC in callback:', rpcError);
-        // We should probably log this to a special table or alert admin
+        console.error('CRITICAL: Failed to credit balance via RPC v2 in callback:', rpcError);
         return res.status(500).json({ error: 'Failed to credit balance' });
       }
 
-      console.log(`Balance successfully updated for ${userId} with ${amountUsd} USD`);
+      if (!success) {
+        console.log(`[Callback] Transaction ${tx.id} was already processed (RPC returned false).`);
+        return res.json({ success: true, message: 'Already processed' });
+      }
+
+      console.log(`Balance successfully updated for ${userId} with ${amountUsd} USD via callback`);
       return res.json({ success: true, message: 'Processed successfully' });
 
     } else {
@@ -784,8 +772,11 @@ router.post('/admin/credit-user', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Unauthorized Admin Credentials' });
     }
 
-    const { userId, amount, transactionId } = req.body;
+    const { userId, amount, transactionId, type } = req.body;
     if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+    const client = supabaseAdmin;
+    const field = type === 'DEMO' ? 'demo_balance' : 'real_balance';
 
     // 1. Update transaction if provided (Atomic check)
     if (transactionId) {
@@ -813,11 +804,10 @@ router.post('/admin/credit-user', async (req, res) => {
       });
     }
 
-    // 2. Update balance atomically
-    const { error: rpcError } = await supabaseAdmin.rpc('increment_balance', {
-      user_id: userId,
-      amount: Number(amount)
-    });
+    // 2. Update balance - SET the balance for admin updates, don't increment
+    const { error: rpcError } = await client.from('users').update({
+      [field]: Number(amount)
+    }).eq('id', userId);
 
     if (rpcError) throw rpcError;
 
