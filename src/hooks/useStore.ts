@@ -1868,7 +1868,8 @@ export function useStore() {
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(500);
       
       if (!error && data) {
         dbUsers = data.map((u) => {
@@ -1993,15 +1994,19 @@ export function useStore() {
     const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     if (!isSupabaseConfigured() || !isMasterAdmin) return { totalDeposited: 0, userCount: 0 };
     
-    const { data: usersData, error: usersError } = await supabase.from('users').select('id, role');
+    const { count: userCount, error: countError } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true });
+    
+    const { data: usersData, error: usersError } = await supabase.from('users').select('id, role').limit(5000);
     const { data: transData, error: transError } = await supabase
       .from('transactions')
       .select('amount')
-      .eq('type', 'DEPOSIT')
       .eq('status', 'completed')
-      .limit(5000); // Guard against massive data sets for basic stats
+      .eq('type', 'DEPOSIT')
+      .limit(10000);
 
-    if (usersError || transError) return { totalDeposited: 0, userCount: 0 };
+    if (countError || usersError || transError) return { totalDeposited: 0, userCount: 0 };
 
     let totalDeposited = transData.reduce((sum, t) => sum + Number(t.amount), 0);
     
@@ -2014,7 +2019,7 @@ export function useStore() {
 
     return {
       totalDeposited,
-      userCount: usersData.length
+      userCount: userCount || 0
     };
   };
 
