@@ -102,7 +102,7 @@ router.post('/payhero/initiate', async (req, res) => {
   const { amount, phone, userId, username } = req.body;
 
   try {
-    const USD_TO_KES = 130;
+    const USD_TO_KES = 129.56;
     const amountKes = Math.round(amount * USD_TO_KES);
 
     let formattedPhone = (phone || '').replace(/\D/g, '');

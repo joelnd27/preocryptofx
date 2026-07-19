@@ -1135,9 +1135,6 @@ export default function Transactions() {
                             <Clock size={16} className="animate-pulse" />
                             <span className="text-xs font-bold uppercase tracking-wider">STK Push Sent</span>
                           </div>
-                          <p className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
-                            Pay: {(parseFloat(amount || '0') * USD_TO_KES).toLocaleString()} KES
-                          </p>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 text-left">
                             Your balance will update automatically once confirmed.
                           </p>
