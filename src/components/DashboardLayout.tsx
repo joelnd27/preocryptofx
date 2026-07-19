@@ -253,7 +253,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Page Content */}
-        <main className={cn("flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8", isDarkMode ? "bg-slate-950" : "bg-slate-50")}>
+        <main className={cn("flex-1 overflow-y-auto custom-scrollbar p-2.5 sm:p-4 lg:p-8", isDarkMode ? "bg-slate-950" : "bg-slate-50")}>
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

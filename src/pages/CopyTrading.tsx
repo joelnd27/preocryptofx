@@ -447,18 +447,18 @@ export default function CopyTrading() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
+              className="relative w-full max-w-[480px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden max-h-[95vh] flex flex-col"
             >
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-2xl font-bold">New Trader Profile</h3>
+              <div className="p-6 sm:p-7 overflow-y-auto custom-scrollbar">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl sm:text-2xl font-bold">New Trader Profile</h3>
                   <button onClick={() => setIsCreateModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
                     <X size={20} />
                   </button>
                 </div>
 
-                <div className="space-y-6">
-                  <div className="space-y-2">
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Trader Display Name</label>
                     <input
                       type="text"

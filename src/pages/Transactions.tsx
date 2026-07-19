@@ -749,7 +749,7 @@ export default function Transactions() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
+              className="relative w-full max-w-[420px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden max-h-[95vh] flex flex-col"
             >
               {/* Close Button */}
               <button 
@@ -757,19 +757,19 @@ export default function Transactions() {
                   setIsModalOpen(false);
                   setPaymentStatus('IDLE');
                 }} 
-                className="absolute top-6 right-6 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors z-10"
+                className="absolute top-4 right-4 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors z-10"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
 
-              <div className="p-6 sm:p-8">
+              <div className="p-5 sm:p-6 overflow-y-auto custom-scrollbar">
                 {paymentStatus === 'IDLE' ? (
                   <>
-                    <div className="mb-6">
+                    <div className="mb-4">
                       <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{modalType === 'DEPOSIT' ? 'Deposit Funds' : 'Withdraw Funds'}</h3>
                     </div>
  
-                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
+                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-5">
                       <button
                         onClick={() => setModalType('DEPOSIT')}
                         className={cn(
@@ -878,6 +878,25 @@ export default function Transactions() {
 
                       <div className="space-y-2">
                         <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Amount (USD)</label>
+                        {modalType === 'DEPOSIT' && (
+                          <div className="flex flex-wrap gap-2 pb-2">
+                            {[50, 100, 250, 500, 1000].map((amt) => (
+                              <button
+                                key={amt}
+                                type="button"
+                                onClick={() => setAmount(amt.toString())}
+                                className={cn(
+                                  "px-3 py-1 rounded-lg text-[10px] font-bold border transition-all",
+                                  amount === amt.toString() 
+                                    ? "bg-blue-600 border-blue-600 text-white" 
+                                    : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-500"
+                                )}
+                              >
+                                ${amt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <div className="relative">
                           <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                           <input
@@ -896,9 +915,11 @@ export default function Transactions() {
                           <span>Min: ${modalType === 'DEPOSIT' 
                             ? (paymentMethod === 'CRYPTO' ? 29 : MIN_DEPOSIT_USD) 
                             : (withdrawalMethod === 'CRYPTO' ? 54 : (withdrawalMethod === 'BANK' ? 34 : 30))}</span>
-                          <span className="text-blue-500 font-bold">
-                            ≈ {(parseFloat(amount || '0') * (modalType === 'DEPOSIT' ? USD_TO_KES : currentWithdrawalRate)).toLocaleString()} KES
-                          </span>
+                          {modalType === 'WITHDRAW' && (
+                            <span className="text-blue-500 font-bold">
+                              ≈ {(parseFloat(amount || '0') * currentWithdrawalRate).toLocaleString()} KES
+                            </span>
+                          )}
                         </p>
                         {modalType === 'WITHDRAW' && (
                           <p className="text-[8px] text-slate-400 mt-1 italic">
@@ -1114,6 +1135,9 @@ export default function Transactions() {
                             <Clock size={16} className="animate-pulse" />
                             <span className="text-xs font-bold uppercase tracking-wider">STK Push Sent</span>
                           </div>
+                          <p className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+                            Pay: {(parseFloat(amount || '0') * USD_TO_KES).toLocaleString()} KES
+                          </p>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 text-left">
                             Your balance will update automatically once confirmed.
                           </p>

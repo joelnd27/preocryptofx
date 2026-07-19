@@ -531,52 +531,46 @@ export default function AdminPanel() {
               >
                 <thead>
                   <tr className="bg-slate-50/50 dark:bg-slate-800/30">
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trader Details</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Performance</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Security (Pass)</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Investment</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trader Details</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Performance</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Security (Pass)</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Investment</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {copyTraders.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black text-sm border border-blue-500/20">
+                          <div className="w-9 h-9 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-black text-xs border border-blue-500/20">
                             {t.name[0]?.toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-900 dark:text-white text-sm">{t.name}</p>
-                            <p className="text-[10px] text-slate-500 font-medium">Created by: {t.createdBy}</p>
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest mt-1 inline-block",
-                              t.isSimulated ? "bg-purple-500/10 text-purple-500" : "bg-blue-500/10 text-blue-500"
-                            )}>
-                              {t.isSimulated ? 'Simulated' : 'User Created'}
-                            </span>
+                            <p className="font-bold text-slate-900 dark:text-white text-[13px]">{t.name}</p>
+                            <p className="text-[9px] text-slate-500 font-medium">By: {t.createdBy}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
                         <div className="text-center">
-                          <p className="text-xs font-bold text-green-500">{t.winRate}% Win Rate</p>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{t.followers} Followers</p>
+                          <p className="text-[11px] font-bold text-green-500">{t.winRate}% Win</p>
+                          <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">{t.followers} Fol.</p>
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-center">
-                        <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                          <Lock size={12} className="text-amber-500" />
-                          <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{t.password}</span>
+                      <td className="px-4 py-4 text-center">
+                        <div className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <Lock size={10} className="text-amber-500" />
+                          <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300">{t.password}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-center">
+                      <td className="px-4 py-4 text-center">
                         <div>
-                          <p className="text-sm font-black text-slate-900 dark:text-white">{formatCurrency(t.minInvestment)}</p>
-                          <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Min. Copy</p>
+                          <p className="text-xs font-black text-slate-900 dark:text-white">{formatCurrency(t.minInvestment)}</p>
+                          <p className="text-[8px] text-slate-400 uppercase font-bold tracking-widest">Min.</p>
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-right">
+                      <td className="px-4 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button 
                             onClick={async () => {
