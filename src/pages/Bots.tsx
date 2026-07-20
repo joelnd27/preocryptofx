@@ -66,6 +66,51 @@ const BOTS: BotConfig[] = [
     winRate: '92.1%',
     risk: 'High',
     minDeposit: 10
+  },
+  {
+    id: 'vortex',
+    name: 'Vortex Momentum',
+    description: 'Advanced momentum-based bot that executes trades at high speed during peak volatility.',
+    type: 'scalping',
+    winRate: '85.1%',
+    risk: 'High',
+    minDeposit: 10
+  },
+  {
+    id: 'orbit',
+    name: 'Orbit Swing Bot',
+    description: 'Swing trading specialist that identifies key support and resistance levels for optimal entries.',
+    type: 'trend',
+    winRate: '82.5%',
+    risk: 'Medium',
+    minDeposit: 10
+  },
+  {
+    id: 'starlight',
+    name: 'Starlight AI',
+    description: 'Sophisticated AI agent that combines multiple strategies for consistent daily returns.',
+    type: 'ai',
+    winRate: '94.3%',
+    risk: 'Low',
+    minDeposit: 10
+  },
+  {
+    id: 'galaxy',
+    name: 'Galaxy Arbi-Bot',
+    description: 'Exploits price differences across multiple trading pairs with lightning-fast execution.',
+    type: 'scalping',
+    winRate: '89.8%',
+    risk: 'Medium',
+    minDeposit: 10
+  },
+  {
+    id: 'nova',
+    name: 'Nova Alpha v2',
+    description: 'Aggressive trend-following bot designed for maximum yield in trending markets.',
+    type: 'trend',
+    winRate: '79.4%',
+    risk: 'High',
+    minDeposit: 10
   }
 ];
 
@@ -73,11 +118,17 @@ export default function Bots() {
   const { user, toggleBot, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
-  const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string }>>({
-    scalping: { coin: 'BTC', timeframe: '1M' },
-    trend: { coin: 'ETH', timeframe: '1H' },
-    ai: { coin: 'SOL', timeframe: '15M' },
-    custom: { coin: 'BTC', timeframe: '1M' }
+  const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string }>>(() => {
+    const initial: Record<string, { coin: string, timeframe: string }> = {
+      custom: { coin: 'BTC', timeframe: '1M' }
+    };
+    BOTS.forEach(bot => {
+      initial[bot.id] = { 
+        coin: bot.type === 'trend' ? 'ETH' : bot.type === 'ai' ? 'SOL' : 'BTC', 
+        timeframe: bot.type === 'scalping' ? '1M' : '1H' 
+      };
+    });
+    return initial;
   });
 
   const allBots = [
@@ -94,12 +145,13 @@ export default function Bots() {
   ];
 
   const logs = user?.botLogs || [];
-  const stats = {
-    scalping: { profit: 0, trades: 0, ...(user?.botStats?.scalping || {}) },
-    trend: { profit: 0, trades: 0, ...(user?.botStats?.trend || {}) },
-    ai: { profit: 0, trades: 0, ...(user?.botStats?.ai || {}) },
-    custom: { profit: 0, trades: 0, ...(user?.botStats?.custom || {}) }
-  };
+  const stats = (() => {
+    const s: Record<string, { profit: number, trades: number }> = {};
+    allBots.forEach(bot => {
+      s[bot.id] = { profit: 0, trades: 0, ...(user?.botStats?.[bot.id] || {}) };
+    });
+    return s;
+  })();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importJson, setImportJson] = useState('');

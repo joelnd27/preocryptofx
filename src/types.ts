@@ -53,6 +53,11 @@ export interface User {
     scalping: boolean;
     trend: boolean;
     ai: boolean;
+    vortex: boolean;
+    orbit: boolean;
+    starlight: boolean;
+    galaxy: boolean;
+    nova: boolean;
     custom: boolean;
   };
   customBotConfig?: {

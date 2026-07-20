@@ -375,6 +375,11 @@ export function useStore() {
         const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
         const isHardcodedAdmin = (userData.email || '').toLowerCase() === 'wren20688@gmail.com' && userData.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
 
+        const botStats = {
+          ...(botSettingsData?.bot_stats || {}),
+          active_states: botSettingsData?.bot_stats?.active_states || {}
+        };
+
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
@@ -428,14 +433,24 @@ export function useStore() {
             scalping: botSettingsData.scalping_active || false,
             trend: botSettingsData.trend_active || false,
             ai: botSettingsData.ai_active || false,
+            vortex: botStats.active_states?.vortex || false,
+            orbit: botStats.active_states?.orbit || false,
+            starlight: botStats.active_states?.starlight || false,
+            galaxy: botStats.active_states?.galaxy || false,
+            nova: botStats.active_states?.nova || false,
             custom: botSettingsData.custom_active || false,
           } : (userRef.current?.bots || {
             scalping: false,
             trend: false,
             ai: false,
+            vortex: false,
+            orbit: false,
+            starlight: false,
+            galaxy: false,
+            nova: false,
             custom: false,
           }),
-          botStats: botSettingsData?.bot_stats || (userRef.current?.botStats || {}),
+          botStats: botStats,
           customBotConfig: botSettingsData?.custom_config,
           botLogs: botSettingsData?.bot_logs || [],
           referrals: [],
@@ -965,6 +980,11 @@ export function useStore() {
         scalping: false,
         trend: false,
         ai: false,
+        vortex: false,
+        orbit: false,
+        starlight: false,
+        galaxy: false,
+        nova: false,
         custom: false,
       },
       createdAt: Date.now()
@@ -1626,7 +1646,17 @@ export function useStore() {
           ai_active: updatedBots.ai,
           custom_active: updatedBots.custom,
           custom_config: user.customBotConfig, // Preserve custom config on toggle
-          bot_stats: user.botStats, // Persist stats
+          bot_stats: {
+            ...(user.botStats || {}),
+            active_states: {
+              ...(user.botStats?.active_states || {}),
+              vortex: updatedBots.vortex,
+              orbit: updatedBots.orbit,
+              starlight: updatedBots.starlight,
+              galaxy: updatedBots.galaxy,
+              nova: updatedBots.nova
+            }
+          },
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
@@ -1654,14 +1684,36 @@ export function useStore() {
     // Safety: Auto-stop bot if balance is below $10 threshold
     if (currentBalance <= 10) {
       console.log(`[Store] Balance at or below $10 limit. Deactivating bots for safety.`);
-      const updatedBots = { scalping: false, trend: false, ai: false, custom: false };
+      const updatedBots = { 
+        scalping: false, 
+        trend: false, 
+        ai: false, 
+        vortex: false,
+        orbit: false,
+        starlight: false,
+        galaxy: false,
+        nova: false,
+        custom: false 
+      };
       
       if (isSupabaseConfigured()) {
+        const currentStats = currentUser.botStats || {};
         await supabase.from('bot_settings').update({
           scalping_active: false,
           trend_active: false,
           ai_active: false,
           custom_active: false,
+          bot_stats: {
+            ...currentStats,
+            active_states: {
+              ...(currentStats.active_states || {}),
+              vortex: false,
+              orbit: false,
+              starlight: false,
+              galaxy: false,
+              nova: false
+            }
+          },
           updated_at: new Date().toISOString()
         }).eq('user_id', currentUser.id);
       }
@@ -1691,16 +1743,11 @@ export function useStore() {
     }, 2000);
     
     const calculatedUpdatedStatsDB = {
-      ...(currentUser.botStats || {
-        scalping: { profit: 0, trades: 0 },
-        trend: { profit: 0, trades: 0 },
-        ai: { profit: 0, trades: 0 },
-        custom: { profit: 0, trades: 0 }
-      }),
+      ...(currentUser.botStats || {}),
       ...(botId ? {
         [botId]: {
-          profit: Number(((currentUser.botStats?.[botId as keyof typeof currentUser.botStats]?.profit || 0) + finalAmount).toFixed(2)),
-          trades: (currentUser.botStats?.[botId as keyof typeof currentUser.botStats]?.trades || 0) + 1
+          profit: Number(((currentUser.botStats?.[botId]?.profit || 0) + finalAmount).toFixed(2)),
+          trades: (currentUser.botStats?.[botId]?.trades || 0) + 1
         }
       } : {})
     };
@@ -2324,7 +2371,12 @@ export function useStore() {
           const commonBots: Record<string, string> = {
             scalping: 'Scalper Pro v4.2',
             trend: 'TrendMaster AI',
-            ai: 'Neural Quantum Bot'
+            ai: 'Neural Quantum Bot',
+            vortex: 'Vortex Momentum',
+            orbit: 'Orbit Swing Bot',
+            starlight: 'Starlight AI',
+            galaxy: 'Galaxy Arbi-Bot',
+            nova: 'Nova Alpha v2'
           };
           botName = commonBots[botId] || 'Trading Bot';
           // Find if we have specific settings, or default to BTC
