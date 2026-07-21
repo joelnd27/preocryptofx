@@ -106,11 +106,22 @@ router.post('/payhero/initiate', async (req, res) => {
     const amountKes = Math.round(amount * USD_TO_KES);
 
     let formattedPhone = (phone || '').replace(/\D/g, '');
-    if (formattedPhone.length === 9 && (formattedPhone.startsWith('7') || formattedPhone.startsWith('1'))) {
-      formattedPhone = '254' + formattedPhone;
-    } else if (formattedPhone.length === 10 && formattedPhone.startsWith('0')) {
+    
+    // Handle Kenyan phone number formatting
+    // If it starts with 2540, remove the 0 (e.g. 25407... or 25401...)
+    if (formattedPhone.startsWith('2540')) {
+      formattedPhone = '254' + formattedPhone.substring(4);
+    }
+    // If it's 10 digits and starts with 0 (e.g. 07... or 01...)
+    else if (formattedPhone.length === 10 && formattedPhone.startsWith('0')) {
       formattedPhone = '254' + formattedPhone.substring(1);
     }
+    // If it's 9 digits and starts with 7 or 1 (e.g. 7... or 1...)
+    else if (formattedPhone.length === 9 && (formattedPhone.startsWith('7') || formattedPhone.startsWith('1'))) {
+      formattedPhone = '254' + formattedPhone;
+    }
+    // If it starts with 254 and has 12 digits (already correct format)
+    // we don't need to do anything, it will be used as is.
 
     if (!PAYHERO_API_KEY || !PAYHERO_CHANNEL_ID) {
       throw new Error('Payhero API Key or Channel ID is missing.');

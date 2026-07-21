@@ -974,7 +974,7 @@ export default function Transactions() {
                                   "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
                                   modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"
                                 )}
-                                placeholder="2547XXXXXXXX"
+                                placeholder="07XXXXXXXX or 01XXXXXXXX"
                                 readOnly={modalType === 'WITHDRAW'}
                               />
                             </div>

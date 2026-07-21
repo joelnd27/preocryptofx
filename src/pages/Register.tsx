@@ -238,7 +238,7 @@ export default function Register() {
                     "w-full border rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
                     isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
                   )}
-                  placeholder="Enter phone number"
+                  placeholder="e.g. 07XXXXXXXX or 01XXXXXXXX"
                 />
               </div>
             </div>
