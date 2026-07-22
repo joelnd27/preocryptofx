@@ -431,50 +431,50 @@ export default function Transactions() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Timestamp</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Type</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Amount</th>
-                    <th className="px-4 py-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest italic">Status</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Timestamp</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Type</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Amount</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredTransactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-                      <td className="px-4 py-2.5">
-                        <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400">{formatDate(tx.timestamp)}</span>
+                      <td className="px-4 py-3">
+                        <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{formatDate(tx.timestamp)}</span>
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <div className={cn(
-                            "p-1 rounded-md",
+                            "p-1 rounded",
                             tx.type === 'DEPOSIT' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
                           )}>
-                            {tx.type === 'DEPOSIT' ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
+                            {tx.type === 'DEPOSIT' ? <ArrowDownLeft size={10} /> : <ArrowUpRight size={10} />}
                           </div>
-                          <span className="text-[10px] font-bold text-slate-900 dark:text-white">{tx.type}</span>
+                          <span className="text-[11px] font-bold text-slate-900 dark:text-white">{tx.type}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-3">
                         <div className="flex flex-col">
                           <span className={cn(
-                            "text-[10px] font-bold font-mono",
+                            "text-[11px] font-bold font-mono",
                             tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
                           )}>
                             {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <span className={cn(
-                            "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 w-fit",
+                            "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 w-fit",
                             tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
                             (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
                             "bg-yellow-500/10 text-yellow-500"
                           )}>
                             {tx.status === 'completed' ? <CheckCircle2 size={10} /> : 
                              (tx.status === 'failed' || tx.status === 'rejected') ? 
-                             <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div> :
+                             <div className="w-1 h-1 rounded-full bg-current" /> :
                              <Clock size={10} />}
                             {tx.status === 'pending' ? 'pending' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
                           </span>
@@ -559,123 +559,62 @@ export default function Transactions() {
             {/* Mobile Card List */}
             <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
               {filteredTransactions.map((tx) => (
-                <div key={tx.id} className="p-4 space-y-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                <div key={tx.id} className="p-3 space-y-2 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <div className={cn(
-                        "p-2 rounded-xl",
+                        "p-1.5 rounded-lg",
                         tx.type === 'DEPOSIT' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
                       )}>
-                        {tx.type === 'DEPOSIT' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+                        {tx.type === 'DEPOSIT' ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
                       </div>
                       <div>
-                        <p className="text-sm font-bold">{tx.type}</p>
+                        <p className="text-[11px] font-bold">{tx.type}</p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className={cn(
-                        "text-sm font-bold font-mono",
+                        "text-[11px] font-bold font-mono",
                         tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
                       )}>
                         {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </p>
-                      <p className="text-[10px] text-slate-500">{formatDate(tx.timestamp)}</p>
+                      <p className="text-[9px] text-slate-500">{formatDate(tx.timestamp)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between pt-2">
+                  <div className="flex items-center justify-between pt-1">
                     <span className={cn(
-                      "px-2 py-0.5 rounded text-[9px] font-bold uppercase",
+                      "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase",
                       tx.accountType === 'REAL' ? "bg-green-500/10 text-green-500" : "bg-blue-500/10 text-blue-500"
                     )}>
                       {tx.accountType}
                     </span>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         <span className={cn(
-                          "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit",
+                          "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest flex items-center gap-1 w-fit",
                           tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
                           (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
                           "bg-yellow-500/10 text-yellow-500"
                         )}>
-                          {tx.status === 'completed' ? <CheckCircle2 size={12} /> : 
+                          {tx.status === 'completed' ? <CheckCircle2 size={10} /> : 
                            (tx.status === 'failed' || tx.status === 'rejected') ? 
-                           <div className="w-1.5 h-1.5 rounded-full border border-current flex items-center justify-center"><div className="w-0.5 h-0.5 rounded-full bg-current" /></div> :
-                           <Clock size={12} className="animate-pulse" />}
-                          {tx.status === 'pending' ? 'PENDING' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
+                           <div className="w-1 h-1 rounded-full bg-current" /> :
+                           <Clock size={10} />}
+                          {tx.status === 'pending' ? 'pending' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
                         </span>
                       </div>
-                      {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setIsChecking(true);
-                              try {
-                                const result = await checkPaymentStatus(tx.externalId || tx.id);
-                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
-                                  setAlertConfig({
-                                    isOpen: true,
-                                    title: 'Payment Confirmed',
-                                    message: 'Your payment has been verified and your balance updated.',
-                                    type: 'success'
-                                  });
-                                }
-                                await refreshData();
-                              } finally {
-                                setIsChecking(false);
-                              }
-                            }}
-                            disabled={isChecking}
-                            className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg text-blue-500 transition-colors disabled:opacity-50"
-                          >
-                            <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
-                          </button>
-                          {user?.role === 'admin' && (
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance?`)) {
-                                  setIsChecking(true);
-                                  const success = await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
-                                  if (success) {
-                                    setAlertConfig({
-                                      isOpen: true,
-                                      title: 'Admin Force Credit',
-                                      message: 'Balance has been manually credited successfully.',
-                                      type: 'success'
-                                    });
-                                  } else {
-                                    setAlertConfig({
-                                      isOpen: true,
-                                      title: 'Error',
-                                      message: 'Failed to perform manual credit.',
-                                      type: 'error'
-                                    });
-                                  }
-                                  setIsChecking(false);
-                                }
-                              }}
-                              disabled={isChecking}
-                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-500 transition-colors disabled:opacity-50"
-                            >
-                              <ShieldCheck size={10} />
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
               ))}
-              {filteredTransactions.length === 0 && (
-                <div className="p-12 text-center text-slate-500">
-                  <div className="flex flex-col items-center gap-2 opacity-50">
-                    <History size={40} />
-                    <p className="text-sm">No transactions found</p>
-                  </div>
-                </div>
-              )}
             </div>
+            {filteredTransactions.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 px-4 opacity-50 text-slate-500">
+                <History size={32} className="mb-2" />
+                <p className="text-[10px] font-bold uppercase tracking-widest">No records found</p>
+              </div>
+            )}
           </div>
         </div>
 
