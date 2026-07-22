@@ -451,7 +451,7 @@ export default function Profile() {
                     <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 shrink-0">
                       <AlertCircle size={20} />
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <p className="text-xs text-slate-500 leading-relaxed font-black">
                       Please ensure all documents are clear and legible. Supported formats: JPG, PNG, PDF (Max 5MB).
                     </p>
                   </div>

@@ -371,9 +371,9 @@ export default function Bots() {
                 
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <div>
-                    <p className="text-[6px] text-slate-500 uppercase font-bold tracking-tighter">{isCustom ? 'Currency' : 'Win Rate'}</p>
+                    <p className="text-[7px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1">{isCustom ? 'Currency' : 'Win Rate'}</p>
                     <p className={cn(
-                      "text-[9px] font-bold font-mono leading-none",
+                      "text-xs font-black font-mono leading-none",
                       isCustom ? "text-blue-500" : "text-green-500"
                     )}>
                       {isCustom ? (user?.customBotConfig?.currency || 'BTC') : bot.winRate}
@@ -402,8 +402,8 @@ export default function Bots() {
                 {selectedBot.id === 'custom' ? <Zap size={18} /> : <Bot size={18} />}
               </div>
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">{selectedBot.name}</h2>
-                <p className="text-[8px] sm:text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 uppercase tracking-wider font-bold">
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">{selectedBot.name}</h2>
+                <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 uppercase tracking-widest font-black">
                   {selectedBot.id === 'custom' ? 'User Custom' : 'Institutional'} <ChevronRight size={8} /> 
                   <span className="text-blue-500">{selectedBot.id === 'custom' ? 'NEURAL ENGINE' : 'v4.2 PRO'}</span>
                 </p>
@@ -430,8 +430,8 @@ export default function Bots() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-3.5">
-              <h4 className="text-[9px] font-bold flex items-center gap-2 uppercase tracking-widest text-slate-400">
-                <Settings2 size={12} /> Configuration Unit
+              <h4 className="text-[11px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500">
+                <Settings2 size={14} /> Configuration Unit
               </h4>
               
               <div className="space-y-2.5">
@@ -483,25 +483,25 @@ export default function Bots() {
 
               <div className="p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-lg flex gap-2">
                 <AlertCircle size={12} className="text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-[8px] text-slate-500 leading-tight">
-                  Threshold: <span className="font-bold text-slate-700 dark:text-slate-300">${selectedBot.minDeposit}</span>. System uses priority signals.
+                <p className="text-xs text-slate-500 leading-tight font-black">
+                  Threshold: <span className="text-slate-900 dark:text-white">${selectedBot.minDeposit}</span>. System uses priority signals.
                 </p>
               </div>
             </div>
 
             <div className="space-y-3.5">
-              <h4 className="text-[9px] font-bold flex items-center gap-2 uppercase tracking-widest text-slate-400">
-                <BarChart3 size={12} /> Live Metrics
+              <h4 className="text-[11px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500">
+                <BarChart3 size={14} /> Live Metrics
               </h4>
               
               <div className="grid grid-cols-2 gap-2.5">
                 {[
-                  { label: 'Daily Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500' : 'text-red-500' },
-                  { label: 'Daily Trades', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500' },
+                  { label: 'Daily Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400' },
+                  { label: 'Daily Trades', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500 dark:text-blue-400' },
                 ].map((stat, i) => (
-                  <div key={i} className="bg-slate-100 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
-                    <p className="text-[7px] text-slate-500 uppercase font-bold mb-0.5 tracking-tight">{stat.label}</p>
-                    <p className={cn("text-[11px] font-bold font-mono", stat.color)}>{stat.value}</p>
+                  <div key={i} className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 text-center shadow-sm">
+                    <p className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">{stat.label}</p>
+                    <p className={cn("text-xl font-black font-mono tracking-tighter", stat.color)}>{stat.value}</p>
                   </div>
                 ))}
               </div>
@@ -528,36 +528,49 @@ export default function Bots() {
       {/* Live Activity Log */}
       <div className="lg:col-span-4 h-full">
         <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-bold flex items-center gap-2 uppercase tracking-wider">
-              <History size={14} className="text-blue-500" /> Activity
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-sm font-black flex items-center gap-2 uppercase tracking-widest text-slate-900 dark:text-white">
+              <History size={16} className="text-blue-500" /> Activity Log
             </h3>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Active</span>
+            <div className="flex items-center gap-2 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+              <span className="text-[9px] font-black text-green-600 dark:text-green-400 uppercase tracking-widest">Live</span>
             </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto space-y-1.5 custom-scrollbar pr-1 max-h-[300px] lg:max-h-[500px]">
+          <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar pr-1 max-h-[400px] lg:max-h-[600px]">
             <AnimatePresence initial={false}>
               {logs.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center p-6 opacity-30">
-                  <Activity size={24} className="mb-2" />
-                  <p className="text-[10px]">Awaiting signals...</p>
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center p-8 opacity-40">
+                  <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <Activity size={32} className="text-slate-400" />
+                  </div>
+                  <p className="text-xs font-bold uppercase tracking-widest">Awaiting execution signals...</p>
                 </div>
               ) : (
                 logs.map((log, i) => (
                   <motion.div
                     key={log + i}
-                    initial={{ opacity: 0, x: -5 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-100 dark:border-slate-800 text-[8px] font-mono leading-tight"
+                    initial={{ opacity: 0, scale: 0.95, x: -10 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    className={cn(
+                      "p-3 rounded-xl border font-mono leading-relaxed transition-all shadow-sm",
+                      log.includes("+") 
+                        ? "bg-green-500/5 border-green-500/20 text-green-600 dark:text-green-400" 
+                        : log.includes("-") 
+                          ? "bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400" 
+                          : "bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400"
+                    )}
                   >
-                    <span className={cn(
-                      log.includes('+') ? "text-green-500" : log.includes('-') ? "text-red-500" : "text-blue-500"
-                    )}>
-                      {log}
-                    </span>
+                    <div className="flex items-start gap-2.5">
+                      <div className={cn(
+                        "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
+                        log.includes("+") ? "bg-green-500" : log.includes("-") ? "bg-red-500" : "bg-blue-500"
+                      )} />
+                      <p className="text-[11px] font-bold tracking-tight">
+                        {log}
+                      </p>
+                    </div>
                   </motion.div>
                 ))
               )}

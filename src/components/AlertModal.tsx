@@ -59,10 +59,10 @@ export default function AlertModal({
               {icons[type]}
             </div>
 
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-slate-900 dark:text-white leading-tight">
-                <span className="font-extrabold uppercase tracking-wider mr-2">{title}:</span>
-                <span className="text-slate-700 dark:text-slate-300 font-bold">{message}</span>
+            <div className="flex-1 min-w-0 py-1">
+              <p className="text-xs font-black text-slate-900 dark:text-white leading-tight">
+                <span className="uppercase tracking-[0.1em] mr-2 text-slate-900 dark:text-white">{title}:</span>
+                <span className="text-slate-800 dark:text-slate-100 font-black">{message}</span>
               </p>
             </div>
 

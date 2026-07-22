@@ -159,7 +159,7 @@ export default function Verification() {
 
             <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl flex gap-4">
               <AlertCircle className="text-blue-500 shrink-0" size={20} />
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <p className="text-xs text-slate-500 leading-relaxed font-black">
                 Verification is automatic and usually takes 5-10 minutes. Once verified, your documents will be permanently deleted for your privacy.
               </p>
             </div>
