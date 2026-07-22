@@ -53,6 +53,7 @@ export function useStore() {
 
   const userRef = useRef<User | null>(user);
   const isInternalUpdate = useRef(false);
+  const closingTrades = useRef<Set<string>>(new Set());
   
   useEffect(() => {
     userRef.current = user;
@@ -1283,11 +1284,20 @@ export function useStore() {
     const currentUser = userRef.current;
     if (!currentUser) return;
     
-    console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
+    // Check if we are already closing this trade
+    if (closingTrades.current.has(tradeId)) {
+      console.log(`closeTrade: Trade ${tradeId} is already being closed, skipping.`);
+      return;
+    }
     
     const trade = (currentUser.trades || []).find(t => t.id === tradeId);
     if (!trade || trade.status === 'CLOSED') return;
 
+    // Mark as closing
+    closingTrades.current.add(tradeId);
+    
+    console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
+    
     const isReal = trade.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
@@ -1314,13 +1324,21 @@ export function useStore() {
 
         console.log(`[Supabase] Secure closure success. New Balance: ${response.data.newBalance}`);
       } catch (err: any) {
-        console.error('CRITICAL: Supabase secure sync error in closeTrade:', err.response?.data?.error || err.message);
+        const errorMsg = err.response?.data?.error || err.message;
+        if (errorMsg === 'Trade already closed') {
+          console.log(`[Supabase] Trade ${tradeId} was already closed on server.`);
+        } else {
+          console.error('CRITICAL: Supabase secure sync error in closeTrade:', errorMsg);
+        }
         // We still update local state for responsiveness, but the DB is the authority
       }
     }
 
     // 2. Update local state
     setUser(prev => {
+      // Remove from closing set after state update starts
+      closingTrades.current.delete(tradeId);
+      
       if (!prev) return null;
       
       // Update caches
@@ -1667,6 +1685,40 @@ export function useStore() {
         }
       } catch (err) {
         console.error('[Store] Error toggling bot in Supabase:', err);
+      }
+    }
+  };
+
+  const updateBotConfig = async (botId: string, coin: string, timeframe: string) => {
+    if (!user) return;
+    
+    const updatedConfigs = {
+      ...(user.botConfigs || {}),
+      [botId]: { coin, timeframe }
+    };
+
+    const updatedUser = {
+      ...user,
+      botConfigs: updatedConfigs
+    };
+
+    setUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('bot_settings').upsert({
+          user_id: user.id,
+          bot_stats: {
+            ...(user.botStats || {}),
+            configs: updatedConfigs
+          },
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
+      } catch (err) {
+        console.error('Failed to update bot config in Supabase:', err);
       }
     }
   };
@@ -2360,6 +2412,9 @@ export function useStore() {
         let coin = 'BTC';
         let baseAmount = 0;
 
+        // Get persisted config for this bot if it exists
+        const botConfig = currentUser.botConfigs?.[botId];
+
         if (botId === 'custom' && currentUser.customBotConfig) {
           botName = currentUser.customBotConfig.name;
           coin = currentUser.customBotConfig.currency || 'BTC';
@@ -2381,7 +2436,21 @@ export function useStore() {
             nova: 'Nova Alpha v2'
           };
           botName = commonBots[botId] || 'Trading Bot';
-          coin = 'BTC'; 
+          
+          // Use persisted coin if available, otherwise default logic
+          if (botConfig?.coin) {
+            coin = botConfig.coin;
+          } else {
+            // Fallback to default pairs based on bot ID
+            if (botId === 'trend' || botId === 'nova' || botId === 'orbit') {
+              coin = 'ETH';
+            } else if (botId === 'ai' || botId === 'starlight') {
+              coin = 'SOL';
+            } else {
+              coin = 'BTC';
+            }
+          }
+          
           baseAmount = (1 + Math.random() * 4);
         }
 
@@ -2594,6 +2663,7 @@ export function useStore() {
     logout,
     switchAccount,
     resetDemoBalance,
+    updateBotConfig,
     addTrade,
     closeTrade,
     addTransaction,

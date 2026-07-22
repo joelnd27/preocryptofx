@@ -60,6 +60,7 @@ export interface User {
     nova: boolean;
     custom: boolean;
   };
+  botConfigs?: Record<string, { coin: string, timeframe: string }>;
   customBotConfig?: {
     name: string;
     strategy: string;

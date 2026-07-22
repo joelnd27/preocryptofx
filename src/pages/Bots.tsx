@@ -115,17 +115,20 @@ const BOTS: BotConfig[] = [
 ];
 
 export default function Bots() {
-  const { user, toggleBot, addBotProfit, addTrade, importBot } = useStore();
+  const { user, toggleBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string }>>(() => {
     const initial: Record<string, { coin: string, timeframe: string }> = {
-      custom: { coin: 'BTC', timeframe: '1M' }
+      custom: { coin: user?.customBotConfig?.currency || 'BTC', timeframe: '1M' }
     };
+    
     BOTS.forEach(bot => {
+      // Use persisted config if available
+      const persisted = user?.botConfigs?.[bot.id];
       initial[bot.id] = { 
-        coin: bot.type === 'trend' ? 'ETH' : bot.type === 'ai' ? 'SOL' : 'BTC', 
-        timeframe: bot.type === 'scalping' ? '1M' : '1H' 
+        coin: persisted?.coin || (bot.type === 'trend' ? 'ETH' : bot.type === 'ai' ? 'SOL' : 'BTC'), 
+        timeframe: persisted?.timeframe || (bot.type === 'scalping' ? '1M' : '1H') 
       };
     });
     return initial;
@@ -428,24 +431,28 @@ export default function Bots() {
           </div>
 
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-3.5">
-              <h4 className="text-[11px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500">
-                <Settings2 size={14} /> Configuration Unit
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2.5">
+              <h4 className="text-[9px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500">
+                <Settings2 size={12} /> Configuration Unit
               </h4>
               
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
-                    <Coins size={10} /> Asset Selection
+                  <label className="text-[8px] font-black text-slate-500 flex items-center gap-1.5 uppercase tracking-widest">
+                    <Coins size={10} className="text-blue-500" /> Asset Selection
                   </label>
                     <select 
                       value={botSettings[selectedBot.id].coin}
-                      onChange={(e) => setBotSettings(prev => ({
-                        ...prev,
-                        [selectedBot.id]: { ...prev[selectedBot.id], coin: e.target.value }
-                      }))}
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1.5 px-2.5 text-[10px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
+                      onChange={(e) => {
+                        const newCoin = e.target.value;
+                        setBotSettings(prev => ({
+                          ...prev,
+                          [selectedBot.id]: { ...prev[selectedBot.id], coin: newCoin }
+                        }));
+                        updateBotConfig(selectedBot.id, newCoin, botSettings[selectedBot.id].timeframe);
+                      }}
+                      className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
                     >
                       {CRYPTO_LIST.map(c => (
                         <option key={c.symbol} value={c.symbol} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
@@ -456,19 +463,23 @@ export default function Bots() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
-                    <Clock size={10} /> Runtime Frame
+                  <label className="text-[8px] font-black text-slate-500 flex items-center gap-1.5 uppercase tracking-widest">
+                    <Clock size={10} className="text-blue-500" /> Runtime Frame
                   </label>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+                  <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
                     {['1M', '15M', '1H', '1D'].map((t) => (
                       <button
                         key={t}
-                        onClick={() => setBotSettings(prev => ({
-                          ...prev,
-                          [selectedBot.id]: { ...prev[selectedBot.id], timeframe: t }
-                        }))}
+                        onClick={() => {
+                          const newTf = t;
+                          setBotSettings(prev => ({
+                            ...prev,
+                            [selectedBot.id]: { ...prev[selectedBot.id], timeframe: newTf }
+                          }));
+                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, newTf);
+                        }}
                         className={cn(
-                          "flex-1 py-1 rounded-md text-[8px] font-bold transition-all",
+                          "flex-1 py-0.5 rounded-md text-[8px] font-bold transition-all",
                           botSettings[selectedBot.id].timeframe === t 
                             ? "bg-white dark:bg-slate-700 shadow-sm text-blue-500" 
                             : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
@@ -481,27 +492,27 @@ export default function Bots() {
                 </div>
               </div>
 
-              <div className="p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-lg flex gap-2">
-                <AlertCircle size={12} className="text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-500 leading-tight font-black">
-                  Threshold: <span className="text-slate-900 dark:text-white">${selectedBot.minDeposit}</span>. System uses priority signals.
+              <div className="p-2 bg-blue-500/5 border border-blue-500/10 rounded-lg flex gap-2 items-center">
+                <AlertCircle size={10} className="text-blue-500 shrink-0" />
+                <p className="text-[9px] text-slate-500 leading-tight font-black">
+                  Threshold: <span className="text-slate-900 dark:text-white">${selectedBot.minDeposit}</span>. Priority signals.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-3.5">
-              <h4 className="text-[11px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500">
-                <BarChart3 size={14} /> Live Metrics
+            <div className="space-y-2.5">
+              <h4 className="text-[9px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500">
+                <BarChart3 size={12} /> Live Metrics
               </h4>
               
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 {[
                   { label: 'Daily Profit', value: `${stats[selectedBot.id].profit >= 0 ? '+' : ''}$${stats[selectedBot.id].profit.toFixed(2)}`, color: stats[selectedBot.id].profit >= 0 ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400' },
                   { label: 'Daily Trades', value: stats[selectedBot.id].trades.toString(), color: 'text-blue-500 dark:text-blue-400' },
                 ].map((stat, i) => (
-                  <div key={i} className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 text-center shadow-sm">
-                    <p className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">{stat.label}</p>
-                    <p className={cn("text-xl font-black font-mono tracking-tighter", stat.color)}>{stat.value}</p>
+                  <div key={i} className="bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200/50 dark:border-slate-700/50 text-center shadow-sm">
+                    <p className="text-[8px] text-slate-500 uppercase font-black mb-1 tracking-widest">{stat.label}</p>
+                    <p className={cn("text-sm font-black font-mono tracking-tighter", stat.color)}>{stat.value}</p>
                   </div>
                 ))}
               </div>
