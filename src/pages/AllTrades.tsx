@@ -113,17 +113,17 @@ export default function AllTrades() {
       <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[32px] overflow-hidden shadow-sm dark:shadow-none">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
-            <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800/30">
+            <thead className="text-[10px] text-slate-500 uppercase bg-slate-50 dark:bg-slate-800/30">
               <tr>
-                <th className="px-6 py-4">Date & Time</th>
-                <th className="px-6 py-4">Asset</th>
-                <th className="px-6 py-4">Type</th>
-                <th className="px-6 py-4">Amount</th>
-                <th className="px-6 py-4">Entry Price</th>
-                <th className="px-6 py-4">Profit/Loss</th>
-                <th className="px-6 py-4">Source</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4 text-right">Account</th>
+                <th className="px-4 py-3">Date & Time</th>
+                <th className="px-4 py-3">Asset</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Entry Price</th>
+                <th className="px-4 py-3">Profit/Loss</th>
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Account</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -135,42 +135,42 @@ export default function AllTrades() {
                   transition={{ delay: i * 0.05 }}
                   className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
                 >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <Calendar size={12} />
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                      <Calendar size={10} />
                       {formatDate(trade.timestamp)}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center font-bold text-blue-500 text-xs">
+                      <div className="w-6 h-6 bg-blue-500/10 rounded flex items-center justify-center font-bold text-blue-500 text-[9px]">
                         {trade.coin[0]}
                       </div>
-                      <span className="font-bold text-slate-900 dark:text-white">{trade.coin}</span>
+                      <span className="font-bold text-[11px] text-slate-900 dark:text-white uppercase">{trade.coin}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3">
                     <span className={cn(
-                      "px-2 py-1 rounded-lg text-[10px] font-bold uppercase",
+                      "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
                       trade.type === 'BUY' ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
                     )}>
                       {trade.type}
                     </span>
                   </td>
-                  <td className="px-6 py-4 font-mono text-sm">${trade.amount.toLocaleString()}</td>
-                  <td className="px-6 py-4 font-mono text-sm text-slate-500">${trade.price.toLocaleString()}</td>
-                  <td className="px-6 py-4 font-mono">
+                  <td className="px-4 py-3 font-mono text-[11px] font-medium">${trade.amount.toLocaleString()}</td>
+                  <td className="px-4 py-3 font-mono text-[11px] text-slate-500">${trade.price.toLocaleString()}</td>
+                  <td className="px-4 py-3 font-mono">
                     <div className={cn(
-                      "flex items-center gap-1 font-bold",
+                      "flex items-center gap-1 font-bold text-[11px]",
                       trade.profit >= 0 ? "text-green-500" : "text-red-500"
                     )}>
-                      {trade.profit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {trade.profit >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                       {trade.profit >= 0 ? '+' : ''}{formatCurrency(trade.profit)}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3">
                     <span className={cn(
-                      "px-2 py-1 rounded-lg text-[10px] font-bold uppercase",
+                      "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
                       trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-600" : 
                       trade.source === 'BOT' ? "bg-blue-500/10 text-blue-600" : 
                       "bg-slate-500/10 text-slate-600"
@@ -178,23 +178,23 @@ export default function AllTrades() {
                       {trade.source || 'MANUAL'}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
                       {trade.status === 'OPEN' ? (
-                        <Activity size={14} className="text-blue-500 animate-pulse" />
+                        <Activity size={10} className="text-blue-500 animate-pulse" />
                       ) : (
-                        <History size={14} className="text-slate-400" />
+                        <History size={10} className="text-slate-400" />
                       )}
                       <span className={cn(
-                        "text-[10px] font-bold uppercase",
+                        "text-[9px] font-bold uppercase",
                         trade.status === 'OPEN' ? "text-blue-500" : "text-slate-400"
                       )}>
                         {trade.status}
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                       {trade.accountType}
                     </span>
                   </td>

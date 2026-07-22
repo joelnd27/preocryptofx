@@ -1132,7 +1132,7 @@ setInterval(async () => {
         // Create consolidated bot trade record
         await supabaseAdmin.from('trades').insert({
           user_id: setting.user_id,
-          coin: 'OFFLINE_BOT',
+          coin: 'BOT',
           amount: Math.abs(profit),
           type: profit >= 0 ? 'BUY' : 'SELL',
           price: 65000, 

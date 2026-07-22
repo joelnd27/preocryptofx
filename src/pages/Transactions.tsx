@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowUpRight, 
@@ -29,6 +30,7 @@ import AlertModal from '../components/AlertModal';
 
 export default function Transactions() {
   const { user, addTransaction, processPayheroDeposit, failLatestDeposit, checkPaymentStatus, refreshData, adminCreditUser } = useStore();
+  const location = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
   const [amount, setAmount] = useState('');
@@ -36,7 +38,7 @@ export default function Transactions() {
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'MPESA' | 'CRYPTO'>('MPESA');
-  const [withdrawalMethod, setWithdrawalMethod] = useState<'MPESA' | 'BANK'>('MPESA');
+  const [withdrawalMethod, setWithdrawalMethod] = useState<'MPESA' | 'BANK' | 'CRYPTO'>('MPESA');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [currentTxRef, setCurrentTxRef] = useState<string | null>(null);
@@ -63,6 +65,15 @@ export default function Transactions() {
     const rate = 125 + (Math.random() * 3);
     setCurrentWithdrawalRate(Number(rate.toFixed(2)));
   }, [isModalOpen]);
+
+  useEffect(() => {
+    if (location.state?.openModal) {
+      setModalType(location.state.openModal);
+      setIsModalOpen(true);
+      // Clear state so it doesn't reopen on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   // Automatically detect when a pending transaction is completed via real-time sync
   useEffect(() => {
@@ -153,6 +164,12 @@ export default function Transactions() {
       return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
     })
     .slice(0, 20);
+
+  useEffect(() => {
+    if (user?.phone && modalType === 'WITHDRAW') {
+      setPhone(user.phone);
+    }
+  }, [user?.phone, isModalOpen, modalType]);
 
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,16 +295,6 @@ export default function Transactions() {
         }
       }
 
-      if (phone !== user?.phone) {
-        setAlertConfig({
-          isOpen: true,
-          title: 'Phone Mismatch',
-          message: `Withdrawals can only be made to the phone number used to register your account (${user?.phone}).`,
-          type: 'error'
-        });
-        return;
-      }
-
       const minWithdrawal = withdrawalMethod === 'BANK' ? 34 : (withdrawalMethod === 'MPESA' ? 30 : 54);
       if (val < minWithdrawal) {
         setAlertConfig({
@@ -319,7 +326,7 @@ export default function Transactions() {
         accountType: user?.activeAccount || 'DEMO',
         method: withdrawalMethod,
         bankName: withdrawalMethod === 'BANK' ? bankName : undefined,
-        accountNumber: withdrawalMethod === 'BANK' ? accountNumber : phone
+        accountNumber: withdrawalMethod === 'BANK' ? accountNumber : (user?.phone || phone)
       });
       
       setAlertConfig({
@@ -969,7 +976,11 @@ export default function Transactions() {
                                 type="tel"
                                 required={modalType === 'DEPOSIT' || (modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA')}
                                 value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
+                                onChange={(e) => {
+                                  if (modalType === 'DEPOSIT') {
+                                    setPhone(e.target.value);
+                                  }
+                                }}
                                 className={cn(
                                   "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
                                   modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"

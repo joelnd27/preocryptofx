@@ -266,6 +266,8 @@ export default function Profile() {
                         disabled={!isEditing}
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
+                        placeholder="e.g. 07XXXXXXXX or +254XXXXXXXX"
+                        minLength={9}
                         className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 transition-all disabled:opacity-50"
                       />
                     </div>

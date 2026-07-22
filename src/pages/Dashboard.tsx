@@ -161,6 +161,14 @@ export default function Dashboard() {
           <p className="text-[10px] text-slate-500 font-medium">Welcome, {user?.username}. Here's your performance summary.</p>
         </div>
         <div className="flex items-center gap-3">
+          {user?.activeAccount === 'REAL' && (
+            <button 
+              onClick={() => navigate('/transactions', { state: { openModal: 'DEPOSIT' } })}
+              className="px-4 py-2.5 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 transition-all shadow-lg shadow-green-500/20 flex items-center gap-2 text-xs"
+            >
+              <DollarSign size={14} /> Deposit
+            </button>
+          )}
           {user?.activeAccount === 'DEMO' && (
             <button 
               onClick={resetDemoBalance}
