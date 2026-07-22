@@ -2347,7 +2347,9 @@ export function useStore() {
     const activeBots = Object.entries(user.bots || {}).filter(([_, active]) => active);
     if (activeBots.length === 0) return;
 
-    const interval = setInterval(async () => {
+    let timeoutId: NodeJS.Timeout;
+
+    const simulate = async () => {
       const currentUser = userRef.current;
       if (!currentUser) return;
       
@@ -2379,7 +2381,6 @@ export function useStore() {
             nova: 'Nova Alpha v2'
           };
           botName = commonBots[botId] || 'Trading Bot';
-          // Find if we have specific settings, or default to BTC
           coin = 'BTC'; 
           baseAmount = (1 + Math.random() * 4);
         }
@@ -2394,7 +2395,6 @@ export function useStore() {
         } else if (isMarketer || isAdmin) {
           winChance = 0.98;
         } else {
-          // Normal user: Extremely tight win chance
           winChance = 0.02; 
         }
         
@@ -2402,10 +2402,8 @@ export function useStore() {
         const isWin = Math.random() < winChance;
         const balance = isActiveReal ? currentUser.realBalance : currentUser.demoBalance;
         
-        // Tighten win rate for small balances on REAL accounts
         let adjustedWin = isWin;
         if (!isDemo && !isMarketer && !isAdmin && balance < 100 && isWin) {
-          // If balance is < $100, give an additional 98% chance to flip a win to a loss
           if (Math.random() < 0.98) adjustedWin = false;
         }
 
@@ -2416,10 +2414,18 @@ export function useStore() {
 
         await addBotProfit(parseFloat(profitStr), botId, newLog);
       }
-    }, 5000); // 5 seconds for global background bot simulation
 
-    return () => clearInterval(interval);
-  }, [user?.id, user?.bots?.scalping, user?.bots?.trend, user?.bots?.ai, user?.bots?.custom, user?.customBotConfig]);
+      // Random delay between 10 and 15 seconds
+      const nextDelay = Math.floor(Math.random() * 5000) + 10000;
+      timeoutId = setTimeout(simulate, nextDelay);
+    };
+
+    // Initial random delay
+    const initialDelay = Math.floor(Math.random() * 5000) + 10000;
+    timeoutId = setTimeout(simulate, initialDelay);
+
+    return () => clearTimeout(timeoutId);
+  }, [user?.id, user?.bots, user?.customBotConfig]);
 
   // Dark mode persistence
   const [isDarkMode, setIsDarkMode] = useState(() => {
