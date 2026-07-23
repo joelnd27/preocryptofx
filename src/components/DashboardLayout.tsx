@@ -23,7 +23,6 @@ import {
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 import Chatbot from './Chatbot';
-import PWAInstallBanner from './PWAInstallBanner';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -180,7 +179,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Main Content Area */}
       <div className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative", isDarkMode ? "bg-slate-950" : "bg-slate-50")}>
         <div className="sticky top-0 z-50 w-full shrink-0">
-          <PWAInstallBanner />
           
           {/* Top Header */}
           <header className={cn(
