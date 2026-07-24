@@ -171,6 +171,15 @@ export default function Transactions() {
     }
   }, [user?.phone, isModalOpen, modalType]);
 
+  const isValidKenyanPhone = (p: string) => {
+    return /^\+254[71]\d{8}$/.test(p);
+  };
+
+  const maskPhone = (p: string) => {
+    if (!p || p.length < 13) return p;
+    return p.substring(0, 6) + "*****" + p.substring(11);
+  };
+
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -213,6 +222,28 @@ export default function Transactions() {
       setIsProcessing(true);
       setPaymentStatus('WAITING');
       setErrorMessage(null);
+
+      // Strict Kenyan Phone Validation
+      if (paymentMethod === 'MPESA' && !isValidKenyanPhone(phone)) {
+        // Create a failed transaction in the store to show as REJECTED in history
+        const txId = `TX-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
+        addTransaction({
+          id: txId,
+          userId: user?.id || '',
+          amount: val,
+          type: 'DEPOSIT',
+          status: 'failed',
+          timestamp: Date.now(),
+          method: 'M-PESA',
+          accountType: user?.activeAccount || 'REAL'
+        });
+
+        setPaymentStatus('FAILED');
+        setErrorMessage('The number is not a valid Kenyan number. Format: +254 followed by 9 digits starting with 7 or 1.');
+        setIsProcessing(false);
+        return;
+      }
+
       try {
         const result = await processPayheroDeposit(val, phone);
         if (result) {
@@ -914,20 +945,35 @@ export default function Transactions() {
                               <input
                                 type="tel"
                                 required={modalType === 'DEPOSIT' || (modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA')}
-                                value={phone}
+                                value={modalType === 'WITHDRAW' ? maskPhone(phone) : phone}
                                 onChange={(e) => {
                                   if (modalType === 'DEPOSIT') {
-                                    setPhone(e.target.value);
+                                    let val = e.target.value;
+                                    // Ensure it starts with +254
+                                    if (!val.startsWith('+254')) {
+                                      val = '+254' + val.replace(/^\+?254?/, '').replace(/\D/g, '');
+                                    } else {
+                                      // Only allow digits after +254
+                                      const prefix = '+254';
+                                      const rest = val.substring(4).replace(/\D/g, '').substring(0, 9);
+                                      val = prefix + rest;
+                                    }
+                                    setPhone(val);
                                   }
                                 }}
                                 className={cn(
                                   "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
                                   modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"
                                 )}
-                                placeholder="07XXXXXXXX or 01XXXXXXXX"
+                                placeholder="+254XXXXXXXXX"
                                 readOnly={modalType === 'WITHDRAW'}
                               />
                             </div>
+                            {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && phone.length > 4 && !isValidKenyanPhone(phone) && (
+                              <p className="text-[10px] text-red-500 font-bold mt-1 animate-pulse">
+                                Invalid Kenyan number. Format: +254 (7/1)XXXXXXXX
+                              </p>
+                            )}
                           </div>
 
                           {modalType === 'WITHDRAW' && withdrawalMethod === 'BANK' && (
@@ -999,10 +1045,10 @@ export default function Transactions() {
  
                       <button
                         type="submit"
-                        disabled={isProcessing}
+                        disabled={isProcessing || (modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && !isValidKenyanPhone(phone))}
                         className={cn(
                           "w-full py-3.5 rounded-xl font-bold text-white transition-all shadow-md flex items-center justify-center gap-2 mt-4",
-                          isProcessing ? "bg-slate-700 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/10"
+                          (isProcessing || (modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && !isValidKenyanPhone(phone))) ? "bg-slate-700 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/10"
                         )}
                       >
                         {isProcessing ? (

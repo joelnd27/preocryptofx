@@ -233,13 +233,22 @@ export default function Register() {
                   type="tel"
                   required
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  minLength={9}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    if (!val.startsWith('+254')) {
+                      val = '+254' + val.replace(/^\+?254?/, '').replace(/\D/g, '');
+                    } else {
+                      const prefix = '+254';
+                      const rest = val.substring(4).replace(/\D/g, '').substring(0, 9);
+                      val = prefix + rest;
+                    }
+                    setPhone(val);
+                  }}
                   className={cn(
                     "w-full border rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
                     isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
                   )}
-                  placeholder="e.g. 07XXXXXXXX or 01XXXXXXXX"
+                  placeholder="+254XXXXXXXXX"
                 />
               </div>
             </div>
