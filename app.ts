@@ -1,5 +1,6 @@
 import express from 'express';
 import axios from 'axios';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -20,6 +21,11 @@ app.use((req, res, next) => {
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in environment');
+}
+
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Admin API Routes (Bypasses RLS using Service Role Key)
@@ -44,6 +50,12 @@ if (FINAPI_BASE_URL && !FINAPI_BASE_URL.startsWith('http')) {
   FINAPI_BASE_URL = `https://${FINAPI_BASE_URL}`;
 }
 FINAPI_BASE_URL = FINAPI_BASE_URL.replace(/\/+$/, ''); // Remove trailing slashes
+ 
+// HashBack Config
+const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY;
+const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID;
+const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET;
+const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 
 /**
  * Helper to construct the FinAPI endpoint URL correctly
@@ -180,7 +192,7 @@ router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, 
       validateStatus: () => true // Handle all status codes manually for better logging
     });
 
-    console.log(`FinAPI STK Push Response [${response.status}]:`, JSON.stringify(response.data));
+    console.log(`Payment STK Push Response [${response.status}]:`, JSON.stringify(response.data));
 
     if (response.status >= 400) {
       const errorMsg = response.data.message || response.data.error || response.statusText || 'FinAPI rejected the request';
@@ -246,7 +258,7 @@ router.get('/finapi/verify/:reference', async (req, res) => {
       validateStatus: () => true
     });
 
-    console.log(`FinAPI Verification Response [${response.status}]:`, JSON.stringify(response.data));
+    console.log(`Payment Verification Response [${response.status}]:`, JSON.stringify(response.data));
 
     const data = response.data;
     const statusStr = (data.status || data.Status || '').toLowerCase();
@@ -373,6 +385,202 @@ router.post('/finapi/callback', async (req, res) => {
     res.json({ success: true });
   } catch (error: any) {
     console.error('FinAPI Callback Processing Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// HashBack STK Push Initiation
+router.post('/hashback/stk-push', async (req, res) => {
+  console.log('[HashBack] STK Push Request Received:', JSON.stringify(req.body));
+  const { amount, phone, userId } = req.body;
+  const rawPhone = phone || req.body.phone_number || req.body.Phone;
+  
+  // Convert USD to KES (1 USD = 129.98 KES)
+  const usdAmount = Number(amount || req.body.Amount || req.body.amount || 0);
+  const kesAmount = Math.ceil(usdAmount * 129.98);
+  
+  const refUserId = userId || req.body.ExternalId || req.body.userId || 'anonymous';
+  
+  // Normalize phone number (M-Pesa format 254XXXXXXXXX)
+  let normalizedPhone = String(rawPhone || '').replace(/\+/g, '').replace(/\s/g, '');
+  if (normalizedPhone.startsWith('0')) {
+    normalizedPhone = '254' + normalizedPhone.substring(1);
+  } else if (normalizedPhone.startsWith('7') || normalizedPhone.startsWith('1')) {
+    normalizedPhone = '254' + normalizedPhone;
+  }
+
+  // Format: HBK + timestamp (seconds) + random
+  const reference = `HBK${Math.floor(Date.now() / 1000)}${Math.floor(Math.random() * 99)}`;
+
+  try {
+    if (!HASHBACK_API_KEY || !HASHBACK_ACCOUNT_ID) {
+      console.error('[HashBack] Missing configuration:', { hasKey: !!HASHBACK_API_KEY, hasAccountId: !!HASHBACK_ACCOUNT_ID });
+      return res.status(500).json({ error: 'HashBack configuration missing' });
+    }
+
+    if (!normalizedPhone || normalizedPhone.length < 10) {
+      return res.status(400).json({ error: 'Valid phone number is required' });
+    }
+
+    if (kesAmount < 10) {
+      return res.status(400).json({ error: 'Amount too small (minimum 10 KES)' });
+    }
+
+    // Save the transaction in Supabase as pending first
+    if (supabaseAdmin) {
+      const { error: dbError } = await supabaseAdmin.from('transactions').insert({
+        user_id: refUserId,
+        type: 'DEPOSIT',
+        amount: usdAmount,
+        status: 'pending',
+        account_type: 'REAL',
+        method: 'HashBack STK',
+        external_id: reference
+      });
+      if (dbError) {
+        console.error('[HashBack] Supabase Error:', dbError);
+        // We continue anyway, or should we fail? Better to fail if we can't track it.
+        return res.status(500).json({ error: 'Failed to record transaction' });
+      }
+    }
+
+    // Ensure types and field names match HashBack's requirements exactly
+    const payload = {
+      api_key: HASHBACK_API_KEY,
+      account_id: String(HASHBACK_ACCOUNT_ID),
+      amount: Number(kesAmount),
+      msisdn: String(normalizedPhone),
+      reference: String(reference) // Keep reference for tracking if accepted
+    };
+
+    console.log('[HashBack] Sending Payload to /initiatestk');
+
+    const response = await axios.post(`${HASHBACK_BASE_URL}/initiatestk`, payload, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000,
+      validateStatus: () => true
+    });
+
+    console.log(`[HashBack] Response Code: ${response.status}`);
+    
+    if (response.status >= 400 || !response.data || (response.data.success === false)) {
+      const errorMsg = response.data?.message || response.data?.error || response.data?.details || 'HashBack API Error';
+      console.error('[HashBack] Rejection:', response.data);
+      
+      return res.status(response.status || 400).json({
+        success: false,
+        error: errorMsg,
+        debug: {
+          sent_phone: normalizedPhone,
+          sent_amount: kesAmount,
+          sent_reference: reference,
+          has_account_id: !!HASHBACK_ACCOUNT_ID,
+          has_api_key: !!HASHBACK_API_KEY
+        },
+        details: response.data
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'STK push initiated',
+      reference: reference,
+      transaction_id: response.data.transaction_id || response.data.request_id || response.data.id
+    });
+  } catch (error: any) {
+    console.error('[HashBack] STK Push Exception:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Internal server error', 
+      message: error.message,
+      details: error.response?.data
+    });
+  }
+});
+
+// HashBack Webhook
+router.post('/hashback/webhook', async (req, res) => {
+  console.log('HashBack Webhook Received:', JSON.stringify(req.body));
+  
+  const signature = req.headers['x-hashpay-signature'];
+  const rawBody = JSON.stringify(req.body);
+
+  // Verify signature
+  if (HASHBACK_WEBHOOK_SECRET && signature) {
+    const expectedSignature = 'sha256=' + crypto
+      .createHmac('sha256', HASHBACK_WEBHOOK_SECRET)
+      .update(rawBody)
+      .digest('hex');
+
+    if (signature !== expectedSignature) {
+      console.warn('HashBack Webhook: Invalid signature');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  const payload = req.body;
+  const eventType = payload.event;
+  const reference = payload.TransactionReference || payload.reference;
+
+  try {
+    if (supabaseAdmin && reference) {
+      if (eventType === 'payment.success' || payload.status === 'success') {
+        // Find transaction
+        const { data: tx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .eq('external_id', reference)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (tx) {
+          // Prevent double credit by checking if we already processed this
+          await supabaseAdmin.rpc('increment_balance_v2', {
+            t_id: tx.id,
+            u_id: tx.user_id,
+            amount: Number(tx.amount)
+          });
+          console.log(`Success: Credited ${tx.amount} to user ${tx.user_id} for ref ${reference}`);
+        }
+      } else if (['payment.failed', 'failed', 'rejected', 'cancelled'].includes(eventType || payload.status)) {
+        await supabaseAdmin.from('transactions')
+          .update({ status: 'rejected' })
+          .eq('external_id', reference)
+          .eq('status', 'pending');
+      }
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('HashBack Webhook Processing Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// HashBack Verify (Polling endpoint)
+router.get('/hashback/verify/:reference', async (req, res) => {
+  const { reference } = req.params;
+  
+  try {
+    if (supabaseAdmin) {
+      const { data: tx } = await supabaseAdmin
+        .from('transactions')
+        .select('status, amount')
+        .eq('external_id', reference)
+        .maybeSingle();
+      
+      if (tx && tx.status !== 'pending') {
+        return res.json({
+          success: true,
+          status: tx.status,
+          isSuccess: tx.status === 'completed' || tx.status === 'success',
+          isFailed: tx.status === 'rejected' || tx.status === 'failed'
+        });
+      }
+    }
+    
+    res.json({ status: 'pending', isSuccess: false, isFailed: false });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });

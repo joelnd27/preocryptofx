@@ -2254,7 +2254,7 @@ export function useStore() {
     }
 
     try {
-      const response = await axios.post('/api/finapi/stk-push', {
+      const response = await axios.post('/api/hashback/stk-push', {
         amount: amountUsd,
         phone: (phone || '').replace('+', ''),
         userId: user.id
@@ -2264,21 +2264,12 @@ export function useStore() {
         return response.data.reference || true;
       }
       
-      // If manual payment is supported and STK failed, we might still return the reference
-      if (response.data.manual_payment_supported) {
-        return { 
-          reference: response.data.reference, 
-          manualSupported: true,
-          till: response.data.till_number
-        };
-      }
-
-      const errorMsg = response.data.message || response.data.error || 'Failed to initiate FinAPI payment';
+      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
       throw new Error(errorMsg);
     } catch (error: any) {
       const errorData = error.response?.data;
       const errorMsg = errorData?.message || errorData?.details || errorData?.error || error.message;
-      console.error('FinAPI Initiation Error:', errorData || error.message);
+      console.error('Payment Initiation Error:', errorData || error.message);
       throw new Error(errorMsg);
     }
   };
@@ -2289,10 +2280,10 @@ export function useStore() {
 
   const checkFinapiStatus = async (reference: string) => {
     try {
-      const response = await axios.get(`/api/finapi/verify/${reference}`);
+      const response = await axios.get(`/api/hashback/verify/${reference}`);
       return response.data;
     } catch (error) {
-      console.error('Error checking FinAPI status:', error);
+      console.error('Error checking payment status:', error);
       return null;
     }
   };
