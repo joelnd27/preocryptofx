@@ -145,7 +145,8 @@ router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, 
   }
 
   // Use a shorter, purely alphanumeric reference to avoid INVALID_REFERENCE errors
-  const reference = `T${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  // Format: ORD + timestamp (seconds) + random
+  const reference = `ORD${Math.floor(Date.now() / 1000)}${Math.floor(Math.random() * 99)}`;
 
   try {
     if (!FINAPI_SECRET_KEY) {
@@ -171,10 +172,23 @@ router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, 
 
     const response = await axios.post(endpoint, payload, {
       headers,
-      timeout: 20000
+      timeout: 20000,
+      validateStatus: () => true // Handle all status codes manually for better logging
     });
 
-    console.log('FinAPI STK Push Response:', JSON.stringify(response.data));
+    console.log(`FinAPI STK Push Response [${response.status}]:`, JSON.stringify(response.data));
+
+    if (response.status >= 400) {
+      const errorMsg = response.data.message || response.data.error || response.statusText || 'FinAPI rejected the request';
+      console.error(`FinAPI STK Push Error [${response.status}]:`, response.data);
+      return res.status(response.status).json({
+        success: false,
+        error: 'FinAPI rejected the request',
+        message: errorMsg,
+        details: response.data,
+        code: response.data.code || response.status
+      });
+    }
 
     // Record transaction as pending
     if (supabaseAdmin) {
