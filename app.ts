@@ -242,15 +242,21 @@ router.get('/finapi/verify/:reference', async (req, res) => {
         'Origin': 'https://preocryptofx.com',
         'Referer': 'https://preocryptofx.com/'
       },
-      timeout: 10000
+      timeout: 10000,
+      validateStatus: () => true
     });
 
-    console.log('FinAPI Verification Response:', JSON.stringify(response.data));
+    console.log(`FinAPI Verification Response [${response.status}]:`, JSON.stringify(response.data));
 
     const data = response.data;
-    const statusStr = (data.status || '').toLowerCase();
-    const isSuccess = statusStr === 'success' || statusStr === 'completed' || data.ResultCode === 0;
-    const isFailed = statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled' || (data.ResultCode !== undefined && data.ResultCode !== 0);
+    const statusStr = (data.status || data.Status || '').toLowerCase();
+    const isSuccess = response.status === 200 && (statusStr === 'success' || statusStr === 'completed' || data.ResultCode === 0);
+    const isFailed = response.status >= 400 || 
+                     statusStr === 'failed' || 
+                     statusStr === 'rejected' || 
+                     statusStr === 'cancelled' || 
+                     statusStr === 'error' ||
+                     (data.ResultCode !== undefined && data.ResultCode !== 0);
 
     if (supabaseAdmin) {
       if (isSuccess) {
@@ -279,7 +285,11 @@ router.get('/finapi/verify/:reference', async (req, res) => {
       }
     }
 
-    res.json(data);
+    res.status(response.status).json({
+      ...data,
+      isSuccess,
+      isFailed
+    });
   } catch (error: any) {
     console.error('FinAPI Verification Error:', error.response?.data || error.message);
     res.status(500).json({ 
@@ -352,7 +362,7 @@ router.post('/finapi/callback', async (req, res) => {
             amount: Number(tx.amount)
           });
         }
-      } else if (statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled') {
+      } else if (statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled' || statusStr === 'error') {
         // Update status to rejected
         await supabaseAdmin.from('transactions')
           .update({ status: 'rejected' })

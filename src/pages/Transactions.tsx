@@ -118,9 +118,11 @@ export default function Transactions() {
         try {
           const result = await checkFinapiStatus(currentTxRef);
           if (result) {
-            const statusStr = (result.status || '').toLowerCase();
-            const isSuccess = statusStr === 'success' || statusStr === 'completed' || result.ResultCode === 0;
-            const isFailed = statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled' || (result.ResultCode !== undefined && result.ResultCode !== 0);
+            // Use the explicit flags from backend if available, otherwise fallback to local logic
+            const isSuccess = result.isSuccess || (result.status || '').toLowerCase() === 'success' || (result.status || '').toLowerCase() === 'completed' || result.ResultCode === 0;
+            const isFailed = result.isFailed || 
+                             ['failed', 'rejected', 'cancelled', 'error'].includes((result.status || '').toLowerCase()) || 
+                             (result.ResultCode !== undefined && result.ResultCode !== 0);
 
             if (isSuccess) {
               setPaymentStatus('SUCCESS');
@@ -128,10 +130,18 @@ export default function Transactions() {
               refreshData(); // Final sync to get updated balance
             } else if (isFailed) {
               setPaymentStatus('FAILED');
-              setErrorMessage(result.message || 'Transaction was rejected or cancelled.');
+              setErrorMessage(result.message || result.error || 'Transaction was rejected or cancelled.');
               setCurrentTxRef(null);
               refreshData();
             }
+          }
+
+          // 3. Check if the database status has changed to 'rejected'
+          const txInDb = (user?.transactions || []).find(t => t.externalId === currentTxRef);
+          if (txInDb && txInDb.status === 'rejected') {
+            setPaymentStatus('FAILED');
+            setErrorMessage('Transaction was rejected by the processor.');
+            setCurrentTxRef(null);
           }
         } catch (err) {
           console.error('Polling error:', err);
@@ -1217,8 +1227,16 @@ export default function Transactions() {
                                 // Try backend check
                                 const result = await checkFinapiStatus(currentTxRef);
                                 
-                                if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
+                                const isSuccess = result?.isSuccess || ['success', 'completed'].includes((result?.status || '').toLowerCase()) || result?.ResultCode === 0;
+                                const isFailed = result?.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result?.status || '').toLowerCase());
+
+                                if (isSuccess) {
                                   setPaymentStatus('SUCCESS');
+                                  setCurrentTxRef(null);
+                                  await refreshData();
+                                } else if (isFailed) {
+                                  setPaymentStatus('FAILED');
+                                  setErrorMessage(result?.message || result?.error || 'Transaction was rejected.');
                                   setCurrentTxRef(null);
                                   await refreshData();
                                 }
@@ -1282,8 +1300,16 @@ export default function Transactions() {
                                 // Try backend check
                                 const result = await checkFinapiStatus(currentTxRef);
                                 
-                                if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
+                                const isSuccess = result?.isSuccess || ['success', 'completed'].includes((result?.status || '').toLowerCase()) || result?.ResultCode === 0;
+                                const isFailed = result?.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result?.status || '').toLowerCase());
+
+                                if (isSuccess) {
                                   setPaymentStatus('SUCCESS');
+                                  setCurrentTxRef(null);
+                                  await refreshData();
+                                } else if (isFailed) {
+                                  setPaymentStatus('FAILED');
+                                  setErrorMessage(result?.message || result?.error || 'Transaction was rejected.');
                                   setCurrentTxRef(null);
                                   await refreshData();
                                 }
