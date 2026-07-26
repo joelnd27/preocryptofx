@@ -29,7 +29,16 @@ import { USD_TO_KES, MIN_DEPOSIT_USD, MIN_WITHDRAWAL_USD, WITHDRAWAL_EXCHANGE_RA
 import AlertModal from '../components/AlertModal';
 
 export default function Transactions() {
-  const { user, addTransaction, processPayheroDeposit, failLatestDeposit, checkPaymentStatus, refreshData, adminCreditUser } = useStore();
+  const { 
+    user, 
+    addTransaction, 
+    processFinapiDeposit,
+    checkFinapiStatus,
+    submitFinapiManualPayment,
+    failLatestDeposit, 
+    refreshData, 
+    adminCreditUser 
+  } = useStore();
   const location = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
@@ -42,7 +51,10 @@ export default function Transactions() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [currentTxRef, setCurrentTxRef] = useState<string | null>(null);
-  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED' | 'VERIFYING'>('IDLE');
+  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED' | 'VERIFYING' | 'MANUAL'>('IDLE');
+  const [manualPaymentData, setManualPaymentData] = useState<{ reference: string; till: string; amount: number } | null>(null);
+  const [mpesaSms, setMpesaSms] = useState('');
+  const [isVerifyingManual, setIsVerifyingManual] = useState(false);
   const [timeLeft, setTimeLeft] = useState(30);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -245,12 +257,20 @@ export default function Transactions() {
       }
 
       try {
-        const result = await processPayheroDeposit(val, phone);
+        const result = await processFinapiDeposit(val, phone);
         if (result) {
           if (typeof result === 'string') {
             setCurrentTxRef(result);
+            setPaymentStatus('WAITING');
+          } else if (result.manualSupported) {
+            setManualPaymentData({
+              reference: result.reference,
+              till: result.till || '5461974',
+              amount: Math.round(val * USD_TO_KES)
+            });
+            setCurrentTxRef(result.reference);
+            setPaymentStatus('MANUAL');
           }
-          setPaymentStatus('WAITING');
           setAmount('');
         } else {
           setPaymentStatus('FAILED');
@@ -368,6 +388,39 @@ export default function Transactions() {
       });
       setIsModalOpen(false);
       setAmount('');
+    }
+  };
+
+  const handleManualPaymentVerify = async () => {
+    if (!mpesaSms.trim() || !currentTxRef) return;
+    setIsVerifyingManual(true);
+    try {
+      const result = await submitFinapiManualPayment(mpesaSms, currentTxRef);
+      if (result.success) {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Manual Verification',
+          message: 'Your payment details have been submitted. Our system will verify the transaction shortly.',
+          type: 'success'
+        });
+        setPaymentStatus('VERIFYING');
+      } else {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Verification Failed',
+          message: result.message || 'The provided SMS could not be verified.',
+          type: 'error'
+        });
+      }
+    } catch (error: any) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Error',
+        message: error.message || 'Failed to submit manual payment verification.',
+        type: 'error'
+      });
+    } finally {
+      setIsVerifyingManual(false);
     }
   };
 
@@ -515,8 +568,9 @@ export default function Transactions() {
                                 onClick={async () => {
                                   setIsChecking(true);
                                   try {
-                                    const result = await checkPaymentStatus(tx.externalId || tx.id);
-                                    if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                    const result = await checkFinapiStatus(tx.externalId || tx.id);
+                                    
+                                    if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
                                       setAlertConfig({
                                         isOpen: true,
                                         title: 'Payment Confirmed',
@@ -1061,6 +1115,59 @@ export default function Transactions() {
                   </>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-8 text-center space-y-6">
+                    {paymentStatus === 'MANUAL' && manualPaymentData && (
+                      <div className="flex flex-col items-center gap-5 w-full">
+                        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-1">
+                          <Smartphone className="w-8 h-8 text-amber-600" />
+                        </div>
+                        <div>
+                          <h4 className="text-xl font-bold mb-2">STK Push Failed</h4>
+                          <p className="text-xs text-slate-500 px-4 max-w-[300px] mx-auto">
+                            The automatic prompt failed. Please complete the payment manually via M-Pesa.
+                          </p>
+                        </div>
+                        
+                        <div className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between border-b border-amber-200/50 dark:border-amber-800/30 pb-2">
+                            <span className="text-[10px] font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider">Amount</span>
+                            <span className="text-sm font-black font-mono text-slate-900 dark:text-white">Ksh {manualPaymentData.amount}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider">Till Number</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black font-mono text-slate-900 dark:text-white">{manualPaymentData.till}</span>
+                              <button 
+                                onClick={() => navigator.clipboard.writeText(manualPaymentData.till)}
+                                className="p-1 hover:bg-amber-200 dark:hover:bg-amber-800 rounded text-amber-700 transition-colors"
+                              >
+                                <Plus size={12} className="rotate-45" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="w-full space-y-3">
+                          <p className="text-[10px] text-slate-500 font-medium italic">
+                            Paste the full M-Pesa confirmation SMS below to verify:
+                          </p>
+                          <textarea
+                            value={mpesaSms}
+                            onChange={(e) => setMpesaSms(e.target.value)}
+                            placeholder="Paste M-Pesa SMS here..."
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-[11px] font-medium h-24 focus:outline-none focus:border-blue-500 transition-all shadow-inner"
+                          />
+                          <button
+                            onClick={handleManualPaymentVerify}
+                            disabled={isVerifyingManual || !mpesaSms.trim()}
+                            className="w-full py-3.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-600/20 flex items-center justify-center gap-2"
+                          >
+                            {isVerifyingManual ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                            Verify SMS Payment
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {paymentStatus === 'VERIFYING' && (
                       <div className="flex flex-col items-center text-center py-4">
                         <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
@@ -1084,8 +1191,9 @@ export default function Transactions() {
                                 setCurrentTxRef(null);
                               } else if (currentTxRef) {
                                 // Try backend check
-                                const result = await checkPaymentStatus(currentTxRef);
-                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                const result = await checkFinapiStatus(currentTxRef);
+                                
+                                if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
                                   setPaymentStatus('SUCCESS');
                                   setCurrentTxRef(null);
                                   await refreshData();
@@ -1148,8 +1256,9 @@ export default function Transactions() {
                                 setCurrentTxRef(null);
                               } else if (currentTxRef) {
                                 // Try backend check
-                                const result = await checkPaymentStatus(currentTxRef);
-                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                const result = await checkFinapiStatus(currentTxRef);
+                                
+                                if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
                                   setPaymentStatus('SUCCESS');
                                   setCurrentTxRef(null);
                                   await refreshData();

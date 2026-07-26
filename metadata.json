@@ -1,5 +1,6 @@
 {
   "name": "PreoCryptoFX",
   "description": "PreoCryptoFX: A complete, working AI-powered crypto trading platform with simulated bots and real-time market data.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

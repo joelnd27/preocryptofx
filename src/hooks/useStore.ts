@@ -2239,7 +2239,7 @@ export function useStore() {
     return true;
   };
 
-  const processPayheroDeposit = async (amountUsd: number, phone: string) => {
+  const processFinapiDeposit = async (amountUsd: number, phone: string) => {
     if (!user) return false;
     
     if (amountUsd < MIN_DEPOSIT_USD) {
@@ -2247,47 +2247,30 @@ export function useStore() {
     }
 
     try {
-      const response = await axios.post('/api/payhero/initiate', {
+      const response = await axios.post('/api/finapi/stk-push', {
         amount: amountUsd,
         phone: (phone || '').replace('+', ''),
-        userId: user.id,
-        username: user.username
+        userId: user.id
       });
 
-      if (response.data.success || response.data.status === 'Success' || response.data.status === 'Successful' || response.data.CheckoutRequestID) {
-        return response.data.external_reference || true;
+      if (response.data.success) {
+        return response.data.reference || true;
       }
       
-      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
+      // If manual payment is supported and STK failed, we might still return the reference
+      if (response.data.manual_payment_supported) {
+        return { 
+          reference: response.data.reference, 
+          manualSupported: true,
+          till: response.data.till_number
+        };
+      }
+
+      const errorMsg = response.data.message || response.data.error || 'Failed to initiate FinAPI payment';
       throw new Error(errorMsg);
     } catch (error: any) {
-      const details = error.response?.data?.details;
-      const message = error.response?.data?.error || error.message;
-      console.error('Payhero Initiation Error:', details || message);
-      
-      let finalMsg = details ? (typeof details === 'object' ? JSON.stringify(details) : details) : message;
-      
-      // Try to parse JSON if it's a string that looks like JSON
-      if (typeof finalMsg === 'string' && (finalMsg.startsWith('{') || finalMsg.startsWith('['))) {
-        try {
-          const parsed = JSON.parse(finalMsg);
-          finalMsg = parsed.error_message || parsed.message || parsed.error || finalMsg;
-        } catch (e) {
-          // Not valid JSON, keep as is
-        }
-      }
-      
-      if (finalMsg && typeof finalMsg === 'string') {
-        if (finalMsg.includes('Too many unsuccessful requests')) {
-          finalMsg = 'Too many unsuccessful requests try after 24hrs';
-        } else if (finalMsg.toLowerCase().includes('not valid kenyan number')) {
-          finalMsg = 'The number is not a valid Kenyan number';
-        } else if (finalMsg.toLowerCase().includes('insufficient funds')) {
-          finalMsg = 'Merchant has insufficient funds';
-        }
-      }
-      
-      throw new Error(finalMsg);
+      console.error('FinAPI Initiation Error:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error || error.message);
     }
   };
 
@@ -2295,13 +2278,28 @@ export function useStore() {
     await syncWithSupabase();
   };
 
-  const checkPaymentStatus = async (externalId: string) => {
+  const checkFinapiStatus = async (reference: string) => {
     try {
-      const response = await axios.get(`/api/payhero/status/${externalId}`);
+      const response = await axios.get(`/api/finapi/verify/${reference}`);
       return response.data;
     } catch (error) {
-      console.error('Error checking payment status:', error);
+      console.error('Error checking FinAPI status:', error);
       return null;
+    }
+  };
+
+  const submitFinapiManualPayment = async (message: string, reference: string) => {
+    if (!user) return null;
+    try {
+      const response = await axios.post('/api/finapi/manual-payment', {
+        message,
+        reference,
+        userId: user.id
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error submitting FinAPI manual payment:', error);
+      throw error;
     }
   };
 
@@ -2669,8 +2667,9 @@ export function useStore() {
     addTransaction,
     toggleBot,
     addBotProfit,
-    processPayheroDeposit,
-    checkPaymentStatus,
+    processFinapiDeposit,
+    checkFinapiStatus,
+    submitFinapiManualPayment,
     failLatestDeposit,
     submitVerification,
     refreshData,

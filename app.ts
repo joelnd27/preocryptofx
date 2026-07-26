@@ -26,9 +26,24 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
-// Payhero API Config
-const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.VITE_PAYHERO_API_KEY;
-const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PAYHERO_CHANNEL_ID;
+// FinAPI (stkpush.co.ke) Config
+let rawFinapiKey = (process.env.FINAPI_SECRET_KEY || '').trim();
+if (rawFinapiKey.toLowerCase().startsWith('finapi_secret_key=')) {
+  rawFinapiKey = rawFinapiKey.substring('finapi_secret_key='.length).trim();
+}
+const FINAPI_SECRET_KEY = rawFinapiKey.replace(/^['"]|['"]$/g, '');
+
+let rawBaseUrl = (process.env.FINAPI_BASE_URL || 'https://stkpush.co.ke').trim();
+if (rawBaseUrl.toLowerCase().startsWith('finapi_base_url=')) {
+  rawBaseUrl = rawBaseUrl.substring('finapi_base_url='.length).trim();
+}
+rawBaseUrl = rawBaseUrl.replace(/^['"]|['"]$/g, '');
+
+let FINAPI_BASE_URL = rawBaseUrl;
+if (FINAPI_BASE_URL && !FINAPI_BASE_URL.startsWith('http')) {
+  FINAPI_BASE_URL = `https://${FINAPI_BASE_URL}`;
+}
+FINAPI_BASE_URL = FINAPI_BASE_URL.replace(/\/+$/, ''); // Remove trailing slashes
 
 // API Routes
 const router = express.Router();
@@ -98,147 +113,187 @@ router.get('/user/referrals', async (req, res) => {
   }
 });
 
-router.post('/payhero/initiate', async (req, res) => {
-  const { amount, phone, userId, username } = req.body;
+// Secure Balance Management (User accessible but strict)
+// FinAPI STK Push
+router.post('/finapi/stk-push', async (req, res) => {
+  const { amount, phone, userId } = req.body;
+  const reference = `FIN-${userId}-${Date.now()}`;
 
   try {
-    const USD_TO_KES = 129.56;
-    const amountKes = Math.round(amount * USD_TO_KES);
-
-    let formattedPhone = (phone || '').replace(/\D/g, '');
-    
-    // Handle Kenyan phone number formatting
-    // If it starts with 2540, remove the 0 (e.g. 25407... or 25401...)
-    if (formattedPhone.startsWith('2540')) {
-      formattedPhone = '254' + formattedPhone.substring(4);
-    }
-    // If it's 10 digits and starts with 0 (e.g. 07... or 01...)
-    else if (formattedPhone.length === 10 && formattedPhone.startsWith('0')) {
-      formattedPhone = '254' + formattedPhone.substring(1);
-    }
-    // If it's 9 digits and starts with 7 or 1 (e.g. 7... or 1...)
-    else if (formattedPhone.length === 9 && (formattedPhone.startsWith('7') || formattedPhone.startsWith('1'))) {
-      formattedPhone = '254' + formattedPhone;
-    }
-    // If it starts with 254 and has 12 digits (already correct format)
-    // we don't need to do anything, it will be used as is.
-
-    if (!PAYHERO_API_KEY || !PAYHERO_CHANNEL_ID) {
-      throw new Error('Payhero API Key or Channel ID is missing.');
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FinAPI Secret Key is missing.');
     }
 
-    if (!supabaseAdmin) {
-      console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
-      // We don't block initiation, but we log it clearly
-    }
-
-    const host = req.get('host');
-    const protocol = (host?.includes('localhost') || host?.includes('127.0.0.1')) ? 'http' : 'https';
-    
-    // De-duplicate: Mark previous pending deposits for this user as cancelled/stale
-    // before creating a new one to avoid multiple pending entries in history.
-    try {
-      const adminClient = supabaseAdmin || supabase;
-      await adminClient.from('transactions')
-        .update({ status: 'rejected' })
-        .eq('user_id', userId)
-        .eq('type', 'DEPOSIT')
-        .eq('status', 'pending')
-        .neq('status', 'completed');
-    } catch (err) {
-      console.warn('Failed to clean up prior pending deposits:', err);
-    }
-
-    // On Netlify, the actual API is at /.netlify/functions/api
-    // But with our redirects, /api/payhero/callback works too.
-    let callbackUrl: string | undefined;
-    
-    const envCallback = process.env.PAYHERO_CALLBACK_URL || process.env.VITE_PAYHERO_CALLBACK_URL;
-    
-    if (envCallback === 'none') {
-      callbackUrl = undefined;
-    } else if (envCallback) {
-      callbackUrl = envCallback;
-    } else {
-      // Auto-detect based on host
-      callbackUrl = `${protocol}://${host}/api/payhero/callback`;
-      
-      // If we are on Netlify and have a site name, we can be even more specific
-      if (process.env.SITE_NAME && !host.includes('localhost')) {
-        callbackUrl = `https://${process.env.SITE_NAME}.netlify.app/api/payhero/callback`;
-      }
-    }
-
-    console.log(`Using Callback URL: ${callbackUrl}`);
-
-    const externalReference = `${userId}-${Date.now()}`;
-    
-    console.log(`Initiating Payhero payment: ${amount} USD (${amountKes} KES) for user ${userId}. Ref: ${externalReference}`);
-    console.log(`Callback URL: ${callbackUrl}`);
-
-    const payload: any = {
-      amount: amountKes,
-      phone_number: formattedPhone,
-      channel_id: Number(PAYHERO_CHANNEL_ID),
-      provider: 'm-pesa',
-      external_reference: externalReference
+    const payload = {
+      phone_number: phone,
+      amount: amount,
+      reference: reference
     };
 
-    if (callbackUrl) {
-      payload.callback_url = callbackUrl;
-    }
-
-    const client = supabaseAdmin || supabase;
-    const { error: insertError } = await client.from('transactions').insert({
-      user_id: userId,
-      type: 'DEPOSIT',
-      amount: amount,
-      status: 'pending',
-      account_type: 'REAL',
-      method: 'Payhero',
-      external_id: externalReference
-    });
-
-    if (insertError) {
-      console.error('Failed to record pending transaction:', insertError);
-      // We continue anyway so the user can still pay, but logging is important
-    }
-
-    const authHeader = PAYHERO_API_KEY?.startsWith('Basic ') || PAYHERO_API_KEY?.startsWith('Bearer ') 
-      ? PAYHERO_API_KEY 
-      : `Bearer ${PAYHERO_API_KEY}`;
-
-    const response = await axios.post('https://backend.payhero.co.ke/api/v2/payments', payload, {
+    const response = await axios.post(`${FINAPI_BASE_URL}/api/stk-push/`, payload, {
       headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+        'Origin': 'https://stkpush.co.ke',
+        'Referer': 'https://stkpush.co.ke/'
       },
       timeout: 15000
     });
 
-    console.log('Payhero Response:', JSON.stringify(response.data));
+    console.log('FinAPI STK Push Response:', JSON.stringify(response.data));
 
-    // If we got a CheckoutRequestID, update the transaction record so we can track it better
-    if (response.data.CheckoutRequestID) {
-      await client.from('transactions')
-        .update({ method: `Payhero (${response.data.CheckoutRequestID})` })
-        .eq('external_id', externalReference);
+    // Record transaction as pending
+    if (supabaseAdmin) {
+      await supabaseAdmin.from('transactions').insert({
+        user_id: userId,
+        type: 'DEPOSIT',
+        amount: amount,
+        status: 'pending',
+        account_type: 'REAL',
+        method: 'FinAPI STK',
+        external_id: reference
+      });
     }
 
     res.json({
       ...response.data,
-      external_reference: externalReference
+      reference: reference
     });
   } catch (error: any) {
-    console.error('Initiate payment error:', error);
+    console.error('FinAPI STK Push Error:', error.response?.data || error.message);
     res.status(500).json({ 
-      error: 'Failed to initiate payment', 
+      error: 'Failed to initiate STK push', 
       details: error.response?.data || error.message 
     });
   }
 });
 
-// Secure Balance Management (User accessible but strict)
+// FinAPI Verification
+router.get('/finapi/verify/:reference', async (req, res) => {
+  const { reference } = req.params;
+
+  try {
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FinAPI Secret Key is missing.');
+    }
+
+    const response = await axios.get(`${FINAPI_BASE_URL}/api/verify-payment/${reference}/`, {
+      headers: {
+        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+        'Origin': 'https://stkpush.co.ke',
+        'Referer': 'https://stkpush.co.ke/'
+      },
+      timeout: 10000
+    });
+
+    console.log('FinAPI Verification Response:', JSON.stringify(response.data));
+
+    const data = response.data;
+    const isSuccess = data.status === 'success' || data.status === 'completed' || data.ResultCode === 0;
+
+    if (isSuccess && supabaseAdmin) {
+      // Find transaction
+      const { data: tx } = await supabaseAdmin
+        .from('transactions')
+        .select('*')
+        .eq('external_id', reference)
+        .eq('status', 'pending')
+        .maybeSingle();
+
+      if (tx) {
+        // Increment balance via RPC
+        await supabaseAdmin.rpc('increment_balance_v2', {
+          t_id: tx.id,
+          u_id: tx.user_id,
+          amount: Number(tx.amount)
+        });
+      }
+    }
+
+    res.json(data);
+  } catch (error: any) {
+    console.error('FinAPI Verification Error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to verify payment', 
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// FinAPI Manual Payment
+router.post('/finapi/manual-payment', async (req, res) => {
+  const { message, reference, userId } = req.body;
+
+  try {
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FinAPI Secret Key is missing.');
+    }
+
+    const payload = {
+      message: message,
+      reference: reference
+    };
+
+    const response = await axios.post(`${FINAPI_BASE_URL}/api/manual-payment/`, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+        'Origin': 'https://stkpush.co.ke',
+        'Referer': 'https://stkpush.co.ke/'
+      },
+      timeout: 15000
+    });
+
+    console.log('FinAPI Manual Payment Response:', JSON.stringify(response.data));
+
+    // Handle success (manual verification might be asynchronous or synchronous)
+    // If it returns success, update balance
+    if (response.data.success && supabaseAdmin) {
+       // Similar to verify, we'd need to confirm it's truly paid
+    }
+
+    res.json(response.data);
+  } catch (error: any) {
+    console.error('FinAPI Manual Payment Error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to verify manual payment', 
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// FinAPI Callback Endpoint
+router.post('/finapi/callback', async (req, res) => {
+  console.log('FinAPI Callback Received:', JSON.stringify(req.body));
+  const { reference, status, amount } = req.body;
+
+  try {
+    if (status === 'success' || status === 'completed') {
+      if (supabaseAdmin) {
+        // Find transaction
+        const { data: tx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .eq('external_id', reference)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (tx) {
+          await supabaseAdmin.rpc('increment_balance_v2', {
+            t_id: tx.id,
+            u_id: tx.user_id,
+            amount: Number(tx.amount)
+          });
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('FinAPI Callback Processing Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/trades/open', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
@@ -362,8 +417,6 @@ router.post('/trades/close', async (req, res) => {
     const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
     const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
 
-    // Verify profit is within reasonable bounds of the target_profit if manually closing
-    // For now we accept currentProfit but we should ideally validate it
     const profit = Number(currentProfit);
     const stake = Number(trade.amount);
     
@@ -396,354 +449,15 @@ router.post('/trades/close', async (req, res) => {
   }
 });
 
-router.get('/payhero/status/:external_reference', async (req, res) => {
-  const { external_reference } = req.params;
-  console.log(`Checking status for: ${external_reference}`);
-  
-  try {
-    if (!PAYHERO_API_KEY) {
-      throw new Error('Payhero API Key is missing.');
-    }
-
-    const authHeader = PAYHERO_API_KEY?.startsWith('Basic ') || PAYHERO_API_KEY?.startsWith('Bearer ') 
-      ? PAYHERO_API_KEY 
-      : `Bearer ${PAYHERO_API_KEY}`;
-
-    // First, try to find the CheckoutRequestID from our DB if external_reference is our ref
-    const client = supabaseAdmin || supabase;
-    
-    // Build a very robust query to find the transaction
-    let query = client.from('transactions').select('method, external_id, amount, id, user_id, status');
-    
-    // Helper to check if a string is a valid UUID
-    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-
-    // We search by external_id, id, OR if the external_reference IS a CheckoutRequestID, we check the method field
-    const orConditions = [
-      `external_id.eq."${external_reference}"`,
-      `method.ilike."%${external_reference}%"`
-    ];
-
-    // Only add ID check if it's a valid UUID to avoid Postgres syntax errors
-    if (isUUID(external_reference)) {
-      orConditions.push(`id.eq."${external_reference}"`);
-    }
-    
-    const { data: tx, error: txError } = await query.or(orConditions.join(',')).maybeSingle();
-
-    if (txError) {
-      console.error('Database error fetching transaction for status check:', txError);
-    }
-
-    let queryId = external_reference;
-    let isCheckoutId = false;
-    if (tx?.method && tx.method.includes('Payhero (')) {
-      const match = tx.method.match(/Payhero \(([^)]+)\)/);
-      if (match) {
-        queryId = match[1];
-        isCheckoutId = true;
-      }
-    }
-
-    console.log(`Querying Payhero with ID: ${queryId} (isCheckoutId: ${isCheckoutId})`);
-
-    let response;
-    if (isCheckoutId) {
-      // If we have a CheckoutRequestID, we query the specific payment
-      response = await axios.get(`https://backend.payhero.co.ke/api/v2/payments/${queryId}`, {
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-    } else {
-      // Fallback to querying by external_reference
-      response = await axios.get(`https://backend.payhero.co.ke/api/v2/payments?external_reference=${external_reference}`, {
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-    }
-    
-    console.log('Payhero Status Response:', JSON.stringify(response.data));
-
-    const payment = response.data.data?.[0] || response.data.data || response.data;
-    console.log('Extracted Payment Data:', JSON.stringify(payment));
-    
-    const paymentId = payment.MpesaReceiptNumber || payment.transaction_id || payment.TransID || payment.CheckoutRequestID || payment.MerchantRequestID;
-    
-    const isSuccess = 
-      payment && (
-        (typeof payment.status === 'string' && (payment.status.toLowerCase() === 'success' || payment.status.toLowerCase() === 'successful')) || 
-        payment.ResultCode === 0 || 
-        payment.ResultCode === '0'
-      ) && paymentId;
-
-    if (isSuccess) {
-      const ref = tx?.external_id || external_reference;
-      
-      console.log(`Manual status check success for ${external_reference}. Ref: ${ref}`);
-
-      // Use RPC v2 for atomic status update AND balance increment
-      console.log(`[StatusCheck] Executing increment_balance_v2 RPC for user ${tx.user_id}. Amount: ${tx.amount} USD. (Transaction ID: ${tx.id})`);
-      const { data: success, error: rpcError } = await client.rpc('increment_balance_v2', {
-        t_id: tx.id,
-        u_id: tx.user_id,
-        amount: Number(tx.amount)
-      });
-
-      if (rpcError) {
-        console.error('CRITICAL: Failed to increment balance via RPC v2 in status check:', rpcError);
-      } else if (!success) {
-        console.log(`[StatusCheck] Transaction ${tx.id} was already processed (RPC returned false).`);
-      } else {
-        console.log(`User ${tx.user_id} successfully credited with ${tx.amount} via status check.`);
-      }
-    } else if (payment && (payment.status === 'failed' || payment.ResultCode === 1032)) {
-      // 1032 is Request Cancelled by User
-      await client.from('transactions').update({ status: 'rejected' }).or(`external_id.eq."${external_reference}",method.ilike."%${external_reference}%"`).eq('status', 'pending');
-      console.log(`Transaction ${external_reference} marked as rejected via status check.`);
-    }
-    
-    res.json(response.data);
-  } catch (error: any) {
-    console.error('Status check error:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json(error.response?.data || { error: 'Failed to check payment status' });
-  }
-});
-
-router.get('/payhero/callback', (req, res) => {
-  res.send('PayHero Webhook Endpoint is ACTIVE. Use POST for actual callbacks.');
-});
-
-router.post('/payhero/callback', async (req, res) => {
-  const payload = Array.isArray(req.body) ? req.body[0] : req.body;
-  console.log('--- PAYHERO CALLBACK RECEIVED ---');
-  console.log('Timestamp:', new Date().toISOString());
-  console.log('Payload:', JSON.stringify(payload));
-
-  if (!payload || Object.keys(payload).length === 0) {
-    console.error('Callback received empty payload.');
-    return res.status(400).json({ error: 'Empty payload' });
-  }
-  
-  try {
-    // 1. Extract success indicators (Check root and nested data)
-    const data = payload.response || payload.data || (payload.Body && payload.Body.stkCallback) || payload;
-    
-    // Check if this is just an initiation response (contains ResponseCode but not ResultCode)
-    const isInitiation = (payload.ResponseCode !== undefined || data.ResponseCode !== undefined) && 
-                         (payload.ResultCode === undefined && data.ResultCode === undefined);
-    
-    if (isInitiation) {
-      console.log('Detected PayHero initiation response. Ignoring as it is not a final callback.');
-      return res.status(200).json({ message: 'Initiation received' });
-    }
-
-    const status = payload.status !== undefined ? payload.status : (data.status || data.Status || payload.Status);
-    const resultCode = payload.ResultCode !== undefined ? payload.ResultCode : data.ResultCode;
-    const resultDesc = data.ResultDesc || data.ResultDescription || data.status_reason || payload.ResultDesc || payload.ResultDescription || payload.status_reason;
-    
-    // IMPORTANT: ResponseCode '0' means "Request Accepted", NOT "Payment Successful".
-    // We only count it as success if status is explicitly "success" or ResultCode is 0.
-    const isSuccess = 
-      (typeof status === 'string' && (status.toLowerCase() === 'success' || status.toLowerCase() === 'successful')) || 
-      resultCode === 0 || 
-      resultCode === '0' ||
-      data.Success === true;
-
-    // 2. Extract identifiers (Check root, nested 'data', 'response', and 'Body.stkCallback')
-    
-    // Standard Safaricom Metadata extraction if available
-    let metadataAmount = 0;
-    let metadataReceipt = '';
-    if (data.CallbackMetadata && Array.isArray(data.CallbackMetadata.Item)) {
-      const items = data.CallbackMetadata.Item;
-      const amountItem = items.find((i: any) => i.Name === 'Amount');
-      const receiptItem = items.find((i: any) => i.Name === 'MpesaReceiptNumber');
-      if (amountItem) metadataAmount = Number(amountItem.Value);
-      if (receiptItem) metadataReceipt = receiptItem.Value;
-    }
-
-    const ref = data.external_reference || data.ExternalReference || data.BillRefNumber || data.Reference || data.reference || payload.external_reference || payload.ExternalReference || payload.BillRefNumber || payload.Reference;
-    const checkoutId = data.CheckoutRequestID || data.checkout_request_id || data.CheckoutID || data.MerchantRequestID || payload.CheckoutRequestID || payload.checkout_request_id || payload.CheckoutID;
-    const transactionId = data.transaction_id || data.TransactionID || data.mpesa_code || data.MpesaReceiptNumber || data.TransID || payload.transaction_id || payload.MpesaReceiptNumber || metadataReceipt;
-    const amountKes = Number(data.amount || data.Amount || data.TransAmount || payload.amount || metadataAmount || 0);
-
-    console.log(`Callback Analysis: Success=${isSuccess}, Ref=${ref}, CheckoutID=${checkoutId}, Amount=${amountKes}, TxID=${transactionId}`);
-
-    if (isSuccess && !transactionId) {
-      console.log('Callback indicates success but missing M-Pesa Receipt (transactionId). Treating as pending/initiation.');
-      return res.status(200).json({ message: 'Request accepted, waiting for payment completion' });
-    }
-
-    if (!ref && !checkoutId) {
-      console.error('Callback missing identifiers (ref/checkoutId). Cannot process.');
-      console.log('Available keys in payload:', Object.keys(payload));
-      if (payload.data) console.log('Available keys in payload.data:', Object.keys(payload.data));
-      return res.status(400).json({ error: 'Missing identifiers' });
-    }
-
-    const client = supabaseAdmin || supabase;
-    if (!supabaseAdmin) {
-      console.warn('WARNING: supabaseAdmin is NOT initialized. Using anon client. RLS may block updates.');
-    }
-
-    if (isSuccess) {
-      // 1. Find the transaction in our DB to get the correct user_id and expected amount
-      // We search by external_id (our ref), id, or checkoutId (Payhero's ref)
-      let query = client.from('transactions').select('user_id, amount, status, id, external_id');
-      const orConditions = [];
-      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-
-      if (ref) {
-        orConditions.push(`external_id.eq."${ref}"`);
-        if (isUUID(ref)) {
-          orConditions.push(`id.eq."${ref}"`);
-        }
-      }
-      if (checkoutId) {
-        orConditions.push(`external_id.eq."${checkoutId}"`);
-        orConditions.push(`method.ilike."%${checkoutId}%"`);
-      }
-      
-      if (orConditions.length > 0) {
-        query = query.or(orConditions.join(','));
-      } else {
-        console.error('No identifiers found in callback payload.');
-        return res.status(400).json({ error: 'Missing identifiers' });
-      }
-
-      let { data: tx, error: fetchError } = await query.maybeSingle();
-
-      if (fetchError) {
-        console.error('Error fetching transaction for callback:', fetchError);
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      // Fallback: If not found by ref, try to extract userId from ref and find latest pending
-      if (!tx && ref && ref.includes('-')) {
-        try {
-          const parts = ref.split('-');
-          // A UUID has 5 parts. Our ref is uuid-timestamp.
-          if (parts.length >= 5) {
-            const potentialUserId = parts.slice(0, 5).join('-');
-            if (potentialUserId.length === 36) {
-              console.log(`Attempting fallback search for user: ${potentialUserId}`);
-              const { data: fallbackTx } = await client
-                .from('transactions')
-                .select('user_id, amount, status, id, external_id')
-                .eq('user_id', potentialUserId)
-                .eq('status', 'pending')
-                .eq('type', 'DEPOSIT')
-                .order('timestamp', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-              
-              if (fallbackTx) {
-                console.log(`Fallback match successful! Using transaction ${fallbackTx.id}`);
-                tx = fallbackTx;
-              }
-            }
-          }
-        } catch (fallbackErr) {
-          console.error('Fallback matching error:', fallbackErr);
-        }
-      }
-
-      if (!tx) {
-        console.error(`No transaction found for Ref: ${ref} or CheckoutID: ${checkoutId}`);
-        // Log all pending transactions to help debug
-        const { data: pendingTxs } = await client.from('transactions').select('id, external_id, amount').eq('status', 'pending').limit(5);
-        console.log('Recent pending transactions:', JSON.stringify(pendingTxs));
-        return res.status(404).json({ error: 'Transaction not found' });
-      }
-
-      if (tx.status === 'completed') {
-        console.log(`Transaction ${tx.id} already marked as completed. Skipping further processing.`);
-        return res.json({ success: true, message: 'Already processed' });
-      }
-
-      // ATOMIC UPDATE: Only proceed if we successfully change status from pending/rejected to completed
-      // We allow moving from 'rejected' too, just in case de-duplication marked it rejected but user still paid.
-      const { data: updatedTxs, error: updateError } = await client
-        .from('transactions')
-        .update({ 
-          status: 'completed', 
-          method: `Payhero callback (${transactionId || 'M-Pesa'})` 
-        })
-        .eq('id', tx.id)
-        .in('status', ['pending', 'rejected']) // Critical: Must be pending or rejected
-        .select();
-
-      console.log(`[Callback] ATOMIC UPDATE result:`, JSON.stringify(updatedTxs));
-
-      if (updateError || !updatedTxs || updatedTxs.length === 0) {
-        console.warn(`[Callback] Transaction ${tx.id} was already processed or its status changed. Skipping balance update.`);
-        return res.json({ success: true, message: 'Already processed or status changed' });
-      }
-
-      const userId = tx.user_id;
-      const amountUsd = Number(tx.amount); 
-
-      console.log(`[Callback] Executing increment_balance RPC for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
-
-      // 2. Update balance and status atomically using RPC v2
-      console.log(`[Callback] Executing increment_balance_v2 RPC for user ${userId}. Amount: ${amountUsd} USD. (Transaction ID: ${tx.id})`);
-      const { data: success, error: rpcError } = await client.rpc('increment_balance_v2', {
-        t_id: tx.id,
-        u_id: userId,
-        amount: amountUsd
-      });
-      
-      if (rpcError) {
-        console.error('CRITICAL: Failed to credit balance via RPC v2 in callback:', rpcError);
-        return res.status(500).json({ error: 'Failed to credit balance' });
-      }
-
-      if (!success) {
-        console.log(`[Callback] Transaction ${tx.id} was already processed (RPC returned false).`);
-        return res.json({ success: true, message: 'Already processed' });
-      }
-
-      console.log(`Balance successfully updated for ${userId} with ${amountUsd} USD via callback`);
-      return res.json({ success: true, message: 'Processed successfully' });
-
-    } else {
-      console.log(`Payment failed/cancelled. Reason: ${resultDesc}`);
-      
-      // Mark as rejected
-      await client.from('transactions')
-        .update({ status: 'rejected' })
-        .eq('status', 'pending')
-        .or(`external_id.eq."${ref}",external_id.eq."${checkoutId}"`);
-    }
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('Callback processing exception:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Hardcoded authorized admin emails and IDs for backend security
-const ADMIN_EMAILS = ['wren20688@gmail.com'];
-const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
-
 // Admin API Routes (Bypasses RLS using Service Role Key)
 router.post('/admin/update-user', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    // 1. Verify the requester is an admin
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email and ID for high-security restriction
     const isMasterAdmin = (user.email || '').toLowerCase() === 'wren20688@gmail.com' && user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     
     if (!isMasterAdmin) {
@@ -754,10 +468,9 @@ router.post('/admin/update-user', async (req, res) => {
     const { userId, updates } = req.body;
     
     if (!supabaseAdmin) {
-      return res.status(500).json({ error: 'Admin client not configured. Please set SUPABASE_SERVICE_ROLE_KEY in your environment variables.' });
+      return res.status(500).json({ error: 'Admin client not configured.' });
     }
 
-    // 3. Perform update using admin client (bypasses RLS)
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', userId).select().single();
     
     if (error) throw error;
@@ -775,7 +488,6 @@ router.post('/admin/credit-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // CRITICAL: Double-check email and ID for high-security restriction
     const isMasterAdmin = (user.email || '').toLowerCase() === 'wren20688@gmail.com' && user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
     
     if (!isMasterAdmin) {
@@ -789,13 +501,12 @@ router.post('/admin/credit-user', async (req, res) => {
     const client = supabaseAdmin;
     const field = type === 'DEMO' ? 'demo_balance' : 'real_balance';
 
-    // 1. Update transaction if provided (Atomic check)
     if (transactionId) {
       const { data: updatedTx, error: txError } = await supabaseAdmin
         .from('transactions')
         .update({ status: 'completed', method: 'Manual Credit (Admin)' })
         .eq('id', transactionId)
-        .neq('status', 'completed') // Only if not already completed
+        .neq('status', 'completed')
         .select();
       
       if (txError) throw txError;
@@ -803,7 +514,6 @@ router.post('/admin/credit-user', async (req, res) => {
         return res.status(400).json({ error: 'Transaction already processed or not found' });
       }
     } else {
-      // Create a manual credit record
       await supabaseAdmin.from('transactions').insert({
         user_id: userId,
         type: 'DEPOSIT',
@@ -815,7 +525,6 @@ router.post('/admin/credit-user', async (req, res) => {
       });
     }
 
-    // 2. Update balance - SET the balance for admin updates, don't increment
     const { error: rpcError } = await client.from('users').update({
       [field]: Number(amount)
     }).eq('id', userId);
@@ -831,17 +540,15 @@ router.post('/admin/credit-user', async (req, res) => {
 router.get('/health', (req, res) => {
   const configStatus = {
     hasSupabaseAdmin: !!supabaseAdmin,
-    hasPayheroKey: !!PAYHERO_API_KEY,
-    hasPayheroChannel: !!PAYHERO_CHANNEL_ID,
-    callbackUrl: process.env.PAYHERO_CALLBACK_URL || 'auto-generated',
+    hasFinapiKey: !!FINAPI_SECRET_KEY,
+    finapiBaseUrl: FINAPI_BASE_URL,
     supabaseUrl: !!supabaseUrl,
     supabaseAnonKey: !!supabaseAnonKey
   };
 
   const issues = [];
   if (!configStatus.hasSupabaseAdmin) issues.push('SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
-  if (!configStatus.hasPayheroKey) issues.push('PAYHERO_API_KEY is missing.');
-  if (!configStatus.hasPayheroChannel) issues.push('PAYHERO_CHANNEL_ID is missing.');
+  if (!configStatus.hasFinapiKey) issues.push('FINAPI_SECRET_KEY is missing.');
 
   res.json({ 
     status: issues.length === 0 ? 'ok' : 'degraded', 
@@ -853,44 +560,34 @@ router.get('/health', (req, res) => {
   });
 });
 
-// Mount the router at the root level for maximum compatibility with serverless environments
-// app.use('/', router);
 app.use('/api', router);
 app.use('/.netlify/functions/api', router);
 
-// Background task to mark stale pending transactions as failed (Timeout Handling)
-// Marks transactions as failed if they remain pending for more than 15 minutes
+export default app;
+
+// Background task to mark stale pending transactions as failed
 setInterval(async () => {
-  if (!supabaseAdmin || !supabaseUrl) {
-    console.warn('Stale transaction cleanup skipped: SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL is not configured.');
-    return;
-  }
+  if (!supabaseAdmin || !supabaseUrl) return;
 
   try {
-    // 24 hours ago (Much safer for manual processing)
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     
     const { data, error } = await supabaseAdmin
       .from('transactions')
       .update({ status: 'rejected' })
-      .eq('status', 'pending') // Double guarantee: Only target pending
-      .neq('status', 'completed') // Explicitly exclude completed
+      .eq('status', 'pending')
+      .neq('status', 'completed')
       .eq('type', 'DEPOSIT')
       .lt('timestamp', twentyFourHoursAgo)
       .select();
     
-    if (error) {
-      console.error('Error cleaning up stale transactions:', error);
-    } else if (data && data.length > 0) {
-      console.log(`Cleaned up ${data.length} stale transactions (older than 24 hours).`);
-    }
+    if (error) console.error('Error cleaning up stale transactions:', error);
   } catch (err) {
     console.error('Stale transaction cleanup exception:', err);
   }
-}, 30 * 60 * 1000); // Check every 30 minutes instead of 5
+}, 30 * 60 * 1000);
 
 // Background task for Automatic Account Verification (Offline)
-// Processes pending verifications every 60 seconds
 setInterval(async () => {
   if (!supabaseAdmin) return;
 
@@ -899,17 +596,12 @@ setInterval(async () => {
     const fiveMinutesInMs = 5 * 60 * 1000;
     const tenMinutesInMs = 10 * 60 * 1000;
 
-    // Fetch users in pending status
     const { data: pendingUsers, error } = await supabaseAdmin
       .from('users')
       .select('id, verification_status, verification_submitted_at')
       .eq('verification_status', 'pending');
 
-    if (error) {
-      console.error('Offline Verification Sync Error:', error);
-      return;
-    }
-
+    if (error) return;
     if (!pendingUsers || pendingUsers.length === 0) return;
 
     for (const user of pendingUsers) {
@@ -918,12 +610,10 @@ setInterval(async () => {
       const submittedAt = Number(user.verification_submitted_at);
       const ageInMs = now - submittedAt;
 
-      // Use same deterministic threshold as frontend
       const seed = parseInt(user.id.slice(0, 8), 36) || 0;
       const threshold = fiveMinutesInMs + ((seed % 1000) / 1000 * (tenMinutesInMs - fiveMinutesInMs));
 
       if (ageInMs >= threshold) {
-        console.log(`[Offline-Verify] Automatically verifying user ${user.id} (Waited: ${Math.round(ageInMs/60000)}m)`);
         await supabaseAdmin
           .from('users')
           .update({ verification_status: 'verified' })
@@ -933,267 +623,4 @@ setInterval(async () => {
   } catch (err) {
     console.error('Offline Verification Sync Exception:', err);
   }
-}, 60 * 1000); 
-
-// Background Task: Automatic Withdrawal Completion
-// Normal users' withdrawals are auto-completed after 15-20 minutes
-setInterval(async () => {
-  if (!supabaseAdmin) return;
-
-  try {
-    const now = Date.now();
-    const fifteenMinutesInMs = 15 * 60 * 1000;
-    const twentyMinutesInMs = 20 * 60 * 1000;
-
-    // Fetch pending withdrawals for normal users ('user' role)
-    const { data: pendingWithdrawals, error } = await supabaseAdmin
-      .from('transactions')
-      .select('id, user_id, timestamp, users!inner(role)')
-      .eq('type', 'WITHDRAW')
-      .eq('status', 'pending')
-      .eq('users.role', 'user');
-
-    if (error) {
-      console.error('[Offline-Withdraw] Sync Error:', error);
-      return;
-    }
-
-    if (!pendingWithdrawals || pendingWithdrawals.length === 0) return;
-
-    for (const tx of pendingWithdrawals) {
-      // Parse timestamp - handle both ISO strings and numeric timestamps
-      const createdAt = isNaN(Number(tx.timestamp)) ? new Date(tx.timestamp).getTime() : Number(tx.timestamp);
-      const ageInMs = now - createdAt;
-
-      // Deterministic threshold (15-20 minutes)
-      const seed = parseInt(tx.id.slice(0, 8), 36) || 0;
-      const threshold = fifteenMinutesInMs + ((seed % 1000) / 1000 * (twentyMinutesInMs - fifteenMinutesInMs));
-
-      if (ageInMs >= threshold) {
-        console.log(`[Offline-Withdraw] Automatically completing withdrawal ${tx.id} for user ${tx.user_id} (Waited: ${Math.round(ageInMs/60000)}m)`);
-        await supabaseAdmin
-          .from('transactions')
-          .update({ 
-            status: 'completed',
-            method: 'Auto-Processing (System)'
-          })
-          .eq('id', tx.id);
-      }
-    }
-  } catch (err) {
-    console.error('[Offline-Withdraw] Exception:', err);
-  }
 }, 60 * 1000);
-
-// Background Task: Global Trade Reconciliation & Bot Simulation
-// Ensures trades close on time and bots generate profit even when users are offline
-setInterval(async () => {
-  if (!supabaseAdmin) return;
-
-  try {
-    const now = new Date();
-    
-    // 1. Reconcile Expired Trades
-    const { data: openTrades, error: tradesError } = await supabaseAdmin
-      .from('trades')
-      .select('*, users(role, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo)')
-      .eq('status', 'OPEN');
-
-    if (!tradesError && openTrades) {
-      for (const trade of openTrades) {
-        const expiryTime = new Date(new Date(trade.timestamp).getTime() + (trade.duration || 0) * 1000);
-        if (now >= expiryTime) {
-          console.log(`[Reconcile] Closing expired trade ${trade.id} for user ${trade.user_id}`);
-          
-          const user = trade.users;
-          const isReal = trade.account_type === 'REAL';
-          const isDemo = trade.account_type === 'DEMO';
-          const isMarketer = user.role === 'marketer';
-          const isAdmin = user.role === 'admin';
-          
-          let winChance = 0.5;
-          if (isDemo) winChance = 0.92;
-          else if (isMarketer || isAdmin) winChance = 0.95;
-          else winChance = 0.02;
-
-          // Prefer stored target_profit if available, otherwise calculate it
-          let profit = trade.target_profit !== undefined ? Number(trade.target_profit) : 0;
-          
-          if (trade.target_profit === undefined) {
-             const isWin = Math.random() < winChance;
-             if (isWin) {
-               profit = Number((trade.amount * (0.02 + Math.random() * 0.28)).toFixed(2));
-             } else {
-               profit = Number((-trade.amount * (0.02 + Math.random() * 0.28)).toFixed(2));
-             }
-          }
-
-          const balanceField = isReal ? 'real_balance' : 'demo_balance';
-          const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
-          const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
-          
-          const currentBalance = Number(user[balanceField] || 0);
-          const newBalance = Number((currentBalance + trade.amount + profit).toFixed(2));
-          const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
-          const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
-          const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
-          const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
-
-          // Update Trade
-          await supabaseAdmin.from('trades').update({
-            status: 'CLOSED',
-            profit: profit
-          }).eq('id', trade.id);
-
-          // Update User
-          await supabaseAdmin.from('users').update({
-            [balanceField]: newBalance,
-            [totalProfitField]: newTotalProfit,
-            [dailyProfitField]: newDailyProfit,
-            [dailyTradesField]: newDailyTrades
-          }).eq('id', trade.user_id);
-        }
-      }
-    }
-
-    // 2. Offline Bot Simulation (Every minute for anyone with active bots)
-    // Runs every minute via the outer setInterval (60 * 1000)
-    const { data: botUsers, error: botError } = await supabaseAdmin
-      .from('bot_settings')
-      .select('*, users(role, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo)')
-      .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
-
-    if (!botError && botUsers) {
-      for (const setting of botUsers) {
-        const user = setting.users;
-        if (!user) continue;
-
-        const isReal = user.active_account === 'REAL';
-        const balanceField = isReal ? 'real_balance' : 'demo_balance';
-        const currentBalance = Number(user[balanceField] || 0);
-
-        // Security check: Stop bot if balance is below minimum ($10)
-        if (currentBalance <= 10) {
-          console.log(`[Bot-Offline] Balance too low ($${currentBalance}) for user ${setting.user_id}. Deactivating bots.`);
-          await supabaseAdmin.from('bot_settings').update({
-            scalping_active: false,
-            trend_active: false,
-            ai_active: false,
-            custom_active: false,
-            updated_at: new Date().toISOString()
-          }).eq('user_id', setting.user_id);
-          continue;
-        }
-
-        // New day reset check for offline simulation
-        const today = new Date().toISOString().split('T')[0];
-        if (user.last_profit_reset_date && user.last_profit_reset_date !== today) {
-          console.log(`[Bot-Offline] New day detected for user ${setting.user_id}. Resetting daily stats.`);
-          await supabaseAdmin.from('users').update({
-            daily_profit_real: 0,
-            daily_profit_demo: 0,
-            daily_trades_real: 0,
-            daily_trades_demo: 0,
-            last_profit_reset_date: today
-          }).eq('id', setting.user_id);
-          
-          // Re-fetch user data to get fresh 0 stats
-          const { data: refreshedUser } = await supabaseAdmin.from('users').select('*').eq('id', setting.user_id).single();
-          if (refreshedUser) {
-             Object.assign(user, refreshedUser);
-          }
-        }
-
-        console.log(`[Bot-Offline] Simulating bot profit for user ${setting.user_id}`);
-        
-        const isDemo = user.active_account === 'DEMO';
-        const isMarketer = user.role === 'marketer';
-        const isAdmin = user.role === 'admin';
-
-        let winChance = 0.5;
-        if (isDemo) winChance = 0.92;
-        else if (isMarketer || isAdmin) winChance = 0.95;
-        else winChance = 0.02; // Standard user: tight win rate
-
-        // Adjust base amount to be per-minute (comparable to frontend 15s sum)
-        const baseAmount = (4 + Math.random() * 8); 
-        const isWin = Math.random() < winChance;
-        const profit = isWin ? Number(baseAmount.toFixed(2)) : Number((-baseAmount).toFixed(2));
-
-        const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
-        const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
-
-        const newBalance = Math.max(0, Number((currentBalance + profit).toFixed(2)));
-        const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
-        const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
-        const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
-        const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
-
-        // Create consolidated bot trade record
-        await supabaseAdmin.from('trades').insert({
-          user_id: setting.user_id,
-          coin: 'BOT',
-          amount: Math.abs(profit),
-          type: profit >= 0 ? 'BUY' : 'SELL',
-          price: 65000, 
-          status: 'CLOSED',
-          profit: profit,
-          account_type: user.active_account,
-          timestamp: new Date().toISOString(),
-          duration: 0,
-          source: 'BOT'
-        });
-
-        // Update User Profile
-        await supabaseAdmin.from('users').update({
-          [balanceField]: newBalance,
-          [totalProfitField]: newTotalProfit,
-          [dailyProfitField]: newDailyProfit,
-          [dailyTradesField]: newDailyTrades
-        }).eq('id', setting.user_id);
-
-        // Update Bot Settings (Timestamp is crucial for client catch-up prevention)
-        const botId = setting.scalping_active ? 'scalping' : (setting.trend_active ? 'trend' : (setting.ai_active ? 'ai' : 'custom'));
-        const currentStats = setting.bot_stats || {};
-        const newStats = {
-          ...currentStats,
-          [botId]: {
-            profit: Number(((currentStats[botId]?.profit || 0) + profit).toFixed(2)),
-            trades: (currentStats[botId]?.trades || 0) + 1
-          }
-        };
-        const newLog = `[${new Date().toLocaleTimeString()}] Offline execution: ${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USDT`;
-        const updatedLogs = [newLog, ...(setting.bot_logs || [])].slice(0, 50);
-
-        await supabaseAdmin.from('bot_settings').update({
-          bot_stats: newStats,
-          bot_logs: updatedLogs,
-          updated_at: new Date().toISOString()
-        }).eq('user_id', setting.user_id);
-      }
-    }
-  } catch (err) {
-    console.error('[Background-Task] Task Exception:', err);
-  }
-}, 60 * 1000); 
-
-// Final fallback health check at the app level
-app.get('/ping', (req, res) => res.send('pong'));
-
-// 404 Handler for API - Only handles paths starting with /api
-router.use((req, res) => {
-  console.log(`API 404 Not Found: ${req.method} ${req.url}`);
-  res.status(404).json({ 
-    error: 'Not Found', 
-    message: `The requested endpoint ${req.method} ${req.url} was not found on this server.`,
-    debug: {
-      url: req.url,
-      originalUrl: req.originalUrl,
-      method: req.method,
-      baseUrl: req.baseUrl,
-      path: req.path
-    }
-  });
-});
-
-export default app;
