@@ -1,6 +1,5 @@
 import express from 'express';
 import axios from 'axios';
-import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -21,22 +20,43 @@ app.use((req, res, next) => {
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in environment');
-}
-
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Admin API Routes (Bypasses RLS using Service Role Key)
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
-// HashBack Config
-const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY;
-const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID;
-const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET;
-const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
+// FinAPI (stkpush.co.ke) Config
+let rawFinapiKey = (process.env.FINAPI_SECRET_KEY || '').trim();
+rawFinapiKey = rawFinapiKey.replace(/^['"]|['"]$/g, ''); 
+rawFinapiKey = rawFinapiKey.replace(/^finapi_secret_key=\s*/i, '');
+const FINAPI_SECRET_KEY = rawFinapiKey.replace(/^['"]|['"]$/g, '');
+
+const FINAPI_CSRF_TOKEN = (process.env.FINAPI_CSRF_TOKEN || '').trim();
+
+let rawBaseUrl = (process.env.FINAPI_BASE_URL || 'https://stkpush.co.ke').trim();
+rawBaseUrl = rawBaseUrl.replace(/^['"]|['"]$/g, '');
+rawBaseUrl = rawBaseUrl.replace(/^finapi_base_url=\s*/i, '');
+rawBaseUrl = rawBaseUrl.replace(/^['"]|['"]$/g, '');
+
+let FINAPI_BASE_URL = rawBaseUrl;
+if (FINAPI_BASE_URL && !FINAPI_BASE_URL.startsWith('http')) {
+  FINAPI_BASE_URL = `https://${FINAPI_BASE_URL}`;
+}
+FINAPI_BASE_URL = FINAPI_BASE_URL.replace(/\/+$/, ''); // Remove trailing slashes
+
+/**
+ * Helper to construct the FinAPI endpoint URL correctly
+ */
+const getFinApiUrl = (path: string) => {
+  // If the user provided the full URL in the base, just return it or fix it
+  if (FINAPI_BASE_URL.includes('/api/stk-push') || FINAPI_BASE_URL.includes('/api/verify-payment')) {
+    // Extract domain if they put a full path in the base URL
+    const url = new URL(FINAPI_BASE_URL);
+    return `${url.origin}${path}`;
+  }
+  return `${FINAPI_BASE_URL}${path}`;
+};
 
 // API Routes
 const router = express.Router();
@@ -107,10 +127,10 @@ router.get('/user/referrals', async (req, res) => {
 });
 
 // Secure Balance Management (User accessible but strict)
-// HashBack STK Push Initiation
-router.post(['/hashback/stk-push', '/payhero/initiate', '/stk-push', '/api/stk-push'], async (req, res) => {
-  console.log('[HashBack] STK Push Request Received:', JSON.stringify(req.body));
+// FinAPI STK Push (with PayHero alias for backward compatibility)
+router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, res) => {
   const { amount, phone, userId } = req.body;
+  // Handle different field names from PayHero if necessary
   const rawPhone = phone || req.body.phone_number || req.body.Phone;
   
   // Convert USD to KES (1 USD = 129.98 KES)
@@ -119,138 +139,127 @@ router.post(['/hashback/stk-push', '/payhero/initiate', '/stk-push', '/api/stk-p
   
   const refUserId = userId || req.body.ExternalId || req.body.userId || 'anonymous';
   
-  // Normalize phone number (M-Pesa format 254XXXXXXXXX)
-  let normalizedPhone = String(rawPhone || '').replace(/\+/g, '').replace(/\s/g, '');
+  // Normalize phone number (M-Pesa format 2547XXXXXXXX or 2541XXXXXXXX)
+  let normalizedPhone = (rawPhone || '').toString().trim();
+  normalizedPhone = normalizedPhone.replace(/\s+/g, '').replace('+', '');
   if (normalizedPhone.startsWith('0')) {
     normalizedPhone = '254' + normalizedPhone.substring(1);
-  } else if (normalizedPhone.startsWith('7') || normalizedPhone.startsWith('1')) {
+  } else if (!normalizedPhone.startsWith('254') && normalizedPhone.length === 9) {
     normalizedPhone = '254' + normalizedPhone;
   }
 
-  // Format: HBK + timestamp (seconds) + random
-  const reference = `HBK${Math.floor(Date.now() / 1000)}${Math.floor(Math.random() * 99)}`;
+  // Use a shorter, purely alphanumeric reference to avoid INVALID_REFERENCE errors
+  // Format: ORD + timestamp (seconds) + random
+  const reference = `ORD${Math.floor(Date.now() / 1000)}${Math.floor(Math.random() * 99)}`;
 
   try {
-    if (!HASHBACK_API_KEY || !HASHBACK_ACCOUNT_ID) {
-      console.error('[HashBack] Missing configuration:', { hasKey: !!HASHBACK_API_KEY, hasAccountId: !!HASHBACK_ACCOUNT_ID });
-      return res.status(500).json({ error: 'HashBack configuration missing' });
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FinAPI Secret Key is missing.');
     }
 
-    if (!normalizedPhone || normalizedPhone.length < 10) {
-      return res.status(400).json({ error: 'Valid phone number is required' });
+    const payload = {
+      phone_number: normalizedPhone,
+      amount: kesAmount,
+      reference: reference
+    };
+
+    const headers: any = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+      'Origin': 'https://preocryptofx.com',
+      'Referer': 'https://preocryptofx.com/'
+    };
+
+    console.log('Initiating FinAPI STK Push with payload:', JSON.stringify(payload));
+    const endpoint = getFinApiUrl('/api/stk-push/');
+    console.log('Target Endpoint:', endpoint);
+
+    const response = await axios.post(endpoint, payload, {
+      headers,
+      timeout: 20000,
+      validateStatus: () => true // Handle all status codes manually for better logging
+    });
+
+    console.log(`FinAPI STK Push Response [${response.status}]:`, JSON.stringify(response.data));
+
+    if (response.status >= 400) {
+      const errorMsg = response.data.message || response.data.error || response.statusText || 'FinAPI rejected the request';
+      console.error(`FinAPI STK Push Error [${response.status}]:`, response.data);
+      return res.status(response.status).json({
+        success: false,
+        error: 'FinAPI rejected the request',
+        message: errorMsg,
+        details: response.data,
+        code: response.data.code || response.status
+      });
     }
 
-    if (kesAmount < 10) {
-      return res.status(400).json({ error: 'Amount too small (minimum 10 KES)' });
-    }
-
-    // Save the transaction in Supabase as pending first
+    // Record transaction as pending
     if (supabaseAdmin) {
-      const { error: dbError } = await supabaseAdmin.from('transactions').insert({
-        user_id: refUserId,
+      const dbUserId = refUserId !== 'anonymous' ? refUserId : null;
+      await supabaseAdmin.from('transactions').insert({
+        user_id: dbUserId,
         type: 'DEPOSIT',
         amount: usdAmount,
         status: 'pending',
         account_type: 'REAL',
-        method: 'HashBack STK',
+        method: 'FinAPI STK',
         external_id: reference
-      });
-      if (dbError) {
-        console.error('[HashBack] Supabase Error:', dbError);
-        // We continue anyway, or should we fail? Better to fail if we can't track it.
-        return res.status(500).json({ error: 'Failed to record transaction' });
-      }
-    }
-
-    // Ensure types and field names match HashBack's requirements exactly
-    const payload = {
-      api_key: HASHBACK_API_KEY,
-      account_id: String(HASHBACK_ACCOUNT_ID),
-      amount: Number(kesAmount),
-      msisdn: String(normalizedPhone),
-      reference: String(reference) // Keep reference for tracking if accepted
-    };
-
-    console.log('[HashBack] Sending Payload to /initiatestk');
-
-    const response = await axios.post(`${HASHBACK_BASE_URL}/initiatestk`, payload, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000,
-      validateStatus: () => true
-    });
-
-    console.log(`[HashBack] Response Code: ${response.status}`);
-    
-    if (response.status >= 400 || !response.data || (response.data.success === false)) {
-      let errorMsg = response.data?.message || response.data?.error || response.data?.details || 'HashBack API Error';
-      console.error('[HashBack] Rejection:', response.data);
-      
-      // Map technical errors to user-friendly ones
-      if (errorMsg.toLowerCase().includes('account expired')) {
-        errorMsg = 'Deposit service is temporarily undergoing maintenance. Please try again later.';
-      } else if (errorMsg.toLowerCase().includes('insufficient')) {
-        errorMsg = 'Insufficient balance in your M-Pesa account.';
-      }
-
-      return res.status(response.status || 400).json({
-        success: false,
-        error: errorMsg,
-        debug: {
-          sent_phone: normalizedPhone,
-          sent_amount: kesAmount,
-          sent_reference: reference,
-          has_account_id: !!HASHBACK_ACCOUNT_ID,
-          has_api_key: !!HASHBACK_API_KEY
-        },
-        details: response.data
       });
     }
 
     res.json({
-      success: true,
-      message: 'STK push initiated',
-      reference: reference,
-      transaction_id: response.data.transaction_id || response.data.request_id || response.data.id
+      ...response.data,
+      reference: reference
     });
   } catch (error: any) {
-    console.error('[HashBack] STK Push Exception:', error.response?.data || error.message);
-    res.status(500).json({ 
-      error: 'Internal server error', 
-      message: error.message,
-      details: error.response?.data
+    const errorData = error.response?.data;
+    const statusCode = error.response?.status;
+    console.error('FinAPI STK Push Error:', errorData || error.message);
+    res.status(statusCode || 500).json({ 
+      success: false,
+      error: 'Failed to initiate STK push', 
+      message: errorData?.message || errorData?.error || error.message,
+      details: errorData || error.message,
+      code: errorData?.code || statusCode
     });
   }
 });
 
-// HashBack Webhook
-router.post('/hashback/webhook', async (req, res) => {
-  console.log('HashBack Webhook Received:', JSON.stringify(req.body));
-  
-  const signature = req.headers['x-hashpay-signature'];
-  const rawBody = JSON.stringify(req.body);
-
-  // Verify signature
-  if (HASHBACK_WEBHOOK_SECRET && signature) {
-    const expectedSignature = 'sha256=' + crypto
-      .createHmac('sha256', HASHBACK_WEBHOOK_SECRET)
-      .update(rawBody)
-      .digest('hex');
-
-    if (signature !== expectedSignature) {
-      console.warn('HashBack Webhook: Invalid signature');
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
-  }
-
-  const payload = req.body;
-  const eventType = payload.event;
-  const reference = payload.TransactionReference || payload.reference;
+// FinAPI Verification
+router.get('/finapi/verify/:reference', async (req, res) => {
+  const { reference } = req.params;
 
   try {
-    if (supabaseAdmin && reference) {
-      if (eventType === 'payment.success' || payload.status === 'success') {
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FinAPI Secret Key is missing.');
+    }
+
+    const endpoint = getFinApiUrl(`/api/verify-payment/${reference}/`);
+    const response = await axios.get(endpoint, {
+      headers: {
+        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+        'Origin': 'https://preocryptofx.com',
+        'Referer': 'https://preocryptofx.com/'
+      },
+      timeout: 10000,
+      validateStatus: () => true
+    });
+
+    console.log(`FinAPI Verification Response [${response.status}]:`, JSON.stringify(response.data));
+
+    const data = response.data;
+    const statusStr = (data.status || data.Status || '').toLowerCase();
+    const isSuccess = response.status === 200 && (statusStr === 'success' || statusStr === 'completed' || data.ResultCode === 0);
+    const isFailed = response.status >= 400 || 
+                     statusStr === 'failed' || 
+                     statusStr === 'rejected' || 
+                     statusStr === 'cancelled' || 
+                     statusStr === 'error' ||
+                     (data.ResultCode !== undefined && data.ResultCode !== 0);
+
+    if (supabaseAdmin) {
+      if (isSuccess) {
         // Find transaction
         const { data: tx } = await supabaseAdmin
           .from('transactions')
@@ -260,15 +269,101 @@ router.post('/hashback/webhook', async (req, res) => {
           .maybeSingle();
 
         if (tx) {
-          // Prevent double credit by checking if we already processed this
+          // Increment balance via RPC
           await supabaseAdmin.rpc('increment_balance_v2', {
             t_id: tx.id,
             u_id: tx.user_id,
             amount: Number(tx.amount)
           });
-          console.log(`Success: Credited ${tx.amount} to user ${tx.user_id} for ref ${reference}`);
         }
-      } else if (['payment.failed', 'failed', 'rejected', 'cancelled'].includes(eventType || payload.status)) {
+      } else if (isFailed) {
+        // Mark as rejected in Supabase
+        await supabaseAdmin.from('transactions')
+          .update({ status: 'rejected' })
+          .eq('external_id', reference)
+          .eq('status', 'pending');
+      }
+    }
+
+    res.status(response.status).json({
+      ...data,
+      isSuccess,
+      isFailed
+    });
+  } catch (error: any) {
+    console.error('FinAPI Verification Error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to verify payment', 
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// FinAPI Manual Payment
+router.post('/finapi/manual-payment', async (req, res) => {
+  const { message, reference, userId } = req.body;
+
+  try {
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FinAPI Secret Key is missing.');
+    }
+
+    const payload = {
+      message: message,
+      reference: reference
+    };
+
+    const headers: any = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+      'Origin': 'https://preocryptofx.com',
+      'Referer': 'https://preocryptofx.com/'
+    };
+
+    const endpoint = getFinApiUrl('/api/manual-payment/');
+    const response = await axios.post(endpoint, payload, {
+      headers,
+      timeout: 15000
+    });
+
+    console.log('FinAPI Manual Payment Response:', JSON.stringify(response.data));
+
+    res.json(response.data);
+  } catch (error: any) {
+    console.error('FinAPI Manual Payment Error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to verify manual payment', 
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// FinAPI Callback Endpoint
+router.post('/finapi/callback', async (req, res) => {
+  console.log('FinAPI Callback Received:', JSON.stringify(req.body));
+  const { reference, status } = req.body;
+  const statusStr = (status || '').toLowerCase();
+
+  try {
+    if (supabaseAdmin && reference) {
+      if (statusStr === 'success' || statusStr === 'completed') {
+        // Find transaction
+        const { data: tx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .eq('external_id', reference)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (tx) {
+          await supabaseAdmin.rpc('increment_balance_v2', {
+            t_id: tx.id,
+            u_id: tx.user_id,
+            amount: Number(tx.amount)
+          });
+        }
+      } else if (statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled' || statusStr === 'error') {
+        // Update status to rejected
         await supabaseAdmin.from('transactions')
           .update({ status: 'rejected' })
           .eq('external_id', reference)
@@ -277,35 +372,7 @@ router.post('/hashback/webhook', async (req, res) => {
     }
     res.json({ success: true });
   } catch (error: any) {
-    console.error('HashBack Webhook Processing Error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// HashBack Verify (Polling endpoint)
-router.get(['/hashback/verify/:reference', '/finapi/verify/:reference'], async (req, res) => {
-  const { reference } = req.params;
-  
-  try {
-    if (supabaseAdmin) {
-      const { data: tx } = await supabaseAdmin
-        .from('transactions')
-        .select('status, amount')
-        .eq('external_id', reference)
-        .maybeSingle();
-      
-      if (tx && tx.status !== 'pending') {
-        return res.json({
-          success: true,
-          status: tx.status,
-          isSuccess: tx.status === 'completed' || tx.status === 'success',
-          isFailed: tx.status === 'rejected' || tx.status === 'failed'
-        });
-      }
-    }
-    
-    res.json({ status: 'pending', isSuccess: false, isFailed: false });
-  } catch (error: any) {
+    console.error('FinAPI Callback Processing Error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -556,16 +623,15 @@ router.post('/admin/credit-user', async (req, res) => {
 router.get('/health', (req, res) => {
   const configStatus = {
     hasSupabaseAdmin: !!supabaseAdmin,
-    hasHashbackKey: !!HASHBACK_API_KEY,
-    hasHashbackAccountId: !!HASHBACK_ACCOUNT_ID,
+    hasFinapiKey: !!FINAPI_SECRET_KEY,
+    finapiBaseUrl: FINAPI_BASE_URL,
     supabaseUrl: !!supabaseUrl,
     supabaseAnonKey: !!supabaseAnonKey
   };
 
   const issues = [];
   if (!configStatus.hasSupabaseAdmin) issues.push('SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
-  if (!configStatus.hasHashbackKey) issues.push('HASHBACK_API_KEY is missing.');
-  if (!configStatus.hasHashbackAccountId) issues.push('HASHBACK_ACCOUNT_ID is missing.');
+  if (!configStatus.hasFinapiKey) issues.push('FINAPI_SECRET_KEY is missing.');
 
   res.json({ 
     status: issues.length === 0 ? 'ok' : 'degraded', 
