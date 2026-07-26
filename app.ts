@@ -28,15 +28,15 @@ const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey)
 
 // FinAPI (stkpush.co.ke) Config
 let rawFinapiKey = (process.env.FINAPI_SECRET_KEY || '').trim();
-if (rawFinapiKey.toLowerCase().startsWith('finapi_secret_key=')) {
-  rawFinapiKey = rawFinapiKey.substring('finapi_secret_key='.length).trim();
-}
+rawFinapiKey = rawFinapiKey.replace(/^['"]|['"]$/g, ''); 
+rawFinapiKey = rawFinapiKey.replace(/^finapi_secret_key=\s*/i, '');
 const FINAPI_SECRET_KEY = rawFinapiKey.replace(/^['"]|['"]$/g, '');
 
+const FINAPI_CSRF_TOKEN = (process.env.FINAPI_CSRF_TOKEN || '').trim();
+
 let rawBaseUrl = (process.env.FINAPI_BASE_URL || 'https://stkpush.co.ke').trim();
-if (rawBaseUrl.toLowerCase().startsWith('finapi_base_url=')) {
-  rawBaseUrl = rawBaseUrl.substring('finapi_base_url='.length).trim();
-}
+rawBaseUrl = rawBaseUrl.replace(/^['"]|['"]$/g, '');
+rawBaseUrl = rawBaseUrl.replace(/^finapi_base_url=\s*/i, '');
 rawBaseUrl = rawBaseUrl.replace(/^['"]|['"]$/g, '');
 
 let FINAPI_BASE_URL = rawBaseUrl;
@@ -44,6 +44,19 @@ if (FINAPI_BASE_URL && !FINAPI_BASE_URL.startsWith('http')) {
   FINAPI_BASE_URL = `https://${FINAPI_BASE_URL}`;
 }
 FINAPI_BASE_URL = FINAPI_BASE_URL.replace(/\/+$/, ''); // Remove trailing slashes
+
+/**
+ * Helper to construct the FinAPI endpoint URL correctly
+ */
+const getFinApiUrl = (path: string) => {
+  // If the user provided the full URL in the base, just return it or fix it
+  if (FINAPI_BASE_URL.includes('/api/stk-push') || FINAPI_BASE_URL.includes('/api/verify-payment')) {
+    // Extract domain if they put a full path in the base URL
+    const url = new URL(FINAPI_BASE_URL);
+    return `${url.origin}${path}`;
+  }
+  return `${FINAPI_BASE_URL}${path}`;
+};
 
 // API Routes
 const router = express.Router();
@@ -114,10 +127,25 @@ router.get('/user/referrals', async (req, res) => {
 });
 
 // Secure Balance Management (User accessible but strict)
-// FinAPI STK Push
-router.post('/finapi/stk-push', async (req, res) => {
+// FinAPI STK Push (with PayHero alias for backward compatibility)
+router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, res) => {
   const { amount, phone, userId } = req.body;
-  const reference = `FIN-${userId}-${Date.now()}`;
+  // Handle different field names from PayHero if necessary
+  const rawPhone = phone || req.body.phone_number || req.body.Phone;
+  const paymentAmount = Number(amount || req.body.Amount || req.body.amount || 0);
+  const refUserId = userId || req.body.ExternalId || req.body.userId || 'anonymous';
+  
+  // Normalize phone number (M-Pesa format 2547XXXXXXXX or 2541XXXXXXXX)
+  let normalizedPhone = (rawPhone || '').toString().trim();
+  normalizedPhone = normalizedPhone.replace(/\s+/g, '').replace('+', '');
+  if (normalizedPhone.startsWith('0')) {
+    normalizedPhone = '254' + normalizedPhone.substring(1);
+  } else if (!normalizedPhone.startsWith('254') && normalizedPhone.length === 9) {
+    normalizedPhone = '254' + normalizedPhone;
+  }
+
+  // Use a shorter, purely alphanumeric reference to avoid INVALID_REFERENCE errors
+  const reference = `T${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   try {
     if (!FINAPI_SECRET_KEY) {
@@ -125,29 +153,36 @@ router.post('/finapi/stk-push', async (req, res) => {
     }
 
     const payload = {
-      phone_number: phone,
-      amount: amount,
+      phone_number: normalizedPhone,
+      amount: paymentAmount,
       reference: reference
     };
 
-    const response = await axios.post(`${FINAPI_BASE_URL}/api/stk-push/`, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
-        'Origin': 'https://stkpush.co.ke',
-        'Referer': 'https://stkpush.co.ke/'
-      },
-      timeout: 15000
+    const headers: any = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+      'Origin': 'https://preocryptofx.com',
+      'Referer': 'https://preocryptofx.com/'
+    };
+
+    console.log('Initiating FinAPI STK Push with payload:', JSON.stringify(payload));
+    const endpoint = getFinApiUrl('/api/stk-push/');
+    console.log('Target Endpoint:', endpoint);
+
+    const response = await axios.post(endpoint, payload, {
+      headers,
+      timeout: 20000
     });
 
     console.log('FinAPI STK Push Response:', JSON.stringify(response.data));
 
     // Record transaction as pending
     if (supabaseAdmin) {
+      const dbUserId = refUserId !== 'anonymous' ? refUserId : null;
       await supabaseAdmin.from('transactions').insert({
-        user_id: userId,
+        user_id: dbUserId,
         type: 'DEPOSIT',
-        amount: amount,
+        amount: paymentAmount,
         status: 'pending',
         account_type: 'REAL',
         method: 'FinAPI STK',
@@ -160,10 +195,15 @@ router.post('/finapi/stk-push', async (req, res) => {
       reference: reference
     });
   } catch (error: any) {
-    console.error('FinAPI STK Push Error:', error.response?.data || error.message);
-    res.status(500).json({ 
+    const errorData = error.response?.data;
+    const statusCode = error.response?.status;
+    console.error('FinAPI STK Push Error:', errorData || error.message);
+    res.status(statusCode || 500).json({ 
+      success: false,
       error: 'Failed to initiate STK push', 
-      details: error.response?.data || error.message 
+      message: errorData?.message || errorData?.error || error.message,
+      details: errorData || error.message,
+      code: errorData?.code || statusCode
     });
   }
 });
@@ -177,11 +217,12 @@ router.get('/finapi/verify/:reference', async (req, res) => {
       throw new Error('FinAPI Secret Key is missing.');
     }
 
-    const response = await axios.get(`${FINAPI_BASE_URL}/api/verify-payment/${reference}/`, {
+    const endpoint = getFinApiUrl(`/api/verify-payment/${reference}/`);
+    const response = await axios.get(endpoint, {
       headers: {
         'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
-        'Origin': 'https://stkpush.co.ke',
-        'Referer': 'https://stkpush.co.ke/'
+        'Origin': 'https://preocryptofx.com',
+        'Referer': 'https://preocryptofx.com/'
       },
       timeout: 10000
     });
@@ -234,13 +275,16 @@ router.post('/finapi/manual-payment', async (req, res) => {
       reference: reference
     };
 
-    const response = await axios.post(`${FINAPI_BASE_URL}/api/manual-payment/`, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
-        'Origin': 'https://stkpush.co.ke',
-        'Referer': 'https://stkpush.co.ke/'
-      },
+    const headers: any = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+      'Origin': 'https://preocryptofx.com',
+      'Referer': 'https://preocryptofx.com/'
+    };
+
+    const endpoint = getFinApiUrl('/api/manual-payment/');
+    const response = await axios.post(endpoint, payload, {
+      headers,
       timeout: 15000
     });
 

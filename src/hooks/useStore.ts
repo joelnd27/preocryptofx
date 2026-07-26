@@ -1494,12 +1494,19 @@ export function useStore() {
           // If Supabase is configured and it is a UUID, update it in Supabase
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trader.id);
           if (isSupabaseConfigured() && isUuid) {
-            supabase.from('copy_traders').update({
-              total_profit: newTotalProfit,
-              followers: newFollowers
-            }).eq('id', trader.id).then(({ error }) => {
-              if (error) console.error('[Store] Error auto-updating copy trader in Supabase:', error.message);
-            });
+            // Using a separate async call to handle catch properly
+            const updateTrader = async () => {
+              try {
+                const { error } = await supabase.from('copy_traders').update({
+                  total_profit: newTotalProfit,
+                  followers: newFollowers
+                }).eq('id', trader.id);
+                if (error) console.error('[Store] Error auto-updating copy trader in Supabase:', error.message);
+              } catch (err: any) {
+                console.error('[Store] Network error updating copy trader in Supabase:', err.message);
+              }
+            };
+            updateTrader();
           }
 
           return {
@@ -2269,8 +2276,10 @@ export function useStore() {
       const errorMsg = response.data.message || response.data.error || 'Failed to initiate FinAPI payment';
       throw new Error(errorMsg);
     } catch (error: any) {
-      console.error('FinAPI Initiation Error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.error || error.message);
+      const errorData = error.response?.data;
+      const errorMsg = errorData?.message || errorData?.details || errorData?.error || error.message;
+      console.error('FinAPI Initiation Error:', errorData || error.message);
+      throw new Error(errorMsg);
     }
   };
 
