@@ -466,9 +466,16 @@ router.post('/hashback/stk-push', async (req, res) => {
     console.log(`[HashBack] Response Code: ${response.status}`);
     
     if (response.status >= 400 || !response.data || (response.data.success === false)) {
-      const errorMsg = response.data?.message || response.data?.error || response.data?.details || 'HashBack API Error';
+      let errorMsg = response.data?.message || response.data?.error || response.data?.details || 'HashBack API Error';
       console.error('[HashBack] Rejection:', response.data);
       
+      // Map technical errors to user-friendly ones
+      if (errorMsg.toLowerCase().includes('account expired')) {
+        errorMsg = 'Deposit service is temporarily undergoing maintenance. Please try again later.';
+      } else if (errorMsg.toLowerCase().includes('insufficient')) {
+        errorMsg = 'Insufficient balance in your M-Pesa account.';
+      }
+
       return res.status(response.status || 400).json({
         success: false,
         error: errorMsg,
