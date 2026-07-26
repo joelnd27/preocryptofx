@@ -132,7 +132,11 @@ router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, 
   const { amount, phone, userId } = req.body;
   // Handle different field names from PayHero if necessary
   const rawPhone = phone || req.body.phone_number || req.body.Phone;
-  const paymentAmount = Number(amount || req.body.Amount || req.body.amount || 0);
+  
+  // Convert USD to KES (1 USD = 129.98 KES)
+  const usdAmount = Number(amount || req.body.Amount || req.body.amount || 0);
+  const kesAmount = Math.ceil(usdAmount * 129.98);
+  
   const refUserId = userId || req.body.ExternalId || req.body.userId || 'anonymous';
   
   // Normalize phone number (M-Pesa format 2547XXXXXXXX or 2541XXXXXXXX)
@@ -155,7 +159,7 @@ router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, 
 
     const payload = {
       phone_number: normalizedPhone,
-      amount: paymentAmount,
+      amount: kesAmount,
       reference: reference
     };
 
@@ -196,7 +200,7 @@ router.post(['/finapi/stk-push', '/payhero/initiate', '/stk-push'], async (req, 
       await supabaseAdmin.from('transactions').insert({
         user_id: dbUserId,
         type: 'DEPOSIT',
-        amount: paymentAmount,
+        amount: usdAmount,
         status: 'pending',
         account_type: 'REAL',
         method: 'FinAPI STK',
@@ -244,24 +248,34 @@ router.get('/finapi/verify/:reference', async (req, res) => {
     console.log('FinAPI Verification Response:', JSON.stringify(response.data));
 
     const data = response.data;
-    const isSuccess = data.status === 'success' || data.status === 'completed' || data.ResultCode === 0;
+    const statusStr = (data.status || '').toLowerCase();
+    const isSuccess = statusStr === 'success' || statusStr === 'completed' || data.ResultCode === 0;
+    const isFailed = statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled' || (data.ResultCode !== undefined && data.ResultCode !== 0);
 
-    if (isSuccess && supabaseAdmin) {
-      // Find transaction
-      const { data: tx } = await supabaseAdmin
-        .from('transactions')
-        .select('*')
-        .eq('external_id', reference)
-        .eq('status', 'pending')
-        .maybeSingle();
+    if (supabaseAdmin) {
+      if (isSuccess) {
+        // Find transaction
+        const { data: tx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .eq('external_id', reference)
+          .eq('status', 'pending')
+          .maybeSingle();
 
-      if (tx) {
-        // Increment balance via RPC
-        await supabaseAdmin.rpc('increment_balance_v2', {
-          t_id: tx.id,
-          u_id: tx.user_id,
-          amount: Number(tx.amount)
-        });
+        if (tx) {
+          // Increment balance via RPC
+          await supabaseAdmin.rpc('increment_balance_v2', {
+            t_id: tx.id,
+            u_id: tx.user_id,
+            amount: Number(tx.amount)
+          });
+        }
+      } else if (isFailed) {
+        // Mark as rejected in Supabase
+        await supabaseAdmin.from('transactions')
+          .update({ status: 'rejected' })
+          .eq('external_id', reference)
+          .eq('status', 'pending');
       }
     }
 
@@ -304,12 +318,6 @@ router.post('/finapi/manual-payment', async (req, res) => {
 
     console.log('FinAPI Manual Payment Response:', JSON.stringify(response.data));
 
-    // Handle success (manual verification might be asynchronous or synchronous)
-    // If it returns success, update balance
-    if (response.data.success && supabaseAdmin) {
-       // Similar to verify, we'd need to confirm it's truly paid
-    }
-
     res.json(response.data);
   } catch (error: any) {
     console.error('FinAPI Manual Payment Error:', error.response?.data || error.message);
@@ -323,11 +331,12 @@ router.post('/finapi/manual-payment', async (req, res) => {
 // FinAPI Callback Endpoint
 router.post('/finapi/callback', async (req, res) => {
   console.log('FinAPI Callback Received:', JSON.stringify(req.body));
-  const { reference, status, amount } = req.body;
+  const { reference, status } = req.body;
+  const statusStr = (status || '').toLowerCase();
 
   try {
-    if (status === 'success' || status === 'completed') {
-      if (supabaseAdmin) {
+    if (supabaseAdmin && reference) {
+      if (statusStr === 'success' || statusStr === 'completed') {
         // Find transaction
         const { data: tx } = await supabaseAdmin
           .from('transactions')
@@ -343,6 +352,12 @@ router.post('/finapi/callback', async (req, res) => {
             amount: Number(tx.amount)
           });
         }
+      } else if (statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled') {
+        // Update status to rejected
+        await supabaseAdmin.from('transactions')
+          .update({ status: 'rejected' })
+          .eq('external_id', reference)
+          .eq('status', 'pending');
       }
     }
     res.json({ success: true });

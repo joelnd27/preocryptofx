@@ -109,13 +109,37 @@ export default function Transactions() {
   // Poll for status updates while waiting
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
-    if (paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') {
-      pollInterval = setInterval(() => {
+    if ((paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') && currentTxRef) {
+      pollInterval = setInterval(async () => {
+        // 1. Refresh global data (syncs with Supabase)
         refreshData();
-      }, 5000);
+        
+        // 2. Proactively check FinAPI status directly for immediate feedback
+        try {
+          const result = await checkFinapiStatus(currentTxRef);
+          if (result) {
+            const statusStr = (result.status || '').toLowerCase();
+            const isSuccess = statusStr === 'success' || statusStr === 'completed' || result.ResultCode === 0;
+            const isFailed = statusStr === 'failed' || statusStr === 'rejected' || statusStr === 'cancelled' || (result.ResultCode !== undefined && result.ResultCode !== 0);
+
+            if (isSuccess) {
+              setPaymentStatus('SUCCESS');
+              setCurrentTxRef(null);
+              refreshData(); // Final sync to get updated balance
+            } else if (isFailed) {
+              setPaymentStatus('FAILED');
+              setErrorMessage(result.message || 'Transaction was rejected or cancelled.');
+              setCurrentTxRef(null);
+              refreshData();
+            }
+          }
+        } catch (err) {
+          console.error('Polling error:', err);
+        }
+      }, 3000); // Poll every 3 seconds for faster feedback
     }
     return () => clearInterval(pollInterval);
-  }, [paymentStatus, refreshData]);
+  }, [paymentStatus, currentTxRef, refreshData, checkFinapiStatus]);
 
   // Handle 30-second timeout for deposits
   useEffect(() => {
