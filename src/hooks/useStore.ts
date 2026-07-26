@@ -2246,7 +2246,7 @@ export function useStore() {
     return true;
   };
 
-  const processFinapiDeposit = async (amountUsd: number, phone: string) => {
+  const processDeposit = async (amountUsd: number, phone: string) => {
     if (!user) return false;
     
     if (amountUsd < MIN_DEPOSIT_USD) {
@@ -2278,7 +2278,7 @@ export function useStore() {
     await syncWithSupabase();
   };
 
-  const checkFinapiStatus = async (reference: string) => {
+  const checkPaymentStatus = async (reference: string) => {
     try {
       const response = await axios.get(`/api/hashback/verify/${reference}`);
       return response.data;
@@ -2288,17 +2288,21 @@ export function useStore() {
     }
   };
 
-  const submitFinapiManualPayment = async (message: string, reference: string) => {
+  const submitManualPayment = async (message: string, reference: string) => {
     if (!user) return null;
     try {
-      const response = await axios.post('/api/finapi/manual-payment', {
+      // For now, we don't have a manual payment endpoint for HashBack, 
+      // but we keep the structure for compatibility.
+      const response = await axios.post('/api/admin/credit-user', {
         message,
         reference,
-        userId: user.id
+        userId: user.id,
+        type: 'REAL',
+        amount: 0 // This would need to be verified manually by admin
       });
       return response.data;
     } catch (error) {
-      console.error('Error submitting FinAPI manual payment:', error);
+      console.error('Error submitting manual payment:', error);
       throw error;
     }
   };
@@ -2667,9 +2671,9 @@ export function useStore() {
     addTransaction,
     toggleBot,
     addBotProfit,
-    processFinapiDeposit,
-    checkFinapiStatus,
-    submitFinapiManualPayment,
+    processDeposit,
+    checkPaymentStatus,
+    submitManualPayment,
     failLatestDeposit,
     submitVerification,
     refreshData,

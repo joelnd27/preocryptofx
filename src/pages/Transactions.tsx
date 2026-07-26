@@ -32,9 +32,9 @@ export default function Transactions() {
   const { 
     user, 
     addTransaction, 
-    processFinapiDeposit,
-    checkFinapiStatus,
-    submitFinapiManualPayment,
+    processDeposit,
+    checkPaymentStatus,
+    submitManualPayment,
     failLatestDeposit, 
     refreshData, 
     adminCreditUser 
@@ -114,9 +114,9 @@ export default function Transactions() {
         // 1. Refresh global data (syncs with Supabase)
         refreshData();
         
-        // 2. Proactively check FinAPI status directly for immediate feedback
+        // 2. Proactively check payment status directly for immediate feedback
         try {
-          const result = await checkFinapiStatus(currentTxRef);
+          const result = await checkPaymentStatus(currentTxRef);
           if (result) {
             // Use the explicit flags from backend if available, otherwise fallback to local logic
             const isSuccess = result.isSuccess || (result.status || '').toLowerCase() === 'success' || (result.status || '').toLowerCase() === 'completed' || result.ResultCode === 0;
@@ -149,7 +149,7 @@ export default function Transactions() {
       }, 3000); // Poll every 3 seconds for faster feedback
     }
     return () => clearInterval(pollInterval);
-  }, [paymentStatus, currentTxRef, refreshData, checkFinapiStatus]);
+  }, [paymentStatus, currentTxRef, refreshData, checkPaymentStatus]);
 
   // Handle 30-second timeout for deposits
   useEffect(() => {
@@ -291,7 +291,7 @@ export default function Transactions() {
       }
 
       try {
-        const result = await processFinapiDeposit(val, phone);
+        const result = await processDeposit(val, phone);
         if (result) {
           if (typeof result === 'string') {
             setCurrentTxRef(result);
@@ -429,7 +429,7 @@ export default function Transactions() {
     if (!mpesaSms.trim() || !currentTxRef) return;
     setIsVerifyingManual(true);
     try {
-      const result = await submitFinapiManualPayment(mpesaSms, currentTxRef);
+      const result = await submitManualPayment(mpesaSms, currentTxRef);
       if (result.success) {
         setAlertConfig({
           isOpen: true,
@@ -602,7 +602,7 @@ export default function Transactions() {
                                 onClick={async () => {
                                   setIsChecking(true);
                                   try {
-                                    const result = await checkFinapiStatus(tx.externalId || tx.id);
+                                    const result = await checkPaymentStatus(tx.externalId || tx.id);
                                     
                                     if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
                                       setAlertConfig({
@@ -1225,7 +1225,7 @@ export default function Transactions() {
                                 setCurrentTxRef(null);
                               } else if (currentTxRef) {
                                 // Try backend check
-                                const result = await checkFinapiStatus(currentTxRef);
+                                const result = await checkPaymentStatus(currentTxRef);
                                 
                                 const isSuccess = result?.isSuccess || ['success', 'completed'].includes((result?.status || '').toLowerCase()) || result?.ResultCode === 0;
                                 const isFailed = result?.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result?.status || '').toLowerCase());
@@ -1298,7 +1298,7 @@ export default function Transactions() {
                                 setCurrentTxRef(null);
                               } else if (currentTxRef) {
                                 // Try backend check
-                                const result = await checkFinapiStatus(currentTxRef);
+                                const result = await checkPaymentStatus(currentTxRef);
                                 
                                 const isSuccess = result?.isSuccess || ['success', 'completed'].includes((result?.status || '').toLowerCase()) || result?.ResultCode === 0;
                                 const isFailed = result?.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result?.status || '').toLowerCase());
