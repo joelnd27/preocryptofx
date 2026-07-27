@@ -446,14 +446,14 @@ export default function AdminPanel() {
                         <div>
                           <p className={cn(
                             "font-bold text-sm",
-                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('hashback') ? "text-green-500" : "text-red-500"
+                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
                           )}>
                             {t.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(t.amount)}
                           </p>
                           <div className="mt-1">
                             {(() => {
                               const method = t.method || 'Direct';
-                              if (method.toLowerCase().includes('hashback')) {
+                              if (method.toLowerCase().includes('payhero')) {
                                 const idMatch = method.match(/\(([^)]+)\)/);
                                 const id = idMatch ? idMatch[1] : null;
                                 
@@ -461,14 +461,14 @@ export default function AdminPanel() {
                                   return (
                                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
                                       {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') 
-                                        ? `HASHBACK CALLBACK ${id ? `(${id})` : ''}`
-                                        : `HASHBACK ${id ? `(${id})` : ''}`}
+                                        ? `PAYHERO CALLBACK ${id ? `(${id})` : ''}`
+                                        : `PAYHERO ${id ? `(${id})` : ''}`}
                                     </p>
                                   );
                                 } else {
                                   return (
                                     <>
-                                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">HASHBACK</p>
+                                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">PAYHERO</p>
                                       {id && <p className="text-[9px] text-slate-400 font-medium italic">({id})</p>}
                                     </>
                                   );
