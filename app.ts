@@ -107,8 +107,8 @@ router.get('/user/referrals', async (req, res) => {
 });
 
 // Secure Balance Management (User accessible but strict)
-// HashBack Pay Button Initiation
-router.post(['/hashback/create-payment', '/api/hashback/create-payment'], async (req, res) => {
+// HashBack Pay Button Initiation (Renamed to stk-push as per user request)
+router.post(['/hashback/stk-push', '/api/hashback/stk-push', '/hashback/create-payment', '/api/hashback/create-payment'], async (req, res) => {
   const { amount, userId } = req.body;
   
   // Convert USD to KES
@@ -146,14 +146,11 @@ router.post(['/hashback/create-payment', '/api/hashback/create-payment'], async 
       }
     }
 
-    // HashBack Pay Button URL
-    // Format: https://pay.hashback.co.ke/pay?account_id={ACCOUNT_ID}&amount={AMOUNT}&reference={REFERENCE}
-    const paymentUrl = `${HASHBACK_BASE_URL}/pay?account_id=${HASHBACK_ACCOUNT_ID}&amount=${kesAmount}&reference=${reference}`;
-
     res.json({
       success: true,
-      paymentUrl,
-      reference
+      account: HASHBACK_ACCOUNT_ID,
+      amount: kesAmount,
+      reference: reference
     });
   } catch (error: any) {
     console.error('[HashBack] Create Payment Exception:', error.message);
@@ -177,8 +174,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
     if (signature !== expectedSignature) {
       console.warn('[HashBack Webhook] Invalid signature rejected');
-      // return res.status(401).json({ error: 'Invalid signature' });
-      // Note: Sometimes we log and proceed during testing, but the user asked to verify it.
+      return res.status(401).json({ error: 'Invalid signature' });
     }
   }
 
@@ -200,12 +196,11 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
       if (tx) {
         // 2. Prevent duplicate crediting
-        // Convert KES back to USD as requested
         const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
-        const kesReceived = Number(req.body.amount || tx.kes_amount || 0);
+        const kesReceived = Number(req.body.amount || 0);
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
-        const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
           t_id: tx.id,
           u_id: tx.user_id,
           amount: Number(usdToCredit.toFixed(2))
@@ -213,9 +208,8 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
         if (rpcError) {
           console.error('[HashBack Webhook] RPC Error:', rpcError);
-          // If RPC fails (e.g. transaction already completed), we still return 200 to HashBack to stop retries
         } else {
-          console.log(`[HashBack Webhook] Successfully credited $${tx.amount} to user ${tx.user_id}`);
+          console.log(`[HashBack Webhook] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
         }
       } else {
         console.warn(`[HashBack Webhook] Pending transaction not found for reference: ${reference}`);

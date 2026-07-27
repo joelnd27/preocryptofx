@@ -2246,7 +2246,7 @@ export function useStore() {
     return true;
   };
 
-  const processDeposit = async (amountUsd: number, phone: string) => {
+  const processDeposit = async (amountUsd: number, _phone?: string) => {
     if (!user) return false;
     
     if (amountUsd < 16) {
@@ -2254,15 +2254,39 @@ export function useStore() {
     }
 
     try {
-      const response = await axios.post('/api/hashback/create-payment', {
+      const response = await axios.post('/api/hashback/stk-push', {
         amount: amountUsd,
         userId: user.id
       });
 
-      if (response.data.success && response.data.paymentUrl) {
-        // Redirect to HashBack Pay Button
-        window.location.href = response.data.paymentUrl;
-        return response.data.reference;
+      if (response.data.success) {
+        const { account, amount, reference } = response.data;
+        
+        if (typeof (window as any).HashPay !== 'undefined') {
+          (window as any).HashPay.setup({
+            account: account,
+            amount: amount,
+            reference: reference,
+            onSuccess: (data: any) => {
+              console.log('[HashPay] Success:', data);
+              // Small delay then reload to sync balance
+              setTimeout(() => window.location.reload(), 1500);
+            },
+            onCancel: () => {
+              console.log('[HashPay] Cancelled');
+            },
+            onError: (err: any) => {
+              console.error('[HashPay] Error:', err);
+            }
+          });
+          return reference;
+        } else {
+          // Fallback if script didn't load properly
+          const usdKesRate = parseFloat((process.env as any).USD_KES_RATE || '129.98');
+          const fallbackUrl = `https://pay.hashback.co.ke/pay?account_id=${account}&amount=${amount}&reference=${reference}`;
+          window.location.href = fallbackUrl;
+          return reference;
+        }
       }
       
       const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
@@ -2287,54 +2311,6 @@ export function useStore() {
       console.error('Error checking payment status:', error);
       return null;
     }
-  };
-
-  const submitManualPayment = async (message: string, reference: string) => {
-    if (!user) return null;
-    try {
-      // For now, we don't have a manual payment endpoint for HashBack, 
-      // but we keep the structure for compatibility.
-      const response = await axios.post('/api/admin/credit-user', {
-        message,
-        reference,
-        userId: user.id,
-        type: 'REAL',
-        amount: 0 // This would need to be verified manually by admin
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error submitting manual payment:', error);
-      throw error;
-    }
-  };
-
-  const failLatestDeposit = async () => {
-    if (!user) return;
-    
-    // Find the most recent pending deposit
-    const latestPending = [...(user.transactions || [])]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .find(t => t.type === 'DEPOSIT' && t.status === 'pending');
-      
-    if (!latestPending) return;
-
-    if (isSupabaseConfigured()) {
-      await supabase.from('transactions')
-        .update({ status: 'rejected' })
-        .eq('id', latestPending.id)
-        .eq('status', 'pending') // Only if it is still pending in DB
-        .neq('status', 'completed');
-    }
-
-    setUser(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        transactions: prev.transactions.map(t => 
-          t.id === latestPending.id ? { ...t, status: 'failed' } : t
-        )
-      };
-    });
   };
 
   const submitVerification = async (docs: User['verificationDocuments']) => {
@@ -2674,8 +2650,6 @@ export function useStore() {
     addBotProfit,
     processDeposit,
     checkPaymentStatus,
-    submitManualPayment,
-    failLatestDeposit,
     submitVerification,
     refreshData,
     importBot,
