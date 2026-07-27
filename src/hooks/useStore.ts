@@ -2246,7 +2246,7 @@ export function useStore() {
     return true;
   };
 
-  const processDeposit = async (amountUsd: number, _phone?: string) => {
+  const processDeposit = async (amountUsd: number, _phone?: string, onSdkError?: (msg: string) => void) => {
     if (!user) return false;
     
     if (amountUsd < 16) {
@@ -2259,42 +2259,65 @@ export function useStore() {
         userId: user.id
       });
 
+      console.log('[HashBack] Backend Response:', response.data);
+
       if (response.data.success) {
         const { account, amount, reference } = response.data;
         
         if (typeof (window as any).HashPay !== 'undefined') {
-          (window as any).HashPay.setup({
-            account: account,
-            amount: amount,
-            reference: reference,
-            onSuccess: (data: any) => {
-              console.log('[HashPay] Success:', data);
-              // Small delay then reload to sync balance
-              setTimeout(() => window.location.reload(), 1500);
-            },
-            onCancel: () => {
-              console.log('[HashPay] Cancelled');
-            },
-            onError: (err: any) => {
-              console.error('[HashPay] Error:', err);
+          console.log('[HashBack] Using HashPay.setup');
+          try {
+            const handler = (window as any).HashPay.setup({
+              account: account,
+              amount: amount,
+              reference: reference,
+              onSuccess: (data: any) => {
+                console.log('[HashPay] Success:', data);
+                setTimeout(() => window.location.reload(), 1500);
+              },
+              onCancel: () => {
+                console.log('[HashPay] Cancelled');
+              },
+              onError: (err: any) => {
+                console.error('[HashPay] SDK Error:', err);
+                const msg = typeof err === 'string' ? err : (err?.message || 'Payment provider error: Invalid account or receiver info.');
+                console.warn('[HashPay] Error message to user:', msg);
+                if (onSdkError) onSdkError(msg);
+              }
+            });
+
+            if (handler && typeof handler.openIframe === 'function') {
+              console.log('[HashPay] Opening Iframe');
+              handler.openIframe();
+            } else {
+              console.error('[HashPay] Failed to get valid handler from setup');
+              throw new Error('Payment system failed to initialize.');
             }
-          });
-          return reference;
+            return reference;
+          } catch (sdkError: any) {
+            console.error('[HashPay] Setup Exception:', sdkError);
+            throw new Error(`Payment initialization failed: ${sdkError.message || 'Unknown error'}`);
+          }
         } else {
-          // Fallback if script didn't load properly
-          const usdKesRate = parseFloat((process.env as any).USD_KES_RATE || '129.98');
-          const fallbackUrl = `https://pay.hashback.co.ke/pay?account_id=${account}&amount=${amount}&reference=${reference}`;
-          window.location.href = fallbackUrl;
-          return reference;
+          console.warn('[HashBack] HashPay script not loaded');
+          throw new Error('Payment system script not found. Please check your internet connection or refresh the page.');
         }
       }
       
-      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
+      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment (Server returned success: false)';
       throw new Error(errorMsg);
     } catch (error: any) {
       const errorData = error.response?.data;
-      const errorMsg = errorData?.message || errorData?.details || errorData?.error || error.message;
-      console.error('Payment Initiation Error:', errorData || error.message);
+      // If it's a 404/500 with HTML, errorData might be a string
+      const serverError = typeof errorData === 'object' ? (errorData.message || errorData.error || errorData.details) : null;
+      const errorMsg = serverError || error.message || 'Failed to initiate payment';
+      
+      console.error('Payment Initiation Error Detail:', {
+        status: error.response?.status,
+        data: errorData,
+        message: error.message
+      });
+      
       throw new Error(errorMsg);
     }
   };

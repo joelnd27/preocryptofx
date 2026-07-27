@@ -110,6 +110,7 @@ router.get('/user/referrals', async (req, res) => {
 // HashBack Pay Button Initiation (Renamed to stk-push as per user request)
 router.post(['/hashback/stk-push', '/api/hashback/stk-push', '/hashback/create-payment', '/api/hashback/create-payment'], async (req, res) => {
   const { amount, userId } = req.body;
+  console.log(`[HashBack] Initiation Request: Amount=${amount}, User=${userId}`);
   
   // Convert USD to KES
   const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
@@ -117,6 +118,7 @@ router.post(['/hashback/stk-push', '/api/hashback/stk-push', '/hashback/create-p
   const kesAmount = Math.ceil(usdAmount * usdKesRate);
   
   if (usdAmount < 16) {
+    console.warn(`[HashBack] Amount too low: $${usdAmount}`);
     return res.status(400).json({ success: false, error: 'Minimum deposit is $16' });
   }
 
@@ -125,8 +127,11 @@ router.post(['/hashback/stk-push', '/api/hashback/stk-push', '/hashback/create-p
 
   try {
     if (!HASHBACK_ACCOUNT_ID) {
-      return res.status(500).json({ success: false, error: 'HashBack Account ID is missing.' });
+      console.error('[HashBack] CRITICAL: HASHBACK_ACCOUNT_ID is missing in environment variables');
+      return res.status(500).json({ success: false, error: 'Payment system configuration error (Missing Account ID).' });
     }
+
+    console.log(`[HashBack] Using Account ID: ${HASHBACK_ACCOUNT_ID}`);
 
     // Save pending transaction in Supabase
     if (supabaseAdmin && userId) {
@@ -142,10 +147,14 @@ router.post(['/hashback/stk-push', '/api/hashback/stk-push', '/hashback/create-p
 
       if (dbError) {
         console.error('[HashBack] DB Error:', dbError);
-        return res.status(500).json({ success: false, error: 'Failed to record transaction.' });
+        return res.status(500).json({ success: false, error: 'Failed to record transaction in database.' });
       }
+    } else if (!userId) {
+      console.warn('[HashBack] No userId provided in request');
+      return res.status(400).json({ success: false, error: 'User identification required for deposit.' });
     }
 
+    console.log(`[HashBack] Initiation Success: Ref=${reference}, KES=${kesAmount}`);
     res.json({
       success: true,
       account: HASHBACK_ACCOUNT_ID,
@@ -154,7 +163,7 @@ router.post(['/hashback/stk-push', '/api/hashback/stk-push', '/hashback/create-p
     });
   } catch (error: any) {
     console.error('[HashBack] Create Payment Exception:', error.message);
-    res.status(500).json({ success: false, error: 'Internal Server Error' });
+    res.status(500).json({ success: false, error: 'Internal server error during payment initiation.' });
   }
 });
 

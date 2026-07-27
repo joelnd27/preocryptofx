@@ -215,7 +215,7 @@ export default function Transactions() {
       setErrorMessage(null);
 
       try {
-        const result = await processDeposit(val, phone);
+        const result = await processDeposit(val, phone, (msg) => setErrorMessage(msg));
         if (result) {
           setCurrentTxRef(result);
           setPaymentStatus('VERIFYING');
