@@ -251,39 +251,116 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 });
 
 // HashBack Verify (Polling endpoint)
-router.get('/hashback/verify/:reference', async (req, res) => {
+router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], async (req, res) => {
   const { reference } = req.params;
   console.log(`[HashBack Verify] Checking ref: ${reference}`);
   
+  if (!reference) return res.status(400).json({ error: 'Missing reference' });
+
   try {
     if (supabaseAdmin) {
       const { data: tx, error: fetchError } = await supabaseAdmin
         .from('transactions')
-        .select('status, amount, metadata, description')
+        .select('*')
         .eq('external_id', reference)
         .maybeSingle();
 
       if (fetchError) {
-        console.error('[HashBack Verify] Fetch Error:', fetchError);
-        return res.status(500).json({ success: false, error: 'Database fetch error' });
+        console.error('[HashBack Verify] Database Error:', fetchError);
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Database fetch error',
+          details: fetchError.message
+        });
       }
 
-      console.log(`[HashBack Verify] Status for ${reference}:`, tx?.status || 'NOT FOUND');
-      
-      if (tx && tx.status !== 'pending') {
-        return res.json({
-          success: true,
-          status: tx.status,
-          isSuccess: tx.status === 'completed' || tx.status === 'success',
-          isFailed: tx.status === 'rejected' || tx.status === 'failed',
-          message: tx.metadata?.result_desc || tx.metadata?.webhook_payload?.ResultDesc || tx.description
-        });
+      if (tx) {
+        console.log(`[HashBack Verify] Status for ${reference}:`, tx.status);
+        
+        if (tx.status !== 'pending') {
+          const metadata = tx.metadata || {};
+          const message = metadata.result_desc || 
+                          metadata.webhook_payload?.ResultDesc || 
+                          tx.description || 
+                          `Transaction ${tx.status}`;
+
+          return res.json({
+            success: true,
+            status: tx.status,
+            isSuccess: tx.status === 'completed' || tx.status === 'success',
+            isFailed: tx.status === 'rejected' || tx.status === 'failed',
+            message: message
+          });
+        }
+      } else {
+        console.warn(`[HashBack Verify] No transaction found for ref: ${reference}`);
       }
     }
     
     res.json({ success: true, status: 'pending', isSuccess: false, isFailed: false });
   } catch (error: any) {
-    console.error('[HashBack Verify] Exception:', error.message);
+    console.error('[HashBack Verify] Exception:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// HashBack Update Status (Client-side callback endpoint)
+router.post(['/hashback/update-status', '/api/hashback/update-status'], async (req, res) => {
+  const { reference, status, message, metadata } = req.body;
+  console.log(`[HashBack Update] ${reference} -> ${status}: ${message}`);
+
+  if (!reference || !status) {
+    return res.status(400).json({ error: 'Missing reference or status' });
+  }
+
+  try {
+    if (!supabaseAdmin) throw new Error('Database admin client not configured');
+
+    // Find transaction
+    const { data: tx, error: txError } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .eq('external_id', reference)
+      .maybeSingle();
+
+    if (txError) throw txError;
+    if (!tx) {
+      console.warn(`[HashBack Update] Transaction ${reference} not found`);
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    // Only update if currently pending to prevent race conditions or duplicate crediting
+    if (tx.status === 'pending') {
+      const isSuccess = ['completed', 'success', 'successful'].includes(status.toLowerCase());
+      const isFailure = ['rejected', 'failed', 'cancelled'].includes(status.toLowerCase());
+
+      if (isSuccess) {
+        const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+        const usdToCredit = Number(tx.amount);
+
+        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+          t_id: tx.id,
+          u_id: tx.user_id,
+          amount: usdToCredit
+        });
+
+        if (rpcError) throw rpcError;
+        console.log(`[HashBack Update] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
+      } else if (isFailure) {
+        await supabaseAdmin
+          .from('transactions')
+          .update({ 
+            status: 'rejected',
+            metadata: { ...tx.metadata, ...metadata, client_reason: message }
+          })
+          .eq('id', tx.id);
+        console.log(`[HashBack Update] Marked ${reference} as rejected (Client reason: ${message})`);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[HashBack Update] Exception:', error);
     res.status(500).json({ error: error.message });
   }
 });

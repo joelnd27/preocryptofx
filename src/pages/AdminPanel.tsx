@@ -493,7 +493,16 @@ export default function AdminPanel() {
                           ) : t.status === 'pending' ? (
                             <><Clock size={12} className="text-amber-500" /> PENDING</>
                           ) : (
-                            <><XCircle size={12} className="text-rose-500" /> REJECTED</>
+                            <div className="flex flex-col items-start gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <XCircle size={12} className="text-rose-500" /> REJECTED
+                              </div>
+                              {t.metadata?.client_reason && (
+                                <p className="text-[8px] text-rose-400 font-medium italic lowercase max-w-[100px] truncate" title={t.metadata.client_reason}>
+                                  {t.metadata.client_reason}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </span>
                       </td>

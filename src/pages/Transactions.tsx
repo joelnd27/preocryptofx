@@ -234,7 +234,8 @@ export default function Transactions() {
         );
         if (result) {
           setCurrentTxRef(result);
-          setPaymentStatus('VERIFYING');
+          // Only set to VERIFYING if we haven't already hit a final state from a callback
+          setPaymentStatus(prev => (prev === 'IDLE' ? 'VERIFYING' : prev));
           setAmount('');
         }
       } catch (error: any) {

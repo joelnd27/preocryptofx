@@ -2273,6 +2273,7 @@ export function useStore() {
               reference: reference,
               onSuccess: (data: any) => {
                 console.log('[HashPay] Success Callback:', data);
+                updateHashBackStatus(reference, 'success', 'Payment successful via SDK callback', data);
                 if (onSdkSuccess) {
                   onSdkSuccess(data);
                 } else {
@@ -2282,21 +2283,25 @@ export function useStore() {
               onCancel: (data: any) => {
                 console.log('[HashPay] Cancel Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment cancelled');
+                updateHashBackStatus(reference, 'cancelled', msg, data);
                 if (onSdkCancel) onSdkCancel(msg);
               },
               onDismiss: (data: any) => {
                 console.log('[HashPay] Dismiss Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || 'Payment dismissed');
+                updateHashBackStatus(reference, 'cancelled', msg, data);
                 if (onSdkCancel) onSdkCancel(msg);
               },
               onClose: (data: any) => {
                 console.log('[HashPay] Close Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || 'Payment closed');
+                // Don't necessarily mark as cancelled on close, as they might have just finished successfully
                 if (onSdkCancel) onSdkCancel(msg);
               },
               onFailed: (data: any) => {
                 console.log('[HashPay] Failed Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment failed');
+                updateHashBackStatus(reference, 'failed', msg, data);
                 if (onSdkCancel) onSdkCancel(msg);
               },
               onError: (err: any) => {
@@ -2351,9 +2356,28 @@ export function useStore() {
     try {
       const response = await axios.get(`/api/hashback/verify/${reference}`);
       return response.data;
-    } catch (error) {
-      console.error('Error checking payment status:', error);
+    } catch (error: any) {
+      console.error('Error checking payment status:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
       return null;
+    }
+  };
+
+  const updateHashBackStatus = async (reference: string, status: string, message?: string, metadata?: any) => {
+    try {
+      await axios.post('/api/hashback/update-status', {
+        reference,
+        status,
+        message,
+        metadata
+      });
+      return true;
+    } catch (error) {
+      console.error('Error updating hashback status:', error);
+      return false;
     }
   };
 
