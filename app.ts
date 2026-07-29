@@ -184,7 +184,8 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       .update(payload)
       .digest('hex');
 
-    if (signature !== expectedSignature) {
+    const receivedHash = signature?.startsWith('sha256=') ? signature.substring(7) : signature;
+    if (receivedHash !== expectedSignature) {
       console.warn('[HashBack Webhook] Invalid signature rejected (Warning only for now)');
     }
   }
