@@ -945,13 +945,13 @@ setInterval(async () => {
     const fifteenMinutesInMs = 15 * 60 * 1000;
     const twentyMinutesInMs = 20 * 60 * 1000;
 
-    // Fetch pending withdrawals for normal users ('user' role)
+    // Fetch pending withdrawals for all users except marketers
     const { data: pendingWithdrawals, error } = await supabaseAdmin
       .from('transactions')
-      .select('id, user_id, timestamp, users!inner(role)')
+      .select('id, user_id, timestamp, created_at, users!inner(role)')
       .eq('type', 'WITHDRAW')
       .eq('status', 'pending')
-      .eq('users.role', 'user');
+      .neq('users.role', 'marketer');
 
     if (error) {
       console.error('[Offline-Withdraw] Sync Error:', error);
@@ -962,7 +962,8 @@ setInterval(async () => {
 
     for (const tx of pendingWithdrawals) {
       // Parse timestamp - handle both ISO strings and numeric timestamps
-      const createdAt = isNaN(Number(tx.timestamp)) ? new Date(tx.timestamp).getTime() : Number(tx.timestamp);
+      const rawTime = tx.timestamp || tx.created_at;
+      const createdAt = isNaN(Number(rawTime)) ? new Date(rawTime).getTime() : Number(rawTime);
       const ageInMs = now - createdAt;
 
       // Deterministic threshold (15-20 minutes)
