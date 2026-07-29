@@ -103,20 +103,29 @@ export default function Transactions() {
   // Handle automatic status checks for verifying transactions
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
+    let isMounted = true;
+
     if (paymentStatus === 'VERIFYING' && currentTxRef) {
-      pollInterval = setInterval(async () => {
+      console.log(`[Transactions] Starting poll for ${currentTxRef}`);
+      
+      const poll = async () => {
         try {
           const result = await checkPaymentStatus(currentTxRef);
-          
+          if (!isMounted) return;
+
           if (result) {
-            const isSuccess = result.isSuccess || ['success', 'completed'].includes((result.status || '').toLowerCase()) || result.ResultCode === 0;
-            const isFailed = result.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result.status || '').toLowerCase());
+            console.log(`[Transactions] Poll result for ${currentTxRef}:`, result.status);
+            
+            const isSuccess = result.isSuccess || ['success', 'completed', 'successful', 'done', 'paid'].includes((result.status || '').toLowerCase()) || result.ResultCode === 0;
+            const isFailed = result.isFailed || ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied'].includes((result.status || '').toLowerCase());
 
             if (isSuccess) {
+              console.log('[Transactions] Payment SUCCESS detected via polling');
               setPaymentStatus('SUCCESS');
               setCurrentTxRef(null);
               refreshData();
             } else if (isFailed) {
+              console.log('[Transactions] Payment FAILURE detected via polling');
               setPaymentStatus('FAILED');
               setErrorMessage(result.message || result.error || 'Transaction was rejected or cancelled.');
               setCurrentTxRef(null);
@@ -124,11 +133,21 @@ export default function Transactions() {
             }
           }
         } catch (err) {
-          console.error('Polling error:', err);
+          console.error('[Transactions] Polling error:', err);
         }
-      }, 3000);
+      };
+
+      // Poll immediately once
+      poll();
+      
+      // Then set interval
+      pollInterval = setInterval(poll, 4000); // 4s to be gentler
     }
-    return () => clearInterval(pollInterval);
+
+    return () => {
+      isMounted = false;
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [paymentStatus, currentTxRef, refreshData, checkPaymentStatus]);
 
   const formatDate = (timestamp: any) => {

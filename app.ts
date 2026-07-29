@@ -32,6 +32,12 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
+if (!supabaseAdmin) {
+  console.warn('[Supabase] SUPABASE_SERVICE_ROLE_KEY is missing. Admin operations will fail.');
+} else {
+  console.log('[Supabase] Admin client initialized successfully.');
+}
+
 // HashBack Config
 const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY;
 const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID;
@@ -40,6 +46,18 @@ const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 
 // API Routes
 const router = express.Router();
+
+// Config Health Check
+router.get('/hashback/config-check', (req, res) => {
+  res.json({
+    supabaseAdmin: !!supabaseAdmin,
+    hasAccountId: !!HASHBACK_ACCOUNT_ID,
+    hasApiKey: !!HASHBACK_API_KEY,
+    hasWebhookSecret: !!HASHBACK_WEBHOOK_SECRET,
+    rate: process.env.USD_KES_RATE || '129.98',
+    nodeEnv: process.env.NODE_ENV
+  });
+});
 
 // HashBack Pay Button Initiation (Renamed to stk-push as per user request)
 router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-push'], async (req, res) => {
@@ -191,27 +209,30 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   }
 
   // Robust extraction
-  const reference = req.body.reference || req.body.external_reference || (req.body.payload && req.body.payload.reference);
+  const reference = req.body.reference || req.body.external_reference || req.body.ExternalReference || (req.body.payload && req.body.payload.reference);
   const rawStatus = (req.body.status || (req.body.payload && req.body.payload.status) || req.body.ResultDesc || 'failed').toString().toLowerCase();
   
-  const success = ['success', 'completed', 'successful', '0', '00'].some(s => rawStatus.includes(s)) || req.body.success === true;
-  const failure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient'].some(f => rawStatus.includes(f));
+  const success = ['success', 'completed', 'successful', '0', '00', 'paid', 'done'].some(s => rawStatus.includes(s)) || req.body.success === true || req.body.ResultCode === 0;
+  const failure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected'].some(f => rawStatus.includes(f));
 
-  console.log('[HashBack Webhook] Parsed:', { reference, rawStatus, success, failure });
+  console.log(`[HashBack Webhook] Parsed: ref=${reference}, rawStatus=${rawStatus}, success=${success}, failure=${failure}`);
 
   try {
     if (supabaseAdmin && reference && (success || failure)) {
       const finalStatus = success ? 'completed' : 'rejected';
       
-      // 1. Find transaction
-      const { data: tx, error: txError } = await supabaseAdmin
+      // 1. Find transaction (Try both reference and external_id for robustness)
+      let { data: tx, error: txError } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .eq('external_id', reference)
+        .or(`reference.eq."${reference}",external_id.eq."${reference}"`)
         .eq('status', 'pending')
         .maybeSingle();
 
-      if (txError) throw txError;
+      if (txError) {
+        console.error('[HashBack Webhook] DB Query Error:', txError);
+        throw txError;
+      }
 
       if (tx && success) {
         console.log(`[HashBack Webhook] Processing success for ${reference}`);
@@ -348,11 +369,11 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
   try {
     if (!supabaseAdmin) throw new Error('Database admin client not configured');
 
-    // Find transaction
+    // Find transaction (Try both reference and external_id for robustness)
     const { data: tx, error: txError } = await supabaseAdmin
       .from('transactions')
       .select('*')
-      .eq('external_id', reference)
+      .or(`reference.eq."${reference}",external_id.eq."${reference}"`)
       .maybeSingle();
 
     if (txError) throw txError;
@@ -363,9 +384,9 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
 
     // Only update if currently pending to prevent race conditions or duplicate crediting
     if (tx.status === 'pending') {
-      const normalizedStatus = status.toLowerCase();
-      const isSuccess = ['completed', 'success', 'successful', 'successfull', '0', '00'].some(s => normalizedStatus.includes(s));
-      const isFailure = ['rejected', 'failed', 'cancelled', 'canceled', 'dismissed', 'closed', 'fail', 'error'].some(f => normalizedStatus.includes(f));
+      const normalizedStatus = (status || '').toString().toLowerCase();
+      const isSuccess = ['completed', 'success', 'successful', 'successfull', '0', '00', 'done', 'paid'].some(s => normalizedStatus.includes(s));
+      const isFailure = ['rejected', 'failed', 'cancelled', 'canceled', 'dismissed', 'closed', 'fail', 'error', 'denied', 'void'].some(f => normalizedStatus.includes(f));
 
       if (isSuccess) {
         console.log(`[HashBack Update] Processing success for ${reference}`);

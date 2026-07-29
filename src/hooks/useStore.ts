@@ -2271,25 +2271,31 @@ export function useStore() {
               account: account,
               amount: amount,
               reference: reference,
-              onSuccess: (data: any) => {
+              onSuccess: async (data: any) => {
                 console.log('[HashPay] Success Callback:', data);
-                updateHashBackStatus(reference, 'success', 'Payment successful via SDK callback', data);
+                const updated = await updateHashBackStatus(reference, 'success', 'Payment successful via SDK callback', data);
+                if (updated) {
+                  console.log('[HashPay] Backend successfully updated via callback');
+                } else {
+                  console.warn('[HashPay] Backend update failed via callback, polling will handle it if webhook arrives');
+                }
+                
                 if (onSdkSuccess) {
                   onSdkSuccess(data);
                 } else {
                   setTimeout(() => window.location.reload(), 1500);
                 }
               },
-              onCancel: (data: any) => {
+              onCancel: async (data: any) => {
                 console.log('[HashPay] Cancel Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment cancelled');
-                updateHashBackStatus(reference, 'cancelled', msg, data);
+                await updateHashBackStatus(reference, 'cancelled', msg, data);
                 if (onSdkCancel) onSdkCancel(msg);
               },
-              onDismiss: (data: any) => {
+              onDismiss: async (data: any) => {
                 console.log('[HashPay] Dismiss Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || 'Payment dismissed');
-                updateHashBackStatus(reference, 'cancelled', msg, data);
+                await updateHashBackStatus(reference, 'cancelled', msg, data);
                 if (onSdkCancel) onSdkCancel(msg);
               },
               onClose: (data: any) => {
@@ -2298,10 +2304,10 @@ export function useStore() {
                 // Don't necessarily mark as cancelled on close, as they might have just finished successfully
                 if (onSdkCancel) onSdkCancel(msg);
               },
-              onFailed: (data: any) => {
+              onFailed: async (data: any) => {
                 console.log('[HashPay] Failed Callback:', data);
                 const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment failed');
-                updateHashBackStatus(reference, 'failed', msg, data);
+                await updateHashBackStatus(reference, 'failed', msg, data);
                 if (onSdkCancel) onSdkCancel(msg);
               },
               onError: (err: any) => {
@@ -2367,16 +2373,22 @@ export function useStore() {
   };
 
   const updateHashBackStatus = async (reference: string, status: string, message?: string, metadata?: any) => {
+    console.log(`[useStore] Requesting status update for ${reference} to ${status}`);
     try {
-      await axios.post('/api/hashback/update-status', {
+      const response = await axios.post('/api/hashback/update-status', {
         reference,
         status,
         message,
         metadata
       });
-      return true;
-    } catch (error) {
-      console.error('Error updating hashback status:', error);
+      console.log(`[useStore] Status update response for ${reference}:`, response.data);
+      return response.data?.success === true;
+    } catch (error: any) {
+      console.error(`[useStore] Error updating hashback status for ${reference}:`, {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
       return false;
     }
   };
