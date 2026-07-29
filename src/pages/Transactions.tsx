@@ -29,7 +29,14 @@ import { USD_TO_KES, MIN_DEPOSIT_USD, MIN_WITHDRAWAL_USD, WITHDRAWAL_EXCHANGE_RA
 import AlertModal from '../components/AlertModal';
 
 export default function Transactions() {
-  const { user, addTransaction, processPayheroDeposit, failLatestDeposit, checkPaymentStatus, refreshData, adminCreditUser } = useStore();
+  const { 
+    user, 
+    addTransaction, 
+    processDeposit,
+    checkPaymentStatus,
+    refreshData, 
+    adminCreditUser 
+  } = useStore();
   const location = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
@@ -42,8 +49,7 @@ export default function Transactions() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [currentTxRef, setCurrentTxRef] = useState<string | null>(null);
-  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED' | 'VERIFYING'>('IDLE');
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED' | 'VERIFYING'>('IDLE');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAW'>('ALL');
@@ -94,49 +100,36 @@ export default function Transactions() {
     }
   }, [user?.transactions, paymentStatus, currentTxRef]);
 
-  // Poll for status updates while waiting
+  // Handle automatic status checks for verifying transactions
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
-    if (paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') {
-      pollInterval = setInterval(() => {
-        refreshData();
-      }, 5000);
+    if (paymentStatus === 'VERIFYING' && currentTxRef) {
+      pollInterval = setInterval(async () => {
+        try {
+          const result = await checkPaymentStatus(currentTxRef);
+          
+          if (result) {
+            const isSuccess = result.isSuccess || ['success', 'completed'].includes((result.status || '').toLowerCase()) || result.ResultCode === 0;
+            const isFailed = result.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result.status || '').toLowerCase());
+
+            if (isSuccess) {
+              setPaymentStatus('SUCCESS');
+              setCurrentTxRef(null);
+              refreshData();
+            } else if (isFailed) {
+              setPaymentStatus('FAILED');
+              setErrorMessage(result.message || result.error || 'Transaction was rejected or cancelled.');
+              setCurrentTxRef(null);
+              refreshData();
+            }
+          }
+        } catch (err) {
+          console.error('Polling error:', err);
+        }
+      }, 3000);
     }
     return () => clearInterval(pollInterval);
-  }, [paymentStatus, refreshData]);
-
-  // Handle 30-second timeout for deposits
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (paymentStatus === 'WAITING') {
-      setTimeLeft(30);
-      timer = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            setPaymentStatus('VERIFYING');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (paymentStatus === 'VERIFYING') {
-      // Give verification another 30 seconds before failing
-      setTimeLeft(30);
-      timer = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            setPaymentStatus('FAILED');
-            setErrorMessage('Verification timed out. If you have paid, please click "Check Status" in your Activity Log.');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [paymentStatus]);
+  }, [paymentStatus, currentTxRef, refreshData, checkPaymentStatus]);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'N/A';
@@ -209,79 +202,40 @@ export default function Transactions() {
       }
 
       if (paymentMethod === 'CRYPTO') {
-        // Crypto deposits are handled manually via the displayed addresses
         setAlertConfig({
           isOpen: true,
           title: 'Manual Verification',
-          message: 'Please send the exact amount to the displayed address. Your balance will be updated once the transaction is confirmed on the blockchain (usually 10-30 mins).',
+          message: 'Please send the exact amount to the displayed address. Your balance will be updated once confirmed on the blockchain (usually 10-30 mins).',
           type: 'info'
         });
         return;
       }
 
       setIsProcessing(true);
-      setPaymentStatus('WAITING');
       setErrorMessage(null);
 
-      // Strict Kenyan Phone Validation
-      if (paymentMethod === 'MPESA' && !isValidKenyanPhone(phone)) {
-        // Create a failed transaction in the store to show as REJECTED in history
-        const txId = `TX-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-        addTransaction({
-          id: txId,
-          userId: user?.id || '',
-          amount: val,
-          type: 'DEPOSIT',
-          status: 'failed',
-          timestamp: Date.now(),
-          method: 'M-PESA',
-          accountType: user?.activeAccount || 'REAL'
-        });
-
-        setPaymentStatus('FAILED');
-        setErrorMessage('The number is not a valid Kenyan number. Format: +254 followed by 9 digits starting with 7 or 1.');
-        setIsProcessing(false);
-        return;
-      }
-
       try {
-        const result = await processPayheroDeposit(val, phone);
-        if (result) {
-          if (typeof result === 'string') {
-            setCurrentTxRef(result);
+        const result = await processDeposit(
+          val, 
+          phone, 
+          (msg) => setErrorMessage(msg),
+          () => {
+            setPaymentStatus('SUCCESS');
+            refreshData();
+          },
+          () => {
+            setPaymentStatus('IDLE');
+            setErrorMessage('Payment was cancelled.');
+            setCurrentTxRef(null);
           }
-          setPaymentStatus('WAITING');
+        );
+        if (result) {
+          setCurrentTxRef(result);
+          setPaymentStatus('VERIFYING');
           setAmount('');
-        } else {
-          setPaymentStatus('FAILED');
-          setErrorMessage('Failed to initiate payment. Please check your details.');
         }
       } catch (error: any) {
-        setPaymentStatus('FAILED');
-        const details = error.response?.data?.details;
-        let msg = typeof details === 'object' ? JSON.stringify(details) : details;
-        
-        // Try to parse JSON if it's a string that looks like JSON
-        if (typeof msg === 'string' && (msg.startsWith('{') || msg.startsWith('['))) {
-          try {
-            const parsed = JSON.parse(msg);
-            msg = parsed.error_message || parsed.message || parsed.error || msg;
-          } catch (e) {
-            // Not valid JSON, keep as is
-          }
-        }
-        
-        if (msg && typeof msg === 'string') {
-          if (msg.includes('Too many unsuccessful requests')) {
-            msg = 'Too many unsuccessful requests try after 24hrs';
-          } else if (msg.toLowerCase().includes('not valid kenyan number')) {
-            msg = 'The number is not a valid Kenyan number';
-          } else if (msg.toLowerCase().includes('insufficient funds')) {
-            msg = 'Merchant has insufficient funds';
-          }
-        }
-        
-        setErrorMessage(msg || error.message || 'An unexpected error occurred.');
+        setErrorMessage(error.message || 'An unexpected error occurred.');
       } finally {
         setIsProcessing(false);
       }
@@ -291,7 +245,7 @@ export default function Transactions() {
         setAlertConfig({
           isOpen: true,
           title: 'Real Account Required',
-          message: 'Withdrawals are only available for REAL accounts. Demo funds have no real-world value.',
+          message: 'Withdrawals are only available for REAL accounts.',
           type: 'warning'
         });
         return;
@@ -303,23 +257,7 @@ export default function Transactions() {
           setAlertConfig({
             isOpen: true,
             title: 'Verification Required',
-            message: 'Unverified accounts are limited to withdrawals of $500 or less. Please verify your identity to unlock higher limits.',
-            type: 'warning'
-          });
-          return;
-        }
-
-        const today = new Date().setHours(0, 0, 0, 0);
-        const withdrawalsToday = user.transactions?.filter(t => 
-          t.type === 'WITHDRAW' && 
-          new Date(t.timestamp).setHours(0, 0, 0, 0) === today
-        ).length || 0;
-
-        if (withdrawalsToday >= 5) {
-          setAlertConfig({
-            isOpen: true,
-            title: 'Daily Limit Reached',
-            message: 'Unverified accounts are limited to 5 withdrawals per day. Please verify your identity to unlock unlimited transactions.',
+            message: 'Unverified accounts are limited to withdrawals of $500 or less.',
             type: 'warning'
           });
           return;
@@ -331,18 +269,18 @@ export default function Transactions() {
         setAlertConfig({
           isOpen: true,
           title: 'Minimum Withdrawal',
-          message: `The minimum withdrawal amount for ${withdrawalMethod} is $${minWithdrawal}.`,
+          message: `The minimum withdrawal amount is $${minWithdrawal}.`,
           type: 'info'
         });
         return;
       }
 
-      const balance = user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance;
+      const balance = user?.realBalance || 0;
       if (val > balance) {
         setAlertConfig({
           isOpen: true,
           title: 'Insufficient Balance',
-          message: 'You do not have enough funds in your account to complete this withdrawal.',
+          message: 'You do not have enough funds.',
           type: 'error'
         });
         return;
@@ -354,16 +292,16 @@ export default function Transactions() {
         amount: val,
         status: 'pending',
         timestamp: Date.now(),
-        accountType: user?.activeAccount || 'DEMO',
+        accountType: 'REAL',
         method: withdrawalMethod,
         bankName: withdrawalMethod === 'BANK' ? bankName : undefined,
-        accountNumber: withdrawalMethod === 'BANK' ? accountNumber : (user?.phone || phone)
+        accountNumber: withdrawalMethod === 'BANK' ? accountNumber : phone
       });
       
       setAlertConfig({
         isOpen: true,
         title: 'Request Submitted',
-        message: 'Your withdrawal request has been submitted successfully and is pending.',
+        message: 'Your withdrawal request has been submitted successfully.',
         type: 'success'
       });
       setIsModalOpen(false);
@@ -489,7 +427,7 @@ export default function Transactions() {
                         <div className="flex flex-col">
                           <span className={cn(
                             "text-[11px] font-bold font-mono",
-                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
+                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') ? "text-green-500" : "text-red-500"
                           )}>
                             {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                           </span>
@@ -516,7 +454,8 @@ export default function Transactions() {
                                   setIsChecking(true);
                                   try {
                                     const result = await checkPaymentStatus(tx.externalId || tx.id);
-                                    if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                    
+                                    if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
                                       setAlertConfig({
                                         isOpen: true,
                                         title: 'Payment Confirmed',
@@ -606,7 +545,7 @@ export default function Transactions() {
                     <div className="text-right">
                       <p className={cn(
                         "text-[11px] font-bold font-mono",
-                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') ? "text-green-500" : "text-red-500"
+                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') ? "text-green-500" : "text-red-500"
                       )}>
                         {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </p>
@@ -938,21 +877,21 @@ export default function Transactions() {
                         <>
                           <div className={cn("space-y-2", modalType === 'WITHDRAW' && (withdrawalMethod === 'BANK' || withdrawalMethod === 'CRYPTO') && "hidden")}>
                             <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                              {modalType === 'DEPOSIT' ? 'M-Pesa Number' : 'Registered Phone'}
+                              {modalType === 'DEPOSIT' ? 'M-Pesa Number (Optional)' : 'Registered Phone'}
                             </label>
                             <div className="relative">
                               <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                               <input
                                 type="tel"
-                                required={modalType === 'DEPOSIT' || (modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA')}
+                                required={modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA'}
                                 value={modalType === 'WITHDRAW' ? maskPhone(phone) : phone}
                                 onChange={(e) => {
                                   if (modalType === 'DEPOSIT') {
                                     let val = e.target.value;
                                     // Ensure it starts with +254
-                                    if (!val.startsWith('+254')) {
+                                    if (val && !val.startsWith('+254')) {
                                       val = '+254' + val.replace(/^\+?254?/, '').replace(/\D/g, '');
-                                    } else {
+                                    } else if (val) {
                                       // Only allow digits after +254
                                       const prefix = '+254';
                                       const rest = val.substring(4).replace(/\D/g, '').substring(0, 9);
@@ -1045,10 +984,10 @@ export default function Transactions() {
  
                       <button
                         type="submit"
-                        disabled={isProcessing || (modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && !isValidKenyanPhone(phone))}
+                        disabled={isProcessing}
                         className={cn(
                           "w-full py-3.5 rounded-xl font-bold text-white transition-all shadow-md flex items-center justify-center gap-2 mt-4",
-                          (isProcessing || (modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && !isValidKenyanPhone(phone))) ? "bg-slate-700 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/10"
+                          isProcessing ? "bg-slate-700 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/10"
                         )}
                       >
                         {isProcessing ? (
@@ -1085,8 +1024,17 @@ export default function Transactions() {
                               } else if (currentTxRef) {
                                 // Try backend check
                                 const result = await checkPaymentStatus(currentTxRef);
-                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
+                                
+                                const isSuccess = result?.isSuccess || ['success', 'completed'].includes((result?.status || '').toLowerCase()) || result?.ResultCode === 0;
+                                const isFailed = result?.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result?.status || '').toLowerCase());
+
+                                if (isSuccess) {
                                   setPaymentStatus('SUCCESS');
+                                  setCurrentTxRef(null);
+                                  await refreshData();
+                                } else if (isFailed) {
+                                  setPaymentStatus('FAILED');
+                                  setErrorMessage(result?.message || result?.error || 'Transaction was rejected.');
                                   setCurrentTxRef(null);
                                   await refreshData();
                                 }
@@ -1107,70 +1055,6 @@ export default function Transactions() {
                             className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
                           >
                             Close and check history later
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {paymentStatus === 'WAITING' && (
-                      <div className="flex flex-col items-center gap-6">
-                        <div className="relative">
-                          <div className="w-20 h-20 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-sm font-bold font-mono text-blue-500">{timeLeft}s</span>
-                          </div>
-                        </div>
-                        <div>
-                          <h4 className="text-xl font-bold mb-2">Waiting for PIN</h4>
-                          <p className="text-xs text-slate-500 px-4 max-w-[280px] mx-auto">
-                            Check your phone for the M-Pesa prompt and enter your PIN to complete the transaction.
-                          </p>
-                        </div>
-                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800/50 w-full">
-                          <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400 mb-2">
-                            <Clock size={16} className="animate-pulse" />
-                            <span className="text-xs font-bold uppercase tracking-wider">STK Push Sent</span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 text-left">
-                            Your balance will update automatically once confirmed.
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-3 w-full">
-                          <button 
-                            onClick={async () => {
-                              setIsChecking(true);
-                              await refreshData();
-                              
-                              // Check if the transaction is now completed in our local state
-                              const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
-                              if (latestTx && latestTx.status === 'completed') {
-                                setPaymentStatus('SUCCESS');
-                                setCurrentTxRef(null);
-                              } else if (currentTxRef) {
-                                // Try backend check
-                                const result = await checkPaymentStatus(currentTxRef);
-                                if (result?.status === 'Success' || result?.status === 'Successful' || result?.ResultCode === 0) {
-                                  setPaymentStatus('SUCCESS');
-                                  setCurrentTxRef(null);
-                                  await refreshData();
-                                }
-                              }
-                              setIsChecking(false);
-                            }}
-                            disabled={isChecking}
-                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
-                          >
-                            {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                            Check Status
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setPaymentStatus('IDLE');
-                              setIsModalOpen(false);
-                            }}
-                            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
-                          >
-                            Cancel and go back
                           </button>
                         </div>
                       </div>

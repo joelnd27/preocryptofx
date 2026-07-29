@@ -1494,12 +1494,19 @@ export function useStore() {
           // If Supabase is configured and it is a UUID, update it in Supabase
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trader.id);
           if (isSupabaseConfigured() && isUuid) {
-            supabase.from('copy_traders').update({
-              total_profit: newTotalProfit,
-              followers: newFollowers
-            }).eq('id', trader.id).then(({ error }) => {
-              if (error) console.error('[Store] Error auto-updating copy trader in Supabase:', error.message);
-            });
+            // Using a separate async call to handle catch properly
+            const updateTrader = async () => {
+              try {
+                const { error } = await supabase.from('copy_traders').update({
+                  total_profit: newTotalProfit,
+                  followers: newFollowers
+                }).eq('id', trader.id);
+                if (error) console.error('[Store] Error auto-updating copy trader in Supabase:', error.message);
+              } catch (err: any) {
+                console.error('[Store] Network error updating copy trader in Supabase:', err.message);
+              }
+            };
+            updateTrader();
           }
 
           return {
@@ -2239,55 +2246,92 @@ export function useStore() {
     return true;
   };
 
-  const processPayheroDeposit = async (amountUsd: number, phone: string) => {
+  const processDeposit = async (amountUsd: number, _phone?: string, onSdkError?: (msg: string) => void, onSdkSuccess?: (data: any) => void, onSdkCancel?: () => void) => {
     if (!user) return false;
     
-    if (amountUsd < MIN_DEPOSIT_USD) {
-      throw new Error(`Minimum deposit is $${MIN_DEPOSIT_USD}`);
+    if (amountUsd < 16) {
+      throw new Error('Minimum deposit is $16');
     }
 
     try {
-      const response = await axios.post('/api/payhero/initiate', {
+      const response = await axios.post('/api/hashback/stk-push', {
         amount: amountUsd,
-        phone: (phone || '').replace('+', ''),
-        userId: user.id,
-        username: user.username
+        userId: user.id
       });
 
-      if (response.data.success || response.data.status === 'Success' || response.data.status === 'Successful' || response.data.CheckoutRequestID) {
-        return response.data.external_reference || true;
+      console.log('[HashBack] Backend Response:', response.data);
+
+      if (response.data.success) {
+        const { account, amount, reference } = response.data;
+        
+        if (typeof (window as any).HashPay !== 'undefined') {
+          console.log('[HashBack] Using HashPay.setup');
+          try {
+            const handler = (window as any).HashPay.setup({
+              account: account,
+              amount: amount,
+              reference: reference,
+              onSuccess: (data: any) => {
+                console.log('[HashPay] Success Callback:', data);
+                if (onSdkSuccess) {
+                  onSdkSuccess(data);
+                } else {
+                  setTimeout(() => window.location.reload(), 1500);
+                }
+              },
+              onCancel: () => {
+                console.log('[HashPay] Cancel Callback');
+                if (onSdkCancel) onSdkCancel();
+              },
+              onDismiss: () => {
+                console.log('[HashPay] Dismiss Callback');
+                if (onSdkCancel) onSdkCancel();
+              },
+              onClose: () => {
+                console.log('[HashPay] Close Callback');
+                if (onSdkCancel) onSdkCancel();
+              },
+              onError: (err: any) => {
+                console.error('[HashPay] SDK Error:', err);
+                const msg = typeof err === 'string' ? err : (err?.message || 'Payment provider error: Invalid account or receiver info.');
+                console.warn('[HashPay] Error message to user:', msg);
+                if (onSdkError) onSdkError(msg);
+              }
+            });
+
+            if (handler && typeof handler.openIframe === 'function') {
+              console.log('[HashPay] Opening Iframe');
+              handler.openIframe();
+            } else {
+              console.error('[HashPay] Failed to get valid handler from setup');
+              throw new Error('Payment system failed to initialize.');
+            }
+            return reference;
+          } catch (sdkError: any) {
+            console.error('[HashPay] Setup Exception:', sdkError);
+            throw new Error(`Payment initialization failed: ${sdkError.message || 'Unknown error'}`);
+          }
+        } else {
+          console.warn('[HashBack] HashPay script not loaded');
+          throw new Error('Payment system script not found. Please check your internet connection or refresh the page.');
+        }
       }
       
-      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
+      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment (Server returned success: false)';
       throw new Error(errorMsg);
     } catch (error: any) {
-      const details = error.response?.data?.details;
-      const message = error.response?.data?.error || error.message;
-      console.error('Payhero Initiation Error:', details || message);
+      const errorData = error.response?.data;
+      // If it's a 404/500 with HTML, errorData might be a string
+      const serverError = typeof errorData === 'object' ? (errorData.message || errorData.error || errorData.details) : null;
+      const errorMsg = serverError || error.message || 'Failed to initiate payment';
       
-      let finalMsg = details ? (typeof details === 'object' ? JSON.stringify(details) : details) : message;
+      console.error('Payment Initiation Error Detail:', {
+        status: error.response?.status,
+        data: errorData,
+        message: error.message
+      });
       
-      // Try to parse JSON if it's a string that looks like JSON
-      if (typeof finalMsg === 'string' && (finalMsg.startsWith('{') || finalMsg.startsWith('['))) {
-        try {
-          const parsed = JSON.parse(finalMsg);
-          finalMsg = parsed.error_message || parsed.message || parsed.error || finalMsg;
-        } catch (e) {
-          // Not valid JSON, keep as is
-        }
-      }
-      
-      if (finalMsg && typeof finalMsg === 'string') {
-        if (finalMsg.includes('Too many unsuccessful requests')) {
-          finalMsg = 'Too many unsuccessful requests try after 24hrs';
-        } else if (finalMsg.toLowerCase().includes('not valid kenyan number')) {
-          finalMsg = 'The number is not a valid Kenyan number';
-        } else if (finalMsg.toLowerCase().includes('insufficient funds')) {
-          finalMsg = 'Merchant has insufficient funds';
-        }
-      }
-      
-      throw new Error(finalMsg);
+      throw new Error(errorMsg);
     }
   };
 
@@ -2295,43 +2339,14 @@ export function useStore() {
     await syncWithSupabase();
   };
 
-  const checkPaymentStatus = async (externalId: string) => {
+  const checkPaymentStatus = async (reference: string) => {
     try {
-      const response = await axios.get(`/api/payhero/status/${externalId}`);
+      const response = await axios.get(`/api/hashback/verify/${reference}`);
       return response.data;
     } catch (error) {
       console.error('Error checking payment status:', error);
       return null;
     }
-  };
-
-  const failLatestDeposit = async () => {
-    if (!user) return;
-    
-    // Find the most recent pending deposit
-    const latestPending = [...(user.transactions || [])]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .find(t => t.type === 'DEPOSIT' && t.status === 'pending');
-      
-    if (!latestPending) return;
-
-    if (isSupabaseConfigured()) {
-      await supabase.from('transactions')
-        .update({ status: 'rejected' })
-        .eq('id', latestPending.id)
-        .eq('status', 'pending') // Only if it is still pending in DB
-        .neq('status', 'completed');
-    }
-
-    setUser(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        transactions: prev.transactions.map(t => 
-          t.id === latestPending.id ? { ...t, status: 'failed' } : t
-        )
-      };
-    });
   };
 
   const submitVerification = async (docs: User['verificationDocuments']) => {
@@ -2669,9 +2684,8 @@ export function useStore() {
     addTransaction,
     toggleBot,
     addBotProfit,
-    processPayheroDeposit,
+    processDeposit,
     checkPaymentStatus,
-    failLatestDeposit,
     submitVerification,
     refreshData,
     importBot,
