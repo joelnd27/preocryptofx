@@ -218,14 +218,17 @@ export default function Transactions() {
         const result = await processDeposit(
           val, 
           phone, 
-          (msg) => setErrorMessage(msg),
+          (msg) => {
+            setErrorMessage(msg);
+            setPaymentStatus('FAILED');
+          },
           () => {
             setPaymentStatus('SUCCESS');
             refreshData();
           },
-          () => {
-            setPaymentStatus('IDLE');
-            setErrorMessage('Payment was cancelled.');
+          (msg) => {
+            setPaymentStatus('CANCELLED');
+            setErrorMessage(msg || 'Payment was cancelled.');
             setCurrentTxRef(null);
           }
         );

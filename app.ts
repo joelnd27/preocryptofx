@@ -259,7 +259,7 @@ router.get('/hashback/verify/:reference', async (req, res) => {
     if (supabaseAdmin) {
       const { data: tx, error: fetchError } = await supabaseAdmin
         .from('transactions')
-        .select('status, amount')
+        .select('status, amount, metadata, description')
         .eq('external_id', reference)
         .maybeSingle();
 
@@ -275,7 +275,8 @@ router.get('/hashback/verify/:reference', async (req, res) => {
           success: true,
           status: tx.status,
           isSuccess: tx.status === 'completed' || tx.status === 'success',
-          isFailed: tx.status === 'rejected' || tx.status === 'failed'
+          isFailed: tx.status === 'rejected' || tx.status === 'failed',
+          message: tx.metadata?.result_desc || tx.metadata?.webhook_payload?.ResultDesc || tx.description
         });
       }
     }

@@ -2246,7 +2246,7 @@ export function useStore() {
     return true;
   };
 
-  const processDeposit = async (amountUsd: number, _phone?: string, onSdkError?: (msg: string) => void, onSdkSuccess?: (data: any) => void, onSdkCancel?: () => void) => {
+  const processDeposit = async (amountUsd: number, _phone?: string, onSdkError?: (msg: string) => void, onSdkSuccess?: (data: any) => void, onSdkCancel?: (msg?: string) => void) => {
     if (!user) return false;
     
     if (amountUsd < 16) {
@@ -2279,17 +2279,25 @@ export function useStore() {
                   setTimeout(() => window.location.reload(), 1500);
                 }
               },
-              onCancel: () => {
-                console.log('[HashPay] Cancel Callback');
-                if (onSdkCancel) onSdkCancel();
+              onCancel: (data: any) => {
+                console.log('[HashPay] Cancel Callback:', data);
+                const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment cancelled');
+                if (onSdkCancel) onSdkCancel(msg);
               },
-              onDismiss: () => {
-                console.log('[HashPay] Dismiss Callback');
-                if (onSdkCancel) onSdkCancel();
+              onDismiss: (data: any) => {
+                console.log('[HashPay] Dismiss Callback:', data);
+                const msg = typeof data === 'string' ? data : (data?.message || 'Payment dismissed');
+                if (onSdkCancel) onSdkCancel(msg);
               },
-              onClose: () => {
-                console.log('[HashPay] Close Callback');
-                if (onSdkCancel) onSdkCancel();
+              onClose: (data: any) => {
+                console.log('[HashPay] Close Callback:', data);
+                const msg = typeof data === 'string' ? data : (data?.message || 'Payment closed');
+                if (onSdkCancel) onSdkCancel(msg);
+              },
+              onFailed: (data: any) => {
+                console.log('[HashPay] Failed Callback:', data);
+                const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment failed');
+                if (onSdkCancel) onSdkCancel(msg);
               },
               onError: (err: any) => {
                 console.error('[HashPay] SDK Error:', err);
