@@ -214,26 +214,58 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       if (txError) throw txError;
 
       if (tx && success) {
-        // 2. Prevent duplicate crediting
+        console.log(`[HashBack Webhook] Processing success for ${reference}`);
+        
+        // 1. Update Transaction
+        const { error: updateError } = await supabaseAdmin
+          .from('transactions')
+          .update({ 
+            status: 'completed',
+            metadata: { ...tx.metadata, ...req.body, webhook_processed: true }
+          })
+          .eq('id', tx.id);
+
+        if (updateError) {
+          console.error('[HashBack Webhook] Update Transaction Error:', updateError);
+          throw updateError;
+        }
+
+        // 2. Increment Balance
         const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
         const kesReceived = Number(req.body.amount || (req.body.payload && req.body.payload.amount) || 0);
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
-        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
-          t_id: tx.id,
-          u_id: tx.user_id,
-          amount: Number(usdToCredit.toFixed(2))
-        });
+        const { data: userData, error: userError } = await supabaseAdmin
+          .from('users')
+          .select('real_balance')
+          .eq('id', tx.user_id)
+          .single();
 
-        if (rpcError) {
-          console.error('[HashBack Webhook] RPC Error:', rpcError);
-        } else {
-          console.log(`[HashBack Webhook] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
+        if (userError) {
+          console.error('[HashBack Webhook] Fetch User Error:', userError);
+          throw userError;
         }
+
+        const newBalance = Number((Number(userData.real_balance || 0) + usdToCredit).toFixed(2));
+        
+        const { error: balanceError } = await supabaseAdmin
+          .from('users')
+          .update({ real_balance: newBalance })
+          .eq('id', tx.user_id);
+
+        if (balanceError) {
+          console.error('[HashBack Webhook] Update Balance Error:', balanceError);
+          throw balanceError;
+        }
+
+        console.log(`[HashBack Webhook] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
       } else if (tx && failure) {
         await supabaseAdmin
           .from('transactions')
-          .update({ status: 'rejected' })
+          .update({ 
+            status: 'rejected',
+            metadata: { ...tx.metadata, ...req.body, webhook_failure: true }
+          })
           .eq('id', tx.id);
         console.log(`[HashBack Webhook] Marked transaction ${reference} as rejected/cancelled`);
       } else if (!tx) {
@@ -331,34 +363,78 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
 
     // Only update if currently pending to prevent race conditions or duplicate crediting
     if (tx.status === 'pending') {
-      const isSuccess = ['completed', 'success', 'successful'].includes(status.toLowerCase());
-      const isFailure = ['rejected', 'failed', 'cancelled'].includes(status.toLowerCase());
+      const normalizedStatus = status.toLowerCase();
+      const isSuccess = ['completed', 'success', 'successful', 'successfull', '0', '00'].some(s => normalizedStatus.includes(s));
+      const isFailure = ['rejected', 'failed', 'cancelled', 'canceled', 'dismissed', 'closed', 'fail', 'error'].some(f => normalizedStatus.includes(f));
 
       if (isSuccess) {
-        const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+        console.log(`[HashBack Update] Processing success for ${reference}`);
+        
+        // 1. Update Transaction
+        const { error: updateError } = await supabaseAdmin
+          .from('transactions')
+          .update({ 
+            status: 'completed',
+            metadata: { ...tx.metadata, ...metadata, client_callback: true, callback_status: status }
+          })
+          .eq('id', tx.id);
+
+        if (updateError) {
+          console.error('[HashBack Update] Update Transaction Error:', updateError);
+          return res.status(500).json({ error: 'Failed to update transaction status', details: updateError });
+        }
+
+        // 2. Increment Balance
         const usdToCredit = Number(tx.amount);
+        const { data: userData, error: userError } = await supabaseAdmin
+          .from('users')
+          .select('real_balance')
+          .eq('id', tx.user_id)
+          .single();
 
-        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
-          t_id: tx.id,
-          u_id: tx.user_id,
-          amount: usdToCredit
-        });
+        if (userError) {
+          console.error('[HashBack Update] Fetch User Error:', userError);
+          return res.status(500).json({ error: 'Failed to fetch user for balance update', details: userError });
+        }
 
-        if (rpcError) throw rpcError;
+        const newBalance = Number((Number(userData.real_balance || 0) + usdToCredit).toFixed(2));
+        
+        const { error: balanceError } = await supabaseAdmin
+          .from('users')
+          .update({ real_balance: newBalance })
+          .eq('id', tx.user_id);
+
+        if (balanceError) {
+          console.error('[HashBack Update] Update Balance Error:', balanceError);
+          return res.status(500).json({ error: 'Failed to update user balance', details: balanceError });
+        }
+
         console.log(`[HashBack Update] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
+        return res.json({ success: true, credited: true, amount: usdToCredit });
       } else if (isFailure) {
-        await supabaseAdmin
+        const { error: rejectError } = await supabaseAdmin
           .from('transactions')
           .update({ 
             status: 'rejected',
-            metadata: { ...tx.metadata, ...metadata, client_reason: message }
+            metadata: { ...tx.metadata, ...metadata, client_reason: message, client_callback: true, callback_status: status }
           })
           .eq('id', tx.id);
-        console.log(`[HashBack Update] Marked ${reference} as rejected (Client reason: ${message})`);
-      }
-    }
 
-    res.json({ success: true });
+        if (rejectError) {
+          console.error('[HashBack Update] Reject Error:', rejectError);
+          return res.status(500).json({ error: 'Failed to mark as rejected', details: rejectError });
+        }
+        
+        console.log(`[HashBack Update] Marked ${reference} as rejected (Client reason: ${message})`);
+        return res.json({ success: true, status: 'rejected' });
+      } else {
+        console.warn(`[HashBack Update] Unrecognized status: ${status}`);
+        return res.json({ success: true, status: 'unrecognized', message: 'Status was not success or failure' });
+      }
+    } else {
+      console.log(`[HashBack Update] Transaction ${reference} is already ${tx.status}. Skipping update.`);
+      return res.json({ success: true, alreadyProcessed: true, currentStatus: tx.status });
+    }
   } catch (error: any) {
     console.error('[HashBack Update] Exception:', error);
     res.status(500).json({ error: error.message });
