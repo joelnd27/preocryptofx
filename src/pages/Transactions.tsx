@@ -596,6 +596,52 @@ export default function Transactions() {
                            <Clock size={10} />}
                           {tx.status === 'pending' ? 'pending' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
                         </span>
+                        
+                        {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setIsChecking(true);
+                                try {
+                                  const result = await checkPaymentStatus(tx.externalId || tx.id);
+                                  if (result?.status === 'completed' || result?.credited) {
+                                    setAlertConfig({
+                                      isOpen: true,
+                                      title: 'Payment Confirmed',
+                                      message: 'Your payment has been verified successfully.',
+                                      type: 'success'
+                                    });
+                                  }
+                                  await refreshData();
+                                } finally {
+                                  setIsChecking(false);
+                                }
+                              }}
+                              disabled={isChecking}
+                              className="p-1.5 bg-slate-100 dark:bg-slate-700 rounded-md text-blue-500 transition-colors disabled:opacity-50"
+                            >
+                              <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
+                            </button>
+                            
+                            {user?.role === 'admin' && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance?`)) {
+                                    setIsChecking(true);
+                                    await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
+                                    await refreshData();
+                                    setIsChecking(false);
+                                  }
+                                }}
+                                className="p-1.5 bg-red-100 dark:bg-red-900/30 rounded-md text-red-500"
+                              >
+                                <ShieldCheck size={10} />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

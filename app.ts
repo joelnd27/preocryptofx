@@ -190,7 +190,7 @@ router.get('/user/referrals', async (req, res) => {
 // HashBack Webhook
 router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async (req, res) => {
   const signature = req.headers['x-hashpay-signature'] as string;
-  const payload = JSON.stringify(req.body);
+  const rawPayload = JSON.stringify(req.body);
   
   console.log('[HashBack Webhook] Headers:', req.headers);
   console.log('[HashBack Webhook] Body:', JSON.stringify(req.body, null, 2));
@@ -199,7 +199,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   if (HASHBACK_WEBHOOK_SECRET) {
     const expectedSignature = crypto
       .createHmac('sha256', HASHBACK_WEBHOOK_SECRET)
-      .update(payload)
+      .update(rawPayload)
       .digest('hex');
 
     const receivedHash = signature?.startsWith('sha256=') ? signature.substring(7) : signature;
@@ -208,26 +208,70 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
     }
   }
 
-  // Robust extraction
-  const reference = req.body.reference || req.body.external_reference || req.body.ExternalReference || (req.body.payload && req.body.payload.reference);
-  const rawStatus = (req.body.status || (req.body.payload && req.body.payload.status) || req.body.ResultDesc || 'failed').toString().toLowerCase();
+  // Robust extraction of all potential reference fields
+  const body = req.body || {};
+  const dataPayload = body.payload || {};
   
-  const success = ['success', 'completed', 'successful', '0', '00', 'paid', 'done'].some(s => rawStatus.includes(s)) || req.body.success === true || req.body.ResultCode === 0;
-  const failure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected'].some(f => rawStatus.includes(f));
+  const possibleReferences = [
+    body.reference,
+    body.external_reference,
+    body.ExternalReference,
+    body.AccountReference,
+    body.MerchantRequestID,
+    body.CheckoutRequestID,
+    body.BillRefNumber,
+    dataPayload.reference,
+    dataPayload.external_reference,
+    dataPayload.MerchantRequestID,
+    dataPayload.CheckoutRequestID
+  ].filter(Boolean).map(String);
 
-  console.log(`[HashBack Webhook] Parsed: ref=${reference}, rawStatus=${rawStatus}, success=${success}, failure=${failure}`);
+  const reference = possibleReferences[0]; // Primary reference
+
+  const rawStatus = (
+    body.status || 
+    dataPayload.status || 
+    body.ResultDesc || 
+    body.ResponseDescription ||
+    'failed'
+  ).toString().toLowerCase();
+  
+  const resultCode = body.ResultCode !== undefined ? Number(body.ResultCode) : 
+                    (dataPayload.ResultCode !== undefined ? Number(dataPayload.ResultCode) : null);
+                    
+  const success = ['success', 'completed', 'successful', 'done', 'paid', '0', '00'].some(s => rawStatus.includes(s)) || 
+                  body.success === true || 
+                  dataPayload.success === true ||
+                  resultCode === 0;
+                  
+  const failure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => rawStatus.includes(f)) ||
+                  (resultCode !== null && resultCode !== 0);
+
+  console.log(`[HashBack Webhook] Parsed: refs=[${possibleReferences.join(', ')}], rawStatus="${rawStatus}", resultCode=${resultCode}, success=${success}, failure=${failure}`);
 
   try {
-    if (supabaseAdmin && reference && (success || failure)) {
-      const finalStatus = success ? 'completed' : 'rejected';
-      
-      // 1. Find transaction (Try both reference and external_id for robustness)
+    if (supabaseAdmin && possibleReferences.length > 0 && (success || failure)) {
+      // 1. Find transaction by ANY of the provided references
       let { data: tx, error: txError } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .or(`reference.eq."${reference}",external_id.eq."${reference}"`)
+        .in('external_id', possibleReferences)
         .eq('status', 'pending')
         .maybeSingle();
+
+      // If not found by external_id, try by internal ID if any reference looks like a UUID
+      if (!tx && possibleReferences.some(r => r.length > 30)) {
+        const uuidRef = possibleReferences.find(r => r.length > 30);
+        if (uuidRef) {
+          const { data: txById } = await supabaseAdmin
+            .from('transactions')
+            .select('*')
+            .eq('id', uuidRef)
+            .eq('status', 'pending')
+            .maybeSingle();
+          tx = txById;
+        }
+      }
 
       if (txError) {
         console.error('[HashBack Webhook] DB Query Error:', txError);
@@ -235,62 +279,43 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       }
 
       if (tx && success) {
-        console.log(`[HashBack Webhook] Processing success for ${reference}`);
-        
-        // 1. Update Transaction
-        const { error: updateError } = await supabaseAdmin
-          .from('transactions')
-          .update({ 
-            status: 'completed',
-            metadata: { ...tx.metadata, ...req.body, webhook_processed: true }
-          })
-          .eq('id', tx.id);
-
-        if (updateError) {
-          console.error('[HashBack Webhook] Update Transaction Error:', updateError);
-          throw updateError;
-        }
-
-        // 2. Increment Balance
+        // Use robust RPC for atomic balance increment and status update
         const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
-        const kesReceived = Number(req.body.amount || (req.body.payload && req.body.payload.amount) || 0);
+        const kesReceived = Number(req.body.amount || (req.body.payload && req.body.payload.amount) || req.body.Amount || 0);
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
-        const { data: userData, error: userError } = await supabaseAdmin
-          .from('users')
-          .select('real_balance')
-          .eq('id', tx.user_id)
-          .single();
-
-        if (userError) {
-          console.error('[HashBack Webhook] Fetch User Error:', userError);
-          throw userError;
-        }
-
-        const newBalance = Number((Number(userData.real_balance || 0) + usdToCredit).toFixed(2));
+        console.log(`[HashBack Webhook] Attempting to credit user ${tx.user_id} for $${usdToCredit.toFixed(2)} via RPC`);
         
-        const { error: balanceError } = await supabaseAdmin
-          .from('users')
-          .update({ real_balance: newBalance })
-          .eq('id', tx.user_id);
+        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+          t_id: tx.id,
+          u_id: tx.user_id,
+          amount: usdToCredit
+        });
 
-        if (balanceError) {
-          console.error('[HashBack Webhook] Update Balance Error:', balanceError);
-          throw balanceError;
+        if (rpcError) {
+          console.warn('[HashBack Webhook] RPC failed, falling back to manual update:', rpcError.message);
+          
+          await supabaseAdmin.from('transactions').update({ 
+            status: 'completed',
+            metadata: { ...tx.metadata, ...req.body, webhook_processed: true, manual_fallback: true }
+          }).eq('id', tx.id);
+
+          const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+          if (userData) {
+            const newBalance = Number((Number(userData.real_balance || 0) + usdToCredit).toFixed(2));
+            await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+          }
         }
-
-        console.log(`[HashBack Webhook] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
+        
+        console.log(`[HashBack Webhook] Successfully processed completed transaction ${reference}`);
       } else if (tx && failure) {
-        await supabaseAdmin
-          .from('transactions')
-          .update({ 
-            status: 'rejected',
-            metadata: { ...tx.metadata, ...req.body, webhook_failure: true }
-          })
-          .eq('id', tx.id);
+        await supabaseAdmin.from('transactions').update({ 
+          status: 'rejected',
+          metadata: { ...tx.metadata, ...req.body, webhook_failure: true }
+        }).eq('id', tx.id);
         console.log(`[HashBack Webhook] Marked transaction ${reference} as rejected/cancelled`);
       } else if (!tx) {
-        console.warn(`[HashBack Webhook] Pending transaction not found for reference: ${reference}`);
+        console.warn(`[HashBack Webhook] Pending transaction not found for reference: ${reference} (or already processed)`);
       }
     } else if (!reference) {
       console.warn('[HashBack Webhook] Missing reference in payload');
@@ -369,11 +394,13 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
   try {
     if (!supabaseAdmin) throw new Error('Database admin client not configured');
 
-    // Find transaction (Try both reference and external_id for robustness)
+    // Try to find by multiple possible references if provided
+    const possibleRefs = [reference, metadata?.external_id, metadata?.MerchantRequestID].filter(Boolean);
+    
     const { data: tx, error: txError } = await supabaseAdmin
       .from('transactions')
       .select('*')
-      .or(`reference.eq."${reference}",external_id.eq."${reference}"`)
+      .in('external_id', possibleRefs)
       .maybeSingle();
 
     if (txError) throw txError;
@@ -389,62 +416,37 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
       const isFailure = ['rejected', 'failed', 'cancelled', 'canceled', 'dismissed', 'closed', 'fail', 'error', 'denied', 'void'].some(f => normalizedStatus.includes(f));
 
       if (isSuccess) {
-        console.log(`[HashBack Update] Processing success for ${reference}`);
+        console.log(`[HashBack Update] Processing success for ${reference} via RPC`);
         
-        // 1. Update Transaction
-        const { error: updateError } = await supabaseAdmin
-          .from('transactions')
-          .update({ 
-            status: 'completed',
-            metadata: { ...tx.metadata, ...metadata, client_callback: true, callback_status: status }
-          })
-          .eq('id', tx.id);
-
-        if (updateError) {
-          console.error('[HashBack Update] Update Transaction Error:', updateError);
-          return res.status(500).json({ error: 'Failed to update transaction status', details: updateError });
-        }
-
-        // 2. Increment Balance
         const usdToCredit = Number(tx.amount);
-        const { data: userData, error: userError } = await supabaseAdmin
-          .from('users')
-          .select('real_balance')
-          .eq('id', tx.user_id)
-          .single();
+        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+          t_id: tx.id,
+          u_id: tx.user_id,
+          amount: usdToCredit
+        });
 
-        if (userError) {
-          console.error('[HashBack Update] Fetch User Error:', userError);
-          return res.status(500).json({ error: 'Failed to fetch user for balance update', details: userError });
+        if (rpcError) {
+          console.warn('[HashBack Update] RPC failed, falling back to manual update:', rpcError.message);
+          
+          await supabaseAdmin.from('transactions').update({ 
+            status: 'completed',
+            metadata: { ...tx.metadata, ...metadata, client_callback: true, callback_status: status, manual_fallback: true }
+          }).eq('id', tx.id);
+
+          const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+          if (userData) {
+            const newBalance = Number((Number(userData.real_balance || 0) + usdToCredit).toFixed(2));
+            await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+          }
         }
 
-        const newBalance = Number((Number(userData.real_balance || 0) + usdToCredit).toFixed(2));
-        
-        const { error: balanceError } = await supabaseAdmin
-          .from('users')
-          .update({ real_balance: newBalance })
-          .eq('id', tx.user_id);
-
-        if (balanceError) {
-          console.error('[HashBack Update] Update Balance Error:', balanceError);
-          return res.status(500).json({ error: 'Failed to update user balance', details: balanceError });
-        }
-
-        console.log(`[HashBack Update] Successfully credited $${usdToCredit.toFixed(2)} to user ${tx.user_id}`);
+        console.log(`[HashBack Update] Successfully processed completed transaction ${reference}`);
         return res.json({ success: true, credited: true, amount: usdToCredit });
       } else if (isFailure) {
-        const { error: rejectError } = await supabaseAdmin
-          .from('transactions')
-          .update({ 
-            status: 'rejected',
-            metadata: { ...tx.metadata, ...metadata, client_reason: message, client_callback: true, callback_status: status }
-          })
-          .eq('id', tx.id);
-
-        if (rejectError) {
-          console.error('[HashBack Update] Reject Error:', rejectError);
-          return res.status(500).json({ error: 'Failed to mark as rejected', details: rejectError });
-        }
+        await supabaseAdmin.from('transactions').update({ 
+          status: 'rejected',
+          metadata: { ...tx.metadata, ...metadata, client_reason: message, client_callback: true, callback_status: status }
+        }).eq('id', tx.id);
         
         console.log(`[HashBack Update] Marked ${reference} as rejected (Client reason: ${message})`);
         return res.json({ success: true, status: 'rejected' });
