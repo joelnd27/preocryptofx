@@ -59,59 +59,84 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
 
   // Prevent duplicate syncs for the same transaction
   if (syncCache.has(transactionId)) {
+    console.log(`[OneApp Sync] Duplicate request ignored for tx: ${transactionId}`);
     return res.json({ success: true, message: 'Sync already scheduled' });
   }
 
   syncCache.add(transactionId);
-  console.log(`[OneApp Sync] Received sync request for user ${userId}, amount ${amount}, tx ${transactionId}`);
-
+  console.log(`[OneApp Sync] Request received:`, { userId, amount, email, phone, transactionId });
+  
   // Schedule the sync in 2 minutes as requested
   setTimeout(async () => {
     try {
-      const ONEAPP_SYNC_URL = process.env.ONEAPP_SYNC_URL;
-      if (!ONEAPP_SYNC_URL) {
-        console.warn('[OneApp Sync] ONEAPP_SYNC_URL not configured. Sync skipped.');
-        return;
-      }
+      const ONEAPP_SYNC_URL = process.env.ONEAPP_SYNC_URL || 'https://precious-dusk-73125d.netlify.app/api/preocryptofx/webhook';
+      console.log(`[OneApp Sync] Starting sync to ${ONEAPP_SYNC_URL} after 2min delay...`);
 
-      // Final security check: verify user is still a marketer
+      // Final security check: verify user is still a marketer and get latest info
       if (supabaseAdmin) {
-        const { data: user } = await supabaseAdmin
+        const { data: user, error: userError } = await supabaseAdmin
           .from('users')
-          .select('role')
+          .select('role, email, phone')
           .eq('id', userId)
           .single();
         
-        if (user?.role !== 'marketer') {
+        if (userError || !user) {
+          console.error(`[OneApp Sync] Error fetching user ${userId}:`, userError?.message || 'User not found');
+          return;
+        }
+
+        if (user.role !== 'marketer') {
           console.log(`[OneApp Sync] User ${userId} is no longer a marketer. Sync aborted.`);
           return;
         }
+
+        // Ensure we use the most accurate email/phone from the database
+        // These MUST match what they used to register at OneApp
+        const syncEmail = user.email;
+        const syncPhone = user.phone;
+
+        if (!syncEmail || !syncPhone) {
+          console.warn(`[OneApp Sync] Missing email or phone for user ${userId}. Sync may fail.`);
+        }
+
+        const usdAmount = parseFloat(String(amount));
+        const kesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+        const kesAmount = usdAmount * kesRate;
+
+        const payload = {
+          email: syncEmail || '',
+          phone: syncPhone || '',
+          amount: kesAmount, // Kenyan Shillings for the wallet
+          amount_usd: usdAmount,
+          amount_kes: kesAmount,
+          currency: 'USD',
+          kes_rate: kesRate,
+          platform: 'PreoCryptoFX',
+          transactionId,
+          type: 'WITHDRAWAL_SYNC',
+          timestamp: new Date().toISOString()
+        };
+
+        console.log(`[OneApp Sync] Sending payload to ${ONEAPP_SYNC_URL}:`, JSON.stringify(payload, null, 2));
+        
+        const response = await axios.post(ONEAPP_SYNC_URL, payload, {
+          timeout: 15000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'PreoCryptoFX-Sync/1.0'
+          }
+        });
+
+        console.log(`[OneApp Sync] OneApp Response Status: ${response.status}`);
+        console.log(`[OneApp Sync] OneApp Response Data:`, response.data);
       }
-
-      console.log(`[OneApp Sync] Syncing withdrawal for ${email} / ${phone} to OneApp...`);
-      
-      const usdAmount = parseFloat(String(amount));
-      const kesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
-      const kesAmount = usdAmount * kesRate;
-
-      const response = await axios.post(ONEAPP_SYNC_URL, {
-        email,
-        phone,
-        amount_usd: usdAmount,
-        amount_kes: kesAmount,
-        currency: 'USD',
-        kes_rate: kesRate,
-        platform: 'PreoCryptoFX',
-        transactionId,
-        type: 'WITHDRAWAL_SYNC',
-        timestamp: new Date().toISOString()
-      }, {
-        timeout: 10000
-      });
-
-      console.log(`[OneApp Sync] OneApp Response:`, response.data);
     } catch (error: any) {
-      console.error(`[OneApp Sync] Sync failed:`, error.message);
+      if (error.response) {
+        console.error(`[OneApp Sync] OneApp error response (${error.response.status}):`, error.response.data);
+      } else {
+        console.error(`[OneApp Sync] Sync request failed:`, error.message);
+      }
     }
   }, 2 * 60 * 1000); // 2 minute delay
 
