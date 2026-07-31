@@ -66,17 +66,16 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
   syncCache.add(transactionId);
   console.log(`[OneApp Sync] Request received:`, { userId, amount, email, phone, transactionId });
   
-  // Schedule the sync in 2 minutes as requested
-  setTimeout(async () => {
+  // Perform sync immediately (Netlify functions don't support long timeouts)
+  const performSync = async () => {
     try {
       const ONEAPP_SYNC_URL = process.env.ONEAPP_SYNC_URL || 'https://precious-dusk-73125d.netlify.app/api/preocryptofx/webhook';
-      console.log(`[OneApp Sync] Starting sync to ${ONEAPP_SYNC_URL} after 2min delay...`);
+      console.log(`[OneApp Sync] Syncing to ${ONEAPP_SYNC_URL} immediately...`);
 
       let syncEmail = email;
       let syncPhone = phone;
       let isMarketer = true;
 
-      // Try to get latest info from Supabase if available, but don't block if it's not
       if (supabaseAdmin) {
         try {
           const { data: user } = await supabaseAdmin
@@ -91,7 +90,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
             syncPhone = user.phone || syncPhone;
           }
         } catch (err) {
-          console.warn('[OneApp Sync] Supabase check failed, falling back to request data');
+          console.warn('[OneApp Sync] Supabase check failed, using request data');
         }
       }
 
@@ -107,10 +106,10 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
       const payload = {
         email: syncEmail || '',
         phone: syncPhone || '',
-        amount: kesAmount, // Kenyan Shillings
+        amount: kesAmount, 
         amount_usd: usdAmount,
         amount_kes: kesAmount,
-        mpesa_amount: kesAmount, // Explicitly named for M-Pesa systems
+        mpesa_amount: kesAmount,
         currency: 'USD',
         kes_rate: kesRate,
         platform: 'PreoCryptoFX',
@@ -120,10 +119,10 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
         timestamp: new Date().toISOString()
       };
 
-      console.log(`[OneApp Sync] Sending payload to ${ONEAPP_SYNC_URL}:`, JSON.stringify(payload, null, 2));
+      console.log(`[OneApp Sync] Sending payload:`, JSON.stringify(payload));
       
       const response = await axios.post(ONEAPP_SYNC_URL, payload, {
-        timeout: 15000,
+        timeout: 10000,
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -131,18 +130,19 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
         }
       });
 
-      console.log(`[OneApp Sync] OneApp Response Status: ${response.status}`);
-      console.log(`[OneApp Sync] OneApp Response Data:`, response.data);
+      console.log(`[OneApp Sync] OneApp Response Status: ${response.status}`, response.data);
     } catch (error: any) {
       if (error.response) {
-        console.error(`[OneApp Sync] OneApp error response (${error.response.status}):`, error.response.data);
+        console.error(`[OneApp Sync] OneApp Error (${error.response.status}):`, error.response.data);
       } else {
-        console.error(`[OneApp Sync] Sync request failed:`, error.message);
+        console.error(`[OneApp Sync] Sync failed:`, error.message);
       }
     }
-  }, 2 * 60 * 1000); // 2 minute delay
+  };
 
-  res.json({ success: true, message: 'Sync process scheduled for 2 minutes' });
+  performSync();
+
+  return res.json({ success: true, message: 'Withdrawal sync initiated' });
 });
 
 // Config Health Check
