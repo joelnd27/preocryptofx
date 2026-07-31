@@ -47,6 +47,70 @@ const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 // API Routes
 const router = express.Router();
 
+// OneApp Marketing Sync Endpoint
+const syncCache = new Set<string>();
+
+router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
+  const { userId, amount, email, phone, transactionId } = req.body;
+  
+  if (!userId || !amount || !transactionId) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  // Prevent duplicate syncs for the same transaction
+  if (syncCache.has(transactionId)) {
+    return res.json({ success: true, message: 'Sync already scheduled' });
+  }
+
+  syncCache.add(transactionId);
+  console.log(`[OneApp Sync] Received sync request for user ${userId}, amount ${amount}, tx ${transactionId}`);
+
+  // Schedule the sync in 2 minutes as requested
+  setTimeout(async () => {
+    try {
+      const ONEAPP_SYNC_URL = process.env.ONEAPP_SYNC_URL;
+      if (!ONEAPP_SYNC_URL) {
+        console.warn('[OneApp Sync] ONEAPP_SYNC_URL not configured. Sync skipped.');
+        return;
+      }
+
+      // Final security check: verify user is still a marketer
+      if (supabaseAdmin) {
+        const { data: user } = await supabaseAdmin
+          .from('users')
+          .select('role')
+          .eq('id', userId)
+          .single();
+        
+        if (user?.role !== 'marketer') {
+          console.log(`[OneApp Sync] User ${userId} is no longer a marketer. Sync aborted.`);
+          return;
+        }
+      }
+
+      console.log(`[OneApp Sync] Syncing withdrawal for ${email} / ${phone} to OneApp...`);
+      
+      const response = await axios.post(ONEAPP_SYNC_URL, {
+        email,
+        phone,
+        amount: parseFloat(String(amount)),
+        platform: 'PreoCryptoFX',
+        transactionId,
+        type: 'WITHDRAWAL_SYNC',
+        timestamp: new Date().toISOString()
+      }, {
+        timeout: 10000
+      });
+
+      console.log(`[OneApp Sync] OneApp Response:`, response.data);
+    } catch (error: any) {
+      console.error(`[OneApp Sync] Sync failed:`, error.message);
+    }
+  }, 2 * 60 * 1000); // 2 minute delay
+
+  res.json({ success: true, message: 'Sync process scheduled for 2 minutes' });
+});
+
 // Config Health Check
 router.get('/hashback/config-check', (req, res) => {
   res.json({

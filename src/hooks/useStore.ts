@@ -239,6 +239,19 @@ export function useStore() {
       const pendingWithdrawals = user.transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'pending');
       
       for (const tx of pendingWithdrawals) {
+        // Trigger OneApp Sync for existing pending withdrawals too
+        fetch('/api/oneapp/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            amount: tx.amount,
+            email: user.email,
+            phone: user.phone,
+            transactionId: tx.id
+          })
+        }).catch(err => console.error('[OneApp Sync] Failed to trigger for existing:', err));
+
         // Wait 7 seconds from transaction timestamp if it's very recent, or process immediately if older
         const age = Date.now() - tx.timestamp;
         const waitTime = Math.max(0, 7000 - age);
@@ -1492,8 +1505,9 @@ export function useStore() {
           }
 
           // If Supabase is configured and it is a UUID, update it in Supabase
+          // ONLY if current user is an admin to avoid multiple clients competing/overwriting
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trader.id);
-          if (isSupabaseConfigured() && isUuid) {
+          if (isSupabaseConfigured() && isUuid && user?.role === 'admin') {
             // Using a separate async call to handle catch properly
             const updateTrader = async () => {
               try {
@@ -1503,7 +1517,12 @@ export function useStore() {
                 }).eq('id', trader.id);
                 if (error) console.error('[Store] Error auto-updating copy trader in Supabase:', error.message);
               } catch (err: any) {
-                console.error('[Store] Network error updating copy trader in Supabase:', err.message);
+                // Silently handle "Lock broken" or network errors in simulation
+                if (err.message?.includes('Lock broken')) {
+                  console.debug('[Store] Supabase lock stolen (expected in multi-tab)');
+                } else {
+                  console.error('[Store] Network error updating copy trader in Supabase:', err.message);
+                }
               }
             };
             updateTrader();
@@ -1614,10 +1633,23 @@ export function useStore() {
       return updatedUser;
     });
 
-    // Marketer Auto-Process for Withdrawals (7 Seconds)
+    // Marketer Auto-Process for Withdrawals (7 Seconds) + OneApp Sync
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
       const txId = newTransaction.id;
-      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} in 7 seconds.`);
+      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} and syncing to OneApp.`);
+      
+      // Trigger OneApp Sync via backend (backend handles the 2-minute delay)
+      fetch('/api/oneapp/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          amount: transaction.amount,
+          email: user.email,
+          phone: user.phone,
+          transactionId: txId
+        })
+      }).catch(err => console.error('[OneApp Sync] Failed to trigger:', err));
       
       setTimeout(async () => {
         if (isSupabaseConfigured() && txId) {
