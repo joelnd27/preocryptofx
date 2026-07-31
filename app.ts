@@ -90,10 +90,17 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
 
       console.log(`[OneApp Sync] Syncing withdrawal for ${email} / ${phone} to OneApp...`);
       
+      const usdAmount = parseFloat(String(amount));
+      const kesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+      const kesAmount = usdAmount * kesRate;
+
       const response = await axios.post(ONEAPP_SYNC_URL, {
         email,
         phone,
-        amount: parseFloat(String(amount)),
+        amount_usd: usdAmount,
+        amount_kes: kesAmount,
+        currency: 'USD',
+        kes_rate: kesRate,
         platform: 'PreoCryptoFX',
         transactionId,
         type: 'WITHDRAWAL_SYNC',
