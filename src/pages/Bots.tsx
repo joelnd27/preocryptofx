@@ -22,7 +22,8 @@ import {
   Shield,
   Target,
   X,
-  Info
+  Info,
+  Save
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
@@ -115,12 +116,20 @@ const BOTS: BotConfig[] = [
 ];
 
 export default function Bots() {
-  const { user, toggleBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
+  const { user, toggleBot, updateBotConfig, updateBotGlobalSettings, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
-  const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string }>>(() => {
-    const initial: Record<string, { coin: string, timeframe: string }> = {
-      custom: { coin: user?.customBotConfig?.currency || 'BTC', timeframe: '1M' }
+  const [globalStake, setGlobalStake] = useState(user?.botStake || 10);
+  const [globalTargetProfit, setGlobalTargetProfit] = useState(user?.targetProfitPercentage || 0);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }>>(() => {
+    const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }> = {
+      custom: { 
+        coin: user?.customBotConfig?.currency || 'BTC', 
+        timeframe: '1M',
+        stake: user?.botConfigs?.custom?.stake || user?.botStake || 10,
+        targetProfit: user?.botConfigs?.custom?.targetProfit || user?.targetProfitPercentage || 0
+      }
     };
     
     BOTS.forEach(bot => {
@@ -128,7 +137,9 @@ export default function Bots() {
       const persisted = user?.botConfigs?.[bot.id];
       initial[bot.id] = { 
         coin: persisted?.coin || (bot.type === 'trend' ? 'ETH' : bot.type === 'ai' ? 'SOL' : 'BTC'), 
-        timeframe: persisted?.timeframe || (bot.type === 'scalping' ? '1M' : '1H') 
+        timeframe: persisted?.timeframe || (bot.type === 'scalping' ? '1M' : '1H'),
+        stake: persisted?.stake || user?.botStake || 10,
+        targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
       };
     });
     return initial;
@@ -195,6 +206,28 @@ export default function Bots() {
   }, []);
 
   const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
+
+  const handleSaveGlobalSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      await updateBotGlobalSettings(globalStake, globalTargetProfit);
+      setAlertConfig({
+        isOpen: true,
+        title: 'Settings Saved',
+        message: 'Your global bot trading parameters have been updated and synchronized.',
+        type: 'success'
+      });
+    } catch (err) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Update Failed',
+        message: 'Failed to synchronize bot settings. Please try again.',
+        type: 'error'
+      });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const handleToggle = (botId: string) => {
     const bot = botId === 'custom' && user?.customBotConfig 
@@ -324,6 +357,89 @@ export default function Bots() {
         </div>
       </div>
 
+      {/* Global Strategy Parameters */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm overflow-hidden relative group">
+        <div className="absolute top-0 left-0 w-1 h-full bg-blue-600"></div>
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20 shrink-0">
+              <Shield size={20} strokeWidth={1.5} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Strategy Parameters</h3>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Risk management for all active bots</p>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-end gap-3 w-full lg:w-auto">
+            <div className="flex-1 sm:flex-none space-y-1">
+              <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 px-0.5">
+                <Activity size={10} className="text-blue-500" /> Stake
+              </label>
+              <div className="relative group/input">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400 transition-colors group-focus-within/input:text-blue-500">$</div>
+                <input 
+                  type="number"
+                  min="10"
+                  value={globalStake}
+                  onChange={(e) => setGlobalStake(Number(e.target.value))}
+                  className="w-full lg:w-28 pl-6 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 sm:flex-none space-y-1">
+              <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 px-0.5">
+                <Target size={10} className="text-indigo-500" /> Target
+              </label>
+              <div className="relative group/input">
+                <input 
+                  type="number"
+                  min="0"
+                  value={globalTargetProfit}
+                  onChange={(e) => setGlobalTargetProfit(Number(e.target.value))}
+                  className="w-full lg:w-28 pl-3 pr-7 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400 transition-colors group-focus-within/input:text-indigo-500">%</div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveGlobalSettings}
+              disabled={isSavingSettings || globalStake < 10}
+              className={cn(
+                "h-8 px-4 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider shadow-sm transition-all hover:bg-slate-800 dark:hover:bg-blue-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2",
+                isSavingSettings ? "cursor-wait" : ""
+              )}
+            >
+              {isSavingSettings ? (
+                <>
+                  <div className="w-2.5 h-2.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Syncing</span>
+                </>
+              ) : (
+                <>
+                  <Save size={12} />
+                  <span>Update Setting</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        {globalTargetProfit > 0 && (
+          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-0.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Profit Target:</span>
+              <span className="text-[11px] font-black text-blue-600 dark:text-blue-400 tracking-tight">${((globalStake * globalTargetProfit) / 100).toFixed(2)} USDT</span>
+            </div>
+            <p className="px-1 text-[8px] text-slate-500 dark:text-slate-500 font-medium leading-tight">
+              All active bots will pause automatically once your daily profit reaches this amount.
+            </p>
+          </div>
+        )}
+      </div>
+
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
       {/* Bot Selection & Config */}
       <div className="lg:col-span-8 space-y-5">
@@ -450,7 +566,7 @@ export default function Bots() {
                           ...prev,
                           [selectedBot.id]: { ...prev[selectedBot.id], coin: newCoin }
                         }));
-                        updateBotConfig(selectedBot.id, newCoin, botSettings[selectedBot.id].timeframe);
+                        updateBotConfig(selectedBot.id, newCoin, botSettings[selectedBot.id].timeframe, botSettings[selectedBot.id].stake, botSettings[selectedBot.id].targetProfit);
                       }}
                       className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
                     >
@@ -476,7 +592,7 @@ export default function Bots() {
                             ...prev,
                             [selectedBot.id]: { ...prev[selectedBot.id], timeframe: newTf }
                           }));
-                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, newTf);
+                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, newTf, botSettings[selectedBot.id].stake, botSettings[selectedBot.id].targetProfit);
                         }}
                         className={cn(
                           "flex-1 py-0.5 rounded-md text-[8px] font-bold transition-all",
@@ -488,6 +604,59 @@ export default function Bots() {
                         {t}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-500 flex items-center gap-1.5 uppercase tracking-widest">
+                      <Shield size={10} className="text-blue-500" /> Bot Stake
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">$</span>
+                      <input 
+                        type="number"
+                        min="10"
+                        value={botSettings[selectedBot.id].stake}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setBotSettings(prev => ({
+                            ...prev,
+                            [selectedBot.id]: { ...prev[selectedBot.id], stake: val }
+                          }));
+                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, botSettings[selectedBot.id].timeframe, val, botSettings[selectedBot.id].targetProfit);
+                        }}
+                        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 pl-4 pr-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-500 flex items-center gap-1.5 uppercase tracking-widest">
+                      <Target size={10} className="text-blue-500" /> Profit Goal
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type="number"
+                        min="0"
+                        value={botSettings[selectedBot.id].targetProfit}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setBotSettings(prev => ({
+                            ...prev,
+                            [selectedBot.id]: { ...prev[selectedBot.id], targetProfit: val }
+                          }));
+                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, botSettings[selectedBot.id].timeframe, botSettings[selectedBot.id].stake, val);
+                        }}
+                        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">%</span>
+                    </div>
+                    {botSettings[selectedBot.id].targetProfit > 0 && (
+                      <p className="text-[8px] text-blue-500 font-bold mt-1">
+                        Goal: ${((botSettings[selectedBot.id].stake * botSettings[selectedBot.id].targetProfit) / 100).toFixed(2)}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

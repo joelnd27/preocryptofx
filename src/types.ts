@@ -60,7 +60,7 @@ export interface User {
     nova: boolean;
     custom: boolean;
   };
-  botConfigs?: Record<string, { coin: string, timeframe: string }>;
+  botConfigs?: Record<string, { coin: string, timeframe: string, stake?: number, targetProfit?: number }>;
   customBotConfig?: {
     name: string;
     strategy: string;
@@ -70,6 +70,8 @@ export interface User {
   };
   botStats?: Record<string, { profit: number, trades: number }>;
   botLogs?: string[];
+  botStake?: number;
+  targetProfitPercentage?: number;
   referralCode: string;
   copyingTraderId?: string;
   referredBy?: string;

@@ -467,6 +467,8 @@ export function useStore() {
           botStats: botStats,
           customBotConfig: botSettingsData?.custom_config,
           botLogs: botSettingsData?.bot_logs || [],
+          botStake: Number(botSettingsData?.bot_stake || 10),
+          targetProfitPercentage: Number(botSettingsData?.target_profit_percentage || 0),
           referrals: [],
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           copyingTraderId: userData.copying_trader_id,
@@ -1728,12 +1730,12 @@ export function useStore() {
     }
   };
 
-  const updateBotConfig = async (botId: string, coin: string, timeframe: string) => {
+  const updateBotConfig = async (botId: string, coin: string, timeframe: string, stake?: number, targetProfit?: number) => {
     if (!user) return;
     
     const updatedConfigs = {
       ...(user.botConfigs || {}),
-      [botId]: { coin, timeframe }
+      [botId]: { coin, timeframe, stake, targetProfit }
     };
 
     const updatedUser = {
@@ -1741,8 +1743,14 @@ export function useStore() {
       botConfigs: updatedConfigs
     };
 
+    isInternalUpdate.current = true;
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+
+    // Clear flag after delay
+    setTimeout(() => {
+      isInternalUpdate.current = false;
+    }, 3000);
 
     if (isSupabaseConfigured()) {
       try {
@@ -1758,6 +1766,40 @@ export function useStore() {
         });
       } catch (err) {
         console.error('Failed to update bot config in Supabase:', err);
+      }
+    }
+  };
+
+  const updateBotGlobalSettings = async (stake: number, targetPercentage: number) => {
+    if (!user) return;
+    
+    const updatedUser = {
+      ...user,
+      botStake: stake,
+      targetProfitPercentage: targetPercentage
+    };
+
+    isInternalUpdate.current = true;
+    setUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+
+    // Clear flag after delay
+    setTimeout(() => {
+      isInternalUpdate.current = false;
+    }, 3000);
+
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('bot_settings').upsert({
+          user_id: user.id,
+          bot_stake: stake,
+          target_profit_percentage: targetPercentage,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
+      } catch (err) {
+        console.error('Failed to update bot global settings in Supabase:', err);
       }
     }
   };
@@ -2497,53 +2539,129 @@ export function useStore() {
       if (!currentUser) return;
       
       const botsToSimulate = Object.entries(currentUser.bots || {}).filter(([_, active]) => active);
-      if (botsToSimulate.length > 0) {
-        const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
-        let botName = '';
-        let coin = 'BTC';
-        let baseAmount = 0;
+      
+      // Stop the simulation if no bots are active
+      if (botsToSimulate.length === 0) {
+        console.log('[Store] No active bots, stopping simulation loop.');
+        return;
+      }
 
-        // Get persisted config for this bot if it exists
-        const botConfig = currentUser.botConfigs?.[botId];
+      const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
+      
+      // Check if target profit has been reached
+      const botConfig = currentUser.botConfigs?.[botId];
+      const botStake = botConfig?.stake || currentUser.botStake || 10;
+      const botTargetPercentage = botConfig?.targetProfit || currentUser.targetProfitPercentage || 0;
+      const targetProfitAmount = (botStake * botTargetPercentage) / 100;
 
-        if (botId === 'custom' && currentUser.customBotConfig) {
-          botName = currentUser.customBotConfig.name;
-          coin = currentUser.customBotConfig.currency || 'BTC';
-          const risk = currentUser.customBotConfig.risk || 'Medium';
-          const riskMultiplier = 
-            risk === 'Low' ? 0.5 :
-            risk === 'High' ? 2.0 :
-            risk === 'Aggressive' ? 5.0 : 1.0;
-          baseAmount = (1 + Math.random() * 4) * riskMultiplier;
-        } else {
-          const commonBots: Record<string, string> = {
-            scalping: 'Scalper Pro v4.2',
-            trend: 'TrendMaster AI',
-            ai: 'Neural Quantum Bot',
-            vortex: 'Vortex Momentum',
-            orbit: 'Orbit Swing Bot',
-            starlight: 'Starlight AI',
-            galaxy: 'Galaxy Arbi-Bot',
-            nova: 'Nova Alpha v2'
-          };
-          botName = commonBots[botId] || 'Trading Bot';
+      if (botTargetPercentage > 0 && botStake >= 10) {
+        // Calculate total profit for this SPECIFIC bot today if possible, 
+        // but for now we'll use the dailyProfit check which is simpler for the user to understand
+        const totalBotProfit = currentUser.dailyProfit || 0;
+        
+        if (totalBotProfit >= targetProfitAmount) {
+          console.log(`[Store] Target profit of ${botTargetPercentage}% ($${targetProfitAmount.toFixed(2)}) reached. Deactivating bots.`);
           
-          // Use persisted coin if available, otherwise default logic
-          if (botConfig?.coin) {
-            coin = botConfig.coin;
-          } else {
-            // Fallback to default pairs based on bot ID
-            if (botId === 'trend' || botId === 'nova' || botId === 'orbit') {
-              coin = 'ETH';
-            } else if (botId === 'ai' || botId === 'starlight') {
-              coin = 'SOL';
-            } else {
-              coin = 'BTC';
+          const updatedBots = { 
+            scalping: false, trend: false, ai: false, vortex: false,
+            orbit: false, starlight: false, galaxy: false, nova: false, custom: false 
+          };
+          
+          const updatedStats = {
+            ...(currentUser.botStats || {}),
+            active_states: {
+              vortex: false,
+              orbit: false,
+              starlight: false,
+              galaxy: false,
+              nova: false
+            }
+          };
+
+          isInternalUpdate.current = true;
+          setUser(prev => prev ? { ...prev, bots: updatedBots, botStats: updatedStats } : null);
+          setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, bots: updatedBots, botStats: updatedStats } : u));
+          
+          // Reset internal update flag after a delay
+          setTimeout(() => {
+            isInternalUpdate.current = false;
+          }, 5000);
+
+          if (isSupabaseConfigured()) {
+            try {
+              await supabase.from('bot_settings').upsert({
+                user_id: currentUser.id,
+                scalping_active: false,
+                trend_active: false,
+                ai_active: false,
+                custom_active: false,
+                bot_stats: updatedStats,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+            } catch (err) {
+              console.error('[Store] Failed to deactivate bots in Supabase:', err);
             }
           }
-          
-          baseAmount = (1 + Math.random() * 4);
+
+          window.dispatchEvent(new CustomEvent('trade-closed', {
+            detail: {
+              title: 'Target Profit Reached',
+              message: `Your bots have reached the target profit of ${botTargetPercentage}% ($${targetProfitAmount.toFixed(2)}) and have been deactivated automatically.`,
+              type: 'success'
+            }
+          }));
+          return; // Stop simulation
         }
+      }
+
+      let botName = '';
+      let coin = 'BTC';
+      let baseAmount = 0;
+
+      if (botId === 'custom' && currentUser.customBotConfig) {
+        botName = currentUser.customBotConfig.name;
+        coin = currentUser.customBotConfig.currency || 'BTC';
+        const risk = currentUser.customBotConfig.risk || 'Medium';
+        const riskMultiplier = 
+          risk === 'Low' ? 0.5 :
+          risk === 'High' ? 2.0 :
+          risk === 'Aggressive' ? 5.0 : 1.0;
+        
+        // Use botStake (already calculated above with priority)
+        const stake = Math.max(10, botStake);
+        baseAmount = (stake * 0.01 * (1 + Math.random() * 2)) * riskMultiplier;
+      } else {
+        const commonBots: Record<string, string> = {
+          scalping: 'Scalper Pro v4.2',
+          trend: 'TrendMaster AI',
+          ai: 'Neural Quantum Bot',
+          vortex: 'Vortex Momentum',
+          orbit: 'Orbit Swing Bot',
+          starlight: 'Starlight AI',
+          galaxy: 'Galaxy Arbi-Bot',
+          nova: 'Nova Alpha v2'
+        };
+        botName = commonBots[botId] || 'Trading Bot';
+        
+        // Use persisted coin if available, otherwise default logic
+        if (botConfig?.coin) {
+          coin = botConfig.coin;
+        } else {
+          // Fallback to default pairs based on bot ID
+          if (botId === 'trend' || botId === 'nova' || botId === 'orbit') {
+            coin = 'ETH';
+          } else if (botId === 'ai' || botId === 'starlight') {
+            coin = 'SOL';
+          } else {
+            coin = 'BTC';
+          }
+        }
+        
+        // Use botStake (already calculated above with priority)
+        const stake = Math.max(10, botStake);
+        // Base profit is between 0.5% and 2.5% of stake per "trade"
+        baseAmount = (stake * (0.005 + Math.random() * 0.02));
+      }
 
         const isDemo = currentUser.activeAccount === 'DEMO';
         const isMarketer = currentUser.role === 'marketer';
@@ -2573,7 +2691,60 @@ export function useStore() {
         const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed trade on ${coin}: ${parseFloat(profitStr) >= 0 ? '+' : ''}${profitStr} USDT`;
 
         await addBotProfit(parseFloat(profitStr), botId, newLog);
-      }
+
+        // Immediate check after profit addition to avoid waiting for next loop
+        const newDailyProfit = Number(((currentUser.dailyProfit || 0) + parseFloat(profitStr)).toFixed(2));
+        if (botTargetPercentage > 0 && botStake >= 10 && newDailyProfit >= targetProfitAmount) {
+          console.log(`[Store] Target profit reached immediately after trade. Deactivating bots.`);
+          
+          const updatedBots = { 
+            scalping: false, trend: false, ai: false, vortex: false,
+            orbit: false, starlight: false, galaxy: false, nova: false, custom: false 
+          };
+          
+          const updatedStats = {
+            ...(currentUser.botStats || {}),
+            active_states: {
+              vortex: false,
+              orbit: false,
+              starlight: false,
+              galaxy: false,
+              nova: false
+            }
+          };
+
+          isInternalUpdate.current = true;
+          setUser(prev => prev ? { ...prev, bots: updatedBots, botStats: updatedStats } : null);
+          
+          setTimeout(() => {
+            isInternalUpdate.current = false;
+          }, 5000);
+
+          if (isSupabaseConfigured()) {
+            try {
+              await supabase.from('bot_settings').upsert({
+                user_id: currentUser.id,
+                scalping_active: false,
+                trend_active: false,
+                ai_active: false,
+                custom_active: false,
+                bot_stats: updatedStats,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+            } catch (err) {
+              console.error('[Store] Failed to deactivate bots in Supabase:', err);
+            }
+          }
+
+          window.dispatchEvent(new CustomEvent('trade-closed', {
+            detail: {
+              title: 'Target Profit Reached',
+              message: `Your bots have reached the target profit of ${botTargetPercentage}% ($${targetProfitAmount.toFixed(2)}) and have been deactivated automatically.`,
+              type: 'success'
+            }
+          }));
+          return; // Stop simulation
+        }
 
       // Random delay between 10 and 15 seconds
       const nextDelay = Math.floor(Math.random() * 5000) + 10000;
@@ -2755,6 +2926,7 @@ export function useStore() {
     switchAccount,
     resetDemoBalance,
     updateBotConfig,
+    updateBotGlobalSettings,
     addTrade,
     closeTrade,
     addTransaction,
