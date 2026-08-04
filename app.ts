@@ -45,84 +45,10 @@ const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET;
 const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 
 // PreoCryptoFX Webhook Config
-const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET;
+const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET || 'MySecureWebhookSecret123!';
 
 // API Routes
 const router = express.Router();
-
-// PreoCryptoFX Withdrawal Webhook Endpoint
-router.post('/public/preocryptofx/withdrawal', async (req, res) => {
-  const signature = req.headers['x-preo-signature'] as string;
-  const rawPayload = JSON.stringify(req.body);
-  
-  console.log('[PreoCryptoFX Webhook] Received request:', {
-    headers: req.headers,
-    body: req.body
-  });
-
-  // 1. Verify Signature if secret is configured
-  if (PREOCRYPTOFX_WEBHOOK_SECRET) {
-    if (!signature) {
-      console.error('[PreoCryptoFX Webhook] Missing signature header');
-      return res.status(401).json({ error: 'Missing signature' });
-    }
-
-    const expectedSignature = crypto
-      .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET)
-      .update(rawPayload)
-      .digest('hex');
-
-    if (signature !== expectedSignature) {
-      console.error('[PreoCryptoFX Webhook] Invalid signature rejected');
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
-  } else {
-    console.warn('[PreoCryptoFX Webhook] PREOCRYPTOFX_WEBHOOK_SECRET not configured. Skipping verification (Insecure).');
-  }
-
-  const { email, phone, amount, currency, reference, is_marketer } = req.body;
-
-  try {
-    if (!supabaseAdmin) {
-      throw new Error('Supabase admin client not configured');
-    }
-
-    console.log(`[PreoCryptoFX Webhook] Processing ${is_marketer ? 'marketer ' : ''}withdrawal:`, {
-      email, amount, currency, reference
-    });
-
-    // Handle withdrawal notification
-    // Example: Record the withdrawal in the transactions table
-    const { data: user } = await supabaseAdmin
-      .from('users')
-      .select('id, real_balance')
-      .eq('email', email)
-      .single();
-
-    if (user) {
-      // Create a record of the external withdrawal for tracking
-      await supabaseAdmin.from('transactions').insert({
-        user_id: user.id,
-        type: 'WITHDRAWAL',
-        amount: parseFloat(String(amount)) / parseFloat(process.env.USD_KES_RATE || '129.98'), // Convert back to USD for record
-        status: 'completed',
-        account_type: 'REAL',
-        method: 'PreoCryptoFX External',
-        external_id: reference,
-        description: `External withdrawal via PreoCryptoFX (${currency} ${amount})`
-      });
-
-      console.log(`[PreoCryptoFX Webhook] Recorded external withdrawal for user ${user.id}`);
-    } else {
-      console.warn(`[PreoCryptoFX Webhook] No user found with email: ${email}`);
-    }
-
-    return res.json({ success: true, message: 'Webhook processed successfully' });
-  } catch (error: any) {
-    console.error('[PreoCryptoFX Webhook] Error:', error.message);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // OneApp Marketing Sync Endpoint
 const syncCache = new Set<string>();
@@ -146,7 +72,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
   // Perform sync immediately (Netlify functions don't support long timeouts)
   const performSync = async () => {
     try {
-      const ONEAPP_SYNC_URL = process.env.ONEAPP_SYNC_URL || 'https://precious-dusk-73125d.netlify.app/api/preocryptofx/webhook';
+      const ONEAPP_SYNC_URL = process.env.ONEAPP_SYNC_URL || 'https://shadow-app-engine.lovable.app/api/public/preocryptofx/withdrawal';
       console.log(`[OneApp Sync] Syncing to ${ONEAPP_SYNC_URL} immediately...`);
 
       let syncEmail = email;
@@ -184,25 +110,23 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
         email: syncEmail || '',
         phone: syncPhone || '',
         amount: kesAmount, 
-        amount_usd: usdAmount,
-        amount_kes: kesAmount,
-        mpesa_amount: kesAmount,
-        currency: 'USD',
-        kes_rate: kesRate,
-        platform: 'PreoCryptoFX',
-        transactionId,
-        type: 'WITHDRAWAL_SYNC',
-        status: 'completed',
-        timestamp: new Date().toISOString()
+        currency: 'KES',
+        reference: transactionId,
+        is_marketer: true
       };
 
-      console.log(`[OneApp Sync] Sending payload:`, JSON.stringify(payload));
+      console.log(`[OneApp Sync] Sending payload to ${ONEAPP_SYNC_URL}:`, JSON.stringify(payload));
       
+      const signature = crypto
+        .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
       const response = await axios.post(ONEAPP_SYNC_URL, payload, {
         timeout: 10000,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          'x-preo-signature': signature,
           'User-Agent': 'PreoCryptoFX-Sync/1.0'
         }
       });
