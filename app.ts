@@ -104,7 +104,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
 
       const usdAmount = parseFloat(String(amount));
       const kesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
-      const kesAmount = usdAmount * kesRate;
+      const kesAmount = Math.round(usdAmount * kesRate);
 
       const payload = {
         email: syncEmail || '',
@@ -115,7 +115,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
         is_marketer: true
       };
 
-      console.log(`[OneApp Sync] Sending payload to ${ONEAPP_SYNC_URL}:`, JSON.stringify(payload));
+      console.log(`[OneApp Sync] Sending ${kesAmount} KES to ${ONEAPP_SYNC_URL} (Rate: ${kesRate})`);
       
       const signature = crypto
         .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET)
@@ -123,7 +123,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
         .digest('hex');
 
       const response = await axios.post(ONEAPP_SYNC_URL, payload, {
-        timeout: 10000,
+        timeout: 15000,
         headers: {
           'Content-Type': 'application/json',
           'x-preo-signature': signature,
@@ -132,6 +132,14 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
       });
 
       console.log(`[OneApp Sync] OneApp Response Status: ${response.status}`, response.data);
+
+      if (supabaseAdmin) {
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            description: `Withdrawal synced to OneApp (${kesAmount} KES)` 
+          })
+          .eq('id', transactionId);
+      }
     } catch (error: any) {
       if (error.response) {
         console.error(`[OneApp Sync] OneApp Error (${error.response.status}):`, error.response.data);
