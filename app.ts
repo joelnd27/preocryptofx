@@ -44,8 +44,85 @@ const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID;
 const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET;
 const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 
+// PreoCryptoFX Webhook Config
+const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET;
+
 // API Routes
 const router = express.Router();
+
+// PreoCryptoFX Withdrawal Webhook Endpoint
+router.post('/public/preocryptofx/withdrawal', async (req, res) => {
+  const signature = req.headers['x-preo-signature'] as string;
+  const rawPayload = JSON.stringify(req.body);
+  
+  console.log('[PreoCryptoFX Webhook] Received request:', {
+    headers: req.headers,
+    body: req.body
+  });
+
+  // 1. Verify Signature if secret is configured
+  if (PREOCRYPTOFX_WEBHOOK_SECRET) {
+    if (!signature) {
+      console.error('[PreoCryptoFX Webhook] Missing signature header');
+      return res.status(401).json({ error: 'Missing signature' });
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET)
+      .update(rawPayload)
+      .digest('hex');
+
+    if (signature !== expectedSignature) {
+      console.error('[PreoCryptoFX Webhook] Invalid signature rejected');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  } else {
+    console.warn('[PreoCryptoFX Webhook] PREOCRYPTOFX_WEBHOOK_SECRET not configured. Skipping verification (Insecure).');
+  }
+
+  const { email, phone, amount, currency, reference, is_marketer } = req.body;
+
+  try {
+    if (!supabaseAdmin) {
+      throw new Error('Supabase admin client not configured');
+    }
+
+    console.log(`[PreoCryptoFX Webhook] Processing ${is_marketer ? 'marketer ' : ''}withdrawal:`, {
+      email, amount, currency, reference
+    });
+
+    // Handle withdrawal notification
+    // Example: Record the withdrawal in the transactions table
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('id, real_balance')
+      .eq('email', email)
+      .single();
+
+    if (user) {
+      // Create a record of the external withdrawal for tracking
+      await supabaseAdmin.from('transactions').insert({
+        user_id: user.id,
+        type: 'WITHDRAWAL',
+        amount: parseFloat(String(amount)) / parseFloat(process.env.USD_KES_RATE || '129.98'), // Convert back to USD for record
+        status: 'completed',
+        account_type: 'REAL',
+        method: 'PreoCryptoFX External',
+        external_id: reference,
+        description: `External withdrawal via PreoCryptoFX (${currency} ${amount})`
+      });
+
+      console.log(`[PreoCryptoFX Webhook] Recorded external withdrawal for user ${user.id}`);
+    } else {
+      console.warn(`[PreoCryptoFX Webhook] No user found with email: ${email}`);
+    }
+
+    return res.json({ success: true, message: 'Webhook processed successfully' });
+  } catch (error: any) {
+    console.error('[PreoCryptoFX Webhook] Error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // OneApp Marketing Sync Endpoint
 const syncCache = new Set<string>();
