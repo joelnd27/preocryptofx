@@ -441,7 +441,8 @@ export function useStore() {
             timestamp: new Date(t.timestamp || t.created_at).getTime(),
             accountType: t.account_type,
             method: t.method,
-            externalId: t.external_id
+            externalId: t.external_id,
+            metadata: t.metadata
           })),
           bots: botSettingsData ? {
             scalping: botSettingsData.scalping_active || false,
@@ -2320,110 +2321,39 @@ export function useStore() {
     return true;
   };
 
-  const processDeposit = async (amountUsd: number, _phone?: string, onSdkError?: (msg: string) => void, onSdkSuccess?: (data: any) => void, onSdkCancel?: (msg?: string) => void) => {
+  const processDeposit = async (amountUsd: number, phone?: string, onSdkError?: (msg: string) => void, onSdkSuccess?: (data: any) => void, onSdkCancel?: (msg?: string) => void) => {
     if (!user) return false;
     
-    if (amountUsd < 16) {
-      throw new Error('Minimum deposit is $16');
+    if (amountUsd < 10) {
+      throw new Error('Minimum deposit is $10');
     }
 
     try {
-      const response = await axios.post('/api/hashback/stk-push', {
+      console.log('[FinAPI] Initiating STK Push...');
+      const response = await axios.post('/api/finapi/stk-push', {
         amount: amountUsd,
-        userId: user.id
+        userId: user.id,
+        phone_number: phone || user.phone
       });
 
-      console.log('[HashBack] Backend Response:', response.data);
+      console.log('[FinAPI] Backend Response:', response.data);
 
       if (response.data.success) {
-        const { account, amount, reference } = response.data;
+        const { transaction_id, reference } = response.data;
         
-        if (typeof (window as any).HashPay !== 'undefined') {
-          console.log('[HashBack] Using HashPay.setup');
-          try {
-            const handler = (window as any).HashPay.setup({
-              account: account,
-              amount: amount,
-              reference: reference,
-              onSuccess: async (data: any) => {
-                console.log('[HashPay] Success Callback:', data);
-                const updated = await updateHashBackStatus(reference, 'success', 'Payment successful via SDK callback', data);
-                if (updated) {
-                  console.log('[HashPay] Backend successfully updated via callback');
-                } else {
-                  console.warn('[HashPay] Backend update failed via callback, polling will handle it if webhook arrives');
-                }
-                
-                if (onSdkSuccess) {
-                  onSdkSuccess(data);
-                } else {
-                  setTimeout(() => window.location.reload(), 1500);
-                }
-              },
-              onCancel: async (data: any) => {
-                console.log('[HashPay] Cancel Callback:', data);
-                const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment cancelled');
-                await updateHashBackStatus(reference, 'cancelled', msg, data);
-                if (onSdkCancel) onSdkCancel(msg);
-              },
-              onDismiss: async (data: any) => {
-                console.log('[HashPay] Dismiss Callback:', data);
-                const msg = typeof data === 'string' ? data : (data?.message || 'Payment dismissed');
-                await updateHashBackStatus(reference, 'cancelled', msg, data);
-                if (onSdkCancel) onSdkCancel(msg);
-              },
-              onClose: (data: any) => {
-                console.log('[HashPay] Close Callback:', data);
-                const msg = typeof data === 'string' ? data : (data?.message || 'Payment closed');
-                // Don't necessarily mark as cancelled on close, as they might have just finished successfully
-                if (onSdkCancel) onSdkCancel(msg);
-              },
-              onFailed: async (data: any) => {
-                console.log('[HashPay] Failed Callback:', data);
-                const msg = typeof data === 'string' ? data : (data?.message || data?.ResultDesc || 'Payment failed');
-                await updateHashBackStatus(reference, 'failed', msg, data);
-                if (onSdkCancel) onSdkCancel(msg);
-              },
-              onError: (err: any) => {
-                console.error('[HashPay] SDK Error:', err);
-                const msg = typeof err === 'string' ? err : (err?.message || 'Payment provider error: Invalid account or receiver info.');
-                console.warn('[HashPay] Error message to user:', msg);
-                if (onSdkError) onSdkError(msg);
-              }
-            });
-
-            if (handler && typeof handler.openIframe === 'function') {
-              console.log('[HashPay] Opening Iframe');
-              handler.openIframe();
-            } else {
-              console.error('[HashPay] Failed to get valid handler from setup');
-              throw new Error('Payment system failed to initialize.');
-            }
-            return reference;
-          } catch (sdkError: any) {
-            console.error('[HashPay] Setup Exception:', sdkError);
-            throw new Error(`Payment initialization failed: ${sdkError.message || 'Unknown error'}`);
-          }
-        } else {
-          console.warn('[HashBack] HashPay script not loaded');
-          throw new Error('Payment system script not found. Please check your internet connection or refresh the page.');
-        }
+        // FinAPI STK Push is triggered. We just need to notify the user to check their phone
+        // and then we return the transaction_id/reference so the UI can start polling.
+        return transaction_id || reference;
       }
       
-      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment (Server returned success: false)';
+      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
       throw new Error(errorMsg);
     } catch (error: any) {
       const errorData = error.response?.data;
-      // If it's a 404/500 with HTML, errorData might be a string
       const serverError = typeof errorData === 'object' ? (errorData.message || errorData.error || errorData.details) : null;
       const errorMsg = serverError || error.message || 'Failed to initiate payment';
       
-      console.error('Payment Initiation Error Detail:', {
-        status: error.response?.status,
-        data: errorData,
-        message: error.message
-      });
-      
+      console.error('FinAPI Initiation Error Detail:', error.response?.status, errorData);
       throw new Error(errorMsg);
     }
   };
@@ -2432,38 +2362,13 @@ export function useStore() {
     await syncWithSupabase();
   };
 
-  const checkPaymentStatus = async (reference: string) => {
+  const checkPaymentStatus = async (transaction_id: string) => {
     try {
-      const response = await axios.get(`/api/hashback/verify/${reference}`);
+      const response = await axios.get(`/api/finapi/verify/${transaction_id}`);
       return response.data;
     } catch (error: any) {
-      console.error('Error checking payment status:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message
-      });
+      console.error('Error checking payment status:', error.message);
       return null;
-    }
-  };
-
-  const updateHashBackStatus = async (reference: string, status: string, message?: string, metadata?: any) => {
-    console.log(`[useStore] Requesting status update for ${reference} to ${status}`);
-    try {
-      const response = await axios.post('/api/hashback/update-status', {
-        reference,
-        status,
-        message,
-        metadata
-      });
-      console.log(`[useStore] Status update response for ${reference}:`, response.data);
-      return response.data?.success === true;
-    } catch (error: any) {
-      console.error(`[useStore] Error updating hashback status for ${reference}:`, {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message
-      });
-      return false;
     }
   };
 

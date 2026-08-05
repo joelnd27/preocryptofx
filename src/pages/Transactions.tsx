@@ -450,10 +450,15 @@ export default function Transactions() {
                         <div className="flex flex-col">
                           <span className={cn(
                             "text-[11px] font-bold font-mono",
-                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') ? "text-green-500" : "text-red-500"
+                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') || tx.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
                           )}>
                             {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                           </span>
+                          {(tx.status === 'rejected' || tx.status === 'failed') && tx.metadata?.message && (
+                            <span className="text-[8px] text-red-400 font-medium italic truncate max-w-[80px]" title={tx.metadata.message}>
+                              {tx.metadata.message}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -568,10 +573,15 @@ export default function Transactions() {
                     <div className="text-right">
                       <p className={cn(
                         "text-[11px] font-bold font-mono",
-                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') ? "text-green-500" : "text-red-500"
+                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') || tx.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
                       )}>
                         {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </p>
+                      {(tx.status === 'rejected' || tx.status === 'failed') && tx.metadata?.message && (
+                        <p className="text-[8px] text-red-400 font-medium italic mt-0.5">
+                          {tx.metadata.message}
+                        </p>
+                      )}
                       <p className="text-[9px] text-slate-500">{formatDate(tx.timestamp)}</p>
                     </div>
                   </div>
@@ -1074,9 +1084,9 @@ export default function Transactions() {
                         <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
                           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Verifying Payment</h3>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Check Your Phone</h3>
                         <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 max-w-[280px]">
-                          We're waiting for network confirmation. This can sometimes take a minute.
+                          Please enter your M-Pesa PIN on the prompt sent to your phone to complete the payment.
                         </p>
                         
                         <div className="flex flex-col gap-3 w-full">
@@ -1106,6 +1116,13 @@ export default function Transactions() {
                                   setErrorMessage(result?.message || result?.error || 'Transaction was rejected.');
                                   setCurrentTxRef(null);
                                   await refreshData();
+                                } else {
+                                  setAlertConfig({
+                                    isOpen: true,
+                                    title: 'Processing...',
+                                    message: 'Your payment is still being processed. Please ensure you have completed the M-Pesa prompt on your phone.',
+                                    type: 'info'
+                                  });
                                 }
                               }
                               setIsChecking(false);

@@ -27,7 +27,7 @@ const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 type AdminTab = 'users' | 'deposits' | 'copy-traders';
 
 export default function AdminPanel() {
-  const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus, copyTraders, updateCopyTrader, deleteCopyTrader } = useStore();
+  const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus, checkPaymentStatus, copyTraders, updateCopyTrader, deleteCopyTrader } = useStore();
   const [users, setUsers] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalDeposited: 0, userCount: 0 });
@@ -173,7 +173,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -195,8 +195,23 @@ export default function AdminPanel() {
           <div className="w-10 h-10 rounded-xl bg-green-500/10 text-green-500 flex items-center justify-center mb-4">
             <DollarSign size={20} />
           </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Money In</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Money In (Completed)</p>
           <h3 className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(stats.totalDeposited)}</h3>
+        </motion.div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm"
+        >
+          <div className="w-10 h-10 rounded-xl bg-yellow-500/10 text-yellow-500 flex items-center justify-center mb-4">
+            <Clock size={20} />
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Pending Deposits</p>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+            {formatCurrency(transactions.filter(t => t.status === 'pending' && t.type === 'DEPOSIT').reduce((sum, t) => sum + Number(t.amount), 0))}
+          </h3>
         </motion.div>
       </div>
 
@@ -446,29 +461,31 @@ export default function AdminPanel() {
                         <div>
                           <p className={cn(
                             "font-bold text-sm",
-                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('hashback') ? "text-green-500" : "text-red-500"
+                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('hashback') || t.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
                           )}>
                             {t.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(t.amount)}
                           </p>
                           <div className="mt-1">
                             {(() => {
                               const method = t.method || 'Direct';
-                              if (method.toLowerCase().includes('hashback')) {
+                              if (method.toLowerCase().includes('hashback') || method.toLowerCase().includes('finapi')) {
+                                const isFinAPI = method.toLowerCase().includes('finapi');
+                                const label = isFinAPI ? 'FINAPI' : 'HASHBACK';
                                 const idMatch = method.match(/\(([^)]+)\)/);
                                 const id = idMatch ? idMatch[1] : null;
                                 
                                 if (t.status === 'completed') {
                                   return (
                                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
-                                      {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') 
-                                        ? `HASHBACK CALLBACK ${id ? `(${id})` : ''}`
-                                        : `HASHBACK ${id ? `(${id})` : ''}`}
+                                      {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') || method.toLowerCase().includes('webhook')
+                                        ? `${label} CALLBACK ${id ? `(${id})` : ''}`
+                                        : `${label} ${id ? `(${id})` : ''}`}
                                     </p>
                                   );
                                 } else {
                                   return (
                                     <>
-                                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">HASHBACK</p>
+                                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">{label}</p>
                                       {id && <p className="text-[9px] text-slate-400 font-medium italic">({id})</p>}
                                     </>
                                   );
@@ -507,24 +524,49 @@ export default function AdminPanel() {
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        {t.status === 'pending' && (
-                          <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2">
+                          {t.status === 'pending' && (t.method?.toLowerCase().includes('finapi') || t.method?.toLowerCase().includes('hashback')) && (
                             <button 
-                              onClick={() => handleUpdateTransaction(t.id, 'completed')}
-                              className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"
-                              title="Approve"
+                              onClick={async () => {
+                                const id = t.external_id || t.id;
+                                try {
+                                  const result = await checkPaymentStatus(id);
+                                  if (result) {
+                                    loadData();
+                                    const statusStr = result.status || result.message || 'Updated';
+                                    alert(`FinAPI Status: ${statusStr}`);
+                                  } else {
+                                    alert("No update from FinAPI yet. User might still be entering PIN.");
+                                  }
+                                } catch (err) {
+                                  alert("Error communicating with FinAPI verify endpoint.");
+                                }
+                              }}
+                              className="p-1.5 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-all group relative"
+                              title="Sync with Payment Gateway"
                             >
-                              <CheckCircle2 size={14} />
+                              <RefreshCw size={14} />
                             </button>
-                            <button 
-                              onClick={() => handleUpdateTransaction(t.id, 'rejected')}
-                              className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
-                              title="Reject"
-                            >
-                              <XCircle size={14} />
-                            </button>
-                          </div>
-                        )}
+                          )}
+                          {t.status === 'pending' && (
+                            <>
+                              <button 
+                                onClick={() => handleUpdateTransaction(t.id, 'completed')}
+                                className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"
+                                title="Approve"
+                              >
+                                <CheckCircle2 size={14} />
+                              </button>
+                              <button 
+                                onClick={() => handleUpdateTransaction(t.id, 'rejected')}
+                                className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                                title="Reject"
+                              >
+                                <XCircle size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

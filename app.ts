@@ -44,6 +44,10 @@ const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID;
 const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET;
 const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 
+// FinAPI Config
+const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY;
+const FINAPI_BASE_URL = 'https://stkpush.co.ke/api';
+
 // PreoCryptoFX Webhook Config
 const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET || 'MySecureWebhookSecret123!';
 
@@ -224,6 +228,293 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
   } catch (error: any) {
     console.error('[HashBack] Create Payment Exception:', error.message);
     res.status(500).json({ success: false, error: 'Internal server error during payment initiation.' });
+  }
+});
+
+// FinAPI STK Push Initiation
+router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
+  const { phone_number, amount, userId } = req.body;
+  
+  console.log(`[FinAPI] STK Push Request: Phone=${phone_number}, Amount=${amount}, User=${userId}`);
+  
+  if (!phone_number || !amount || !userId) {
+    return res.status(400).json({ success: false, error: 'Missing phone_number, amount, or userId' });
+  }
+
+  const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+  const usdAmount = parseFloat(String(amount || 0));
+  const kesAmount = Math.ceil(usdAmount * usdKesRate);
+
+  if (usdAmount < 10) {
+    return res.status(400).json({ success: false, error: 'Minimum deposit is $10' });
+  }
+
+  const reference = `FIN${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  try {
+    if (!FINAPI_SECRET_KEY) {
+      throw new Error('FINAPI_SECRET_KEY is missing');
+    }
+
+    if (supabaseAdmin) {
+      const { error: dbError } = await supabaseAdmin.from('transactions').insert({
+        user_id: userId,
+        type: 'DEPOSIT',
+        amount: usdAmount,
+        status: 'pending',
+        account_type: 'REAL',
+        method: 'FinAPI M-Pesa',
+        external_id: reference
+      });
+
+      if (dbError) throw dbError;
+    }
+
+    console.log(`[FinAPI] Triggering STK Push for ${kesAmount} KES to ${phone_number}`);
+    
+    // Normalize phone number to 254... format
+    let normalizedPhone = phone_number.replace(/\D/g, '');
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = '254' + normalizedPhone.substring(1);
+    } else if (normalizedPhone.startsWith('7') || normalizedPhone.startsWith('1')) {
+      normalizedPhone = '254' + normalizedPhone;
+    } else if (!normalizedPhone.startsWith('254')) {
+      // If it doesn't start with 254 or 0 or 7, assume it's already correct or needs manual fix
+      // but most common case in Kenya is 07... or 2547...
+    }
+
+    console.log(`[FinAPI] Normalized Phone: ${normalizedPhone}`);
+
+    const response = await axios.post(`${FINAPI_BASE_URL}/stk-push/`, {
+      phone_number: normalizedPhone,
+      amount: kesAmount,
+      reference: reference
+    }, {
+      headers: {
+        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+        'Origin': 'https://preocryptofx.com',
+        'Referer': 'https://preocryptofx.com/'
+      }
+    });
+
+    console.log(`[FinAPI] Response:`, response.data);
+
+    if (response.data.success) {
+      if (supabaseAdmin) {
+        // Use either transaction_id from FinAPI or keep the internal reference if not provided
+        const finalExternalId = response.data.transaction_id || reference;
+        
+        const { error: updateError } = await supabaseAdmin.from('transactions')
+          .update({ 
+            external_id: finalExternalId,
+            metadata: { 
+              ...response.data, 
+              internal_ref: reference,
+              initiated_at: new Date().toISOString()
+            }
+          })
+          .eq('external_id', reference);
+
+        if (updateError) {
+          console.error('[FinAPI] Failed to update transaction after STK Push:', updateError);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'Payment request initiated successfully',
+        transaction_id: response.data.transaction_id || reference,
+        reference: reference
+      });
+    } else {
+      res.status(400).json(response.data);
+    }
+  } catch (error: any) {
+    console.error('[FinAPI] STK Push Error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: error.response?.data?.message || 'Failed to initiate STK push' 
+    });
+  }
+});
+
+// FinAPI Verify Payment Status
+router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_id/'], async (req, res) => {
+  const { transaction_id } = req.params;
+  
+  if (!transaction_id || transaction_id === 'undefined' || transaction_id === 'null') {
+    return res.status(400).json({ success: false, error: 'Invalid transaction ID' });
+  }
+
+  console.log(`[FinAPI Verify] Checking status for: ${transaction_id}`);
+
+  try {
+    if (!FINAPI_SECRET_KEY) throw new Error('FINAPI_SECRET_KEY missing');
+
+    const response = await axios.get(`${FINAPI_BASE_URL}/verify-payment/${transaction_id}/`, {
+      headers: {
+        'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
+        'Origin': 'https://preocryptofx.com',
+        'Referer': 'https://preocryptofx.com/'
+      }
+    });
+
+    console.log(`[FinAPI Verify] Result:`, response.data);
+
+    const apiData = response.data;
+    const statusLower = (apiData.status || '').toLowerCase();
+    const isSuccess = apiData.success === true && (statusLower === 'success' || statusLower === 'completed');
+    const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || statusLower.includes('failed') || statusLower.includes('cancel');
+
+    if (isSuccess) {
+      if (supabaseAdmin) {
+        const { data: tx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id}`)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (tx) {
+          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} for transaction ${transaction_id}`);
+          
+          const usdAmount = Number(tx.amount);
+          const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+            t_id: tx.id,
+            u_id: tx.user_id,
+            amount: usdAmount
+          });
+
+          if (rpcError) {
+            console.error('[FinAPI Verify] RPC Balance update failed:', rpcError);
+            await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
+            const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+            if (userData) {
+              const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
+              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+            }
+          } else {
+            await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
+          }
+        }
+      }
+    } else if (isFailed) {
+       if (supabaseAdmin) {
+        console.log(`[FinAPI Verify] Marking transaction ${transaction_id} as rejected (${apiData.status})`);
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'rejected', 
+            metadata: { ...apiData, verification_error: true } 
+          })
+          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id}`)
+          .eq('status', 'pending');
+      }
+    }
+
+    res.json(apiData);
+  } catch (error: any) {
+    const errorData = error.response?.data;
+    const errorStatus = error.response?.status;
+    console.error('[FinAPI Verify] Error:', errorStatus, JSON.stringify(errorData || error.message));
+    
+    const apiStatusLower = (errorData?.status || '').toLowerCase();
+    const isTerminalFailure = errorData && (apiStatusLower === 'failed' || errorData.error_code === 'VERIFICATION_FAILED' || apiStatusLower.includes('cancel'));
+
+    if (isTerminalFailure) {
+      if (supabaseAdmin) {
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'rejected', 
+            metadata: { ...errorData, api_error: true } 
+          })
+          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id}`)
+          .eq('status', 'pending');
+      }
+      return res.json({ 
+        success: false, 
+        status: 'Failed', 
+        message: errorData.message || 'Verification failed' 
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Verification service temporarily unavailable' });
+  }
+});
+
+// FinAPI Webhook (For asynchronous updates)
+router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
+  console.log('[FinAPI Webhook] Received:', JSON.stringify(req.body));
+  const { transaction_id, status, reference } = req.body;
+  
+  if (!transaction_id && !reference) {
+    return res.status(400).json({ error: 'Missing transaction_id or reference' });
+  }
+
+  const idToUse = transaction_id || reference;
+  const statusLower = (status || '').toLowerCase();
+  const isSuccess = statusLower === 'success' || statusLower === 'completed';
+  const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || statusLower.includes('cancel') || statusLower.includes('fail');
+
+  try {
+    if (!supabaseAdmin) throw new Error('Supabase admin not configured');
+
+    // Find the transaction
+    const { data: tx } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .or(`external_id.eq.${idToUse},metadata->>internal_ref.eq.${idToUse}`)
+      .eq('status', 'pending')
+      .maybeSingle();
+
+    if (tx) {
+      if (isSuccess) {
+        console.log(`[FinAPI Webhook] Crediting user ${tx.user_id} for transaction ${idToUse}`);
+        
+        const usdAmount = Number(tx.amount);
+        const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+          t_id: tx.id,
+          u_id: tx.user_id,
+          amount: usdAmount
+        });
+
+        if (rpcError) {
+          console.error('[FinAPI Webhook] RPC Balance update failed:', rpcError);
+          await supabaseAdmin.from('transactions')
+            .update({ 
+              status: 'completed', 
+              method: `FinAPI Webhook (${idToUse})` 
+            })
+            .eq('id', tx.id);
+            
+          const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+          if (userData) {
+            const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
+            await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+          }
+        } else {
+          await supabaseAdmin.from('transactions')
+            .update({ 
+              status: 'completed',
+              method: `FinAPI Webhook (${idToUse})` 
+            })
+            .eq('id', tx.id);
+        }
+      } else if (isFailed) {
+        console.log(`[FinAPI Webhook] Rejecting transaction ${idToUse} (Status: ${status})`);
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'rejected', 
+            metadata: { ...tx.metadata, webhook_payload: req.body } 
+          })
+          .eq('id', tx.id);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[FinAPI Webhook] Error:', error.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

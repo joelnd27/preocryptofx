@@ -111,6 +111,7 @@ export interface Transaction {
   accountType: AccountType;
   method?: string;
   externalId?: string;
+  metadata?: any;
 }
 
 export interface CryptoPrice {
