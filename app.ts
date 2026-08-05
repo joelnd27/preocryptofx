@@ -505,7 +505,7 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
         await supabaseAdmin.from('transactions')
           .update({ 
             status: 'rejected', 
-            metadata: { ...tx.metadata, webhook_payload: req.body } 
+            metadata: { ...tx.metadata, ...req.body, webhook_update: true } 
           })
           .eq('id', tx.id);
       }

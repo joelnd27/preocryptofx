@@ -514,9 +514,9 @@ export default function AdminPanel() {
                               <div className="flex items-center gap-2">
                                 <XCircle size={12} className="text-rose-500" /> REJECTED
                               </div>
-                              {t.metadata?.client_reason && (
-                                <p className="text-[8px] text-rose-400 font-medium italic lowercase max-w-[100px] truncate" title={t.metadata.client_reason}>
-                                  {t.metadata.client_reason}
+                              {(t.metadata?.client_reason || t.metadata?.message) && (
+                                <p className="text-[8px] text-rose-400 font-medium italic lowercase max-w-[100px] truncate" title={t.metadata.client_reason || t.metadata.message}>
+                                  {t.metadata.client_reason || t.metadata.message}
                                 </p>
                               )}
                             </div>
