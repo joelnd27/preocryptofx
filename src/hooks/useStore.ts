@@ -2041,16 +2041,25 @@ export function useStore() {
   };
 
   // Admin Functions
-  const getAllUsers = async () => {
+  const getAllUsers = async (searchQuery?: string) => {
     let dbUsers: any[] = [];
-    const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
     
-    if (isSupabaseConfigured() && isMasterAdmin) {
-      const { data, error } = await supabase
+    if (isSupabaseConfigured() && (isMasterAdmin || user?.role === 'admin')) {
+      let query = supabase
         .from('users')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(500);
+        .order('created_at', { ascending: false });
+      
+      if (searchQuery && searchQuery.trim().length > 0) {
+        // Use ILIKE for case-insensitive search on username or email
+        const s = `%${searchQuery.trim()}%`;
+        query = query.or(`username.ilike.${s},email.ilike.${s}`);
+      } else {
+        query = query.limit(500);
+      }
+
+      const { data, error } = await query;
       
       if (!error && data) {
         dbUsers = data.map((u) => {
@@ -2103,10 +2112,11 @@ export function useStore() {
     });
   };
 
-  const getAllTransactions = async () => {
-    const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
-    if (!isSupabaseConfigured() || !isMasterAdmin) return [];
-    const { data, error } = await supabase
+  const getAllTransactions = async (searchQuery?: string) => {
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
+    if (!isSupabaseConfigured() || (!isMasterAdmin && user?.role !== 'admin')) return [];
+
+    let query = supabase
       .from('transactions')
       .select(`
         *,
@@ -2115,8 +2125,17 @@ export function useStore() {
           email
         )
       `)
-      .order('created_at', { ascending: false })
-      .limit(3000);
+      .order('created_at', { ascending: false });
+
+    if (searchQuery && searchQuery.trim().length > 0) {
+      const s = `%${searchQuery.trim()}%`;
+      // Correct syntax for filtering on joined tables in Supabase
+      query = query.or(`username.ilike.${s},email.ilike.${s}`, { foreignTable: 'users' });
+    } else {
+      query = query.limit(3000);
+    }
+    
+    const { data, error } = await query;
     
     if (error) {
       console.error('Error fetching all transactions:', error);
@@ -2172,7 +2191,7 @@ export function useStore() {
   };
 
   const getGlobalStats = async () => {
-    const isMasterAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
     if (!isSupabaseConfigured() || !isMasterAdmin) return { totalDeposited: 0, userCount: 0 };
     
     const { count: userCount, error: countError } = await supabase

@@ -21,7 +21,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
 
-const ADMIN_EMAILS = ['wren20688@gmail.com'];
+const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
 type AdminTab = 'users' | 'deposits' | 'copy-traders';
@@ -39,19 +39,43 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const isAdmin = (user?.email || '').toLowerCase() === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isAdmin = ADMIN_EMAILS.includes((user?.email || '').toLowerCase());
     if (!isAdmin) return;
-    loadData();
-  }, [user]);
 
-  const loadData = async () => {
+    // Initial load or search clear
+    if (search.trim() === '') {
+      loadData();
+    }
+
+    // Debounced search
+    const timer = setTimeout(() => {
+      if (search.trim() !== '') {
+        loadData(search);
+      }
+    }, 500);
+
+    // Auto-refresh every 60 seconds if no active search
+    const refreshInterval = setInterval(() => {
+      if (search.trim() === '' && !loading) {
+        console.log('[Admin] Auto-refreshing data...');
+        loadData();
+      }
+    }, 60000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(refreshInterval);
+    };
+  }, [user?.id, search]);
+
+  const loadData = async (searchQuery?: string) => {
     setLoading(true);
     try {
-      console.log('[Admin] Fetching platform data...');
+      console.log(`[Admin] Fetching platform data (search: ${searchQuery || 'none'})...`);
       const [allUsers, globalStats, allTrans] = await Promise.all([
-        getAllUsers(),
+        getAllUsers(searchQuery),
         getGlobalStats(),
-        getAllTransactions()
+        getAllTransactions(searchQuery)
       ]);
 
       // Optimize: Map transactions to users for faster lookup
@@ -128,7 +152,7 @@ export default function AdminPanel() {
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  if ((user?.email || '').toLowerCase() !== 'wren20688@gmail.com' || user?.id !== '304020c9-3695-4f8f-85fe-9ee12eda8152') {
+  if (!ADMIN_EMAILS.includes((user?.email || '').toLowerCase())) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">

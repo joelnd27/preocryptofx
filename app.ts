@@ -36,6 +36,58 @@ if (!supabaseAdmin) {
   console.warn('[Supabase] SUPABASE_SERVICE_ROLE_KEY is missing. Admin operations will fail.');
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
+
+  // Auto-reject stale transactions (older than 3 minutes)
+  const cleanupStaleTransactions = async (forceAll = false) => {
+    try {
+      if (!supabaseAdmin) return;
+
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+      
+      console.log(`[Auto-Reject] Running cleanup (forceAll: ${forceAll}, threshold: ${threeMinutesAgo})`);
+
+      const updateData = { 
+        status: 'rejected', 
+        metadata: { 
+          auto_rejected: true, 
+          message: forceAll ? 'System cleared pending transactions' : 'Transaction expired after 3 minutes',
+          rejected_at: new Date().toISOString()
+        } 
+      };
+
+      let query = supabaseAdmin
+        .from('transactions')
+        .update(updateData)
+        .eq('status', 'pending');
+
+      if (!forceAll) {
+        query = query.lt('created_at', threeMinutesAgo);
+      }
+
+      const { data, error } = await query.select('id');
+      
+      if (error) {
+        console.error('[Auto-Reject] Update error:', error.code, error.message, error.details);
+      } else if (data && data.length > 0) {
+        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions.`);
+      } else {
+        console.log('[Auto-Reject] No stale transactions found.');
+      }
+    } catch (err: any) {
+      console.error('[Auto-Reject] Exception during cleanup:', err.message || err);
+    }
+  };
+
+  // Run cleanup every 60 seconds
+  setInterval(() => cleanupStaleTransactions(false), 60 * 1000);
+  
+  // One-time sweep: Reject all CURRENTLY pending transactions as requested
+  // Then run normal 3-minute cleanup
+  setTimeout(async () => {
+    console.log('[Maintenance] Clearing ALL currently pending transactions...');
+    await cleanupStaleTransactions(true);
+    console.log('[Maintenance] Initial sweep complete.');
+  }, 5000);
 }
 
 // HashBack Config
@@ -369,15 +421,17 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
 
     if (isSuccess) {
       if (supabaseAdmin) {
-        const { data: tx } = await supabaseAdmin
+        // More robust lookup
+        const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('*')
-          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id}`)
-          .eq('status', 'pending')
-          .maybeSingle();
+          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id},id.eq.${transaction_id}`)
+          .eq('status', 'pending');
+
+        const tx = txList?.[0];
 
         if (tx) {
-          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} for transaction ${transaction_id}`);
+          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} for transaction ${tx.id}`);
           
           const usdAmount = Number(tx.amount);
           const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
@@ -397,18 +451,33 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
           } else {
             await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
           }
+        } else {
+          console.log(`[FinAPI Verify] No pending transaction found for: ${transaction_id}`);
         }
       }
     } else if (isFailed) {
        if (supabaseAdmin) {
         console.log(`[FinAPI Verify] Marking transaction ${transaction_id} as rejected (${apiData.status})`);
-        await supabaseAdmin.from('transactions')
-          .update({ 
-            status: 'rejected', 
-            metadata: { ...apiData, verification_error: true } 
-          })
-          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id}`)
+        
+        // Find first, then update by ID for safety
+        const { data: txList } = await supabaseAdmin
+          .from('transactions')
+          .select('id')
+          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id},id.eq.${transaction_id}`)
           .eq('status', 'pending');
+        
+        const tx = txList?.[0];
+        if (tx) {
+          await supabaseAdmin.from('transactions')
+            .update({ 
+              status: 'rejected', 
+              metadata: { ...apiData, verification_error: true, updated_at: new Date().toISOString() } 
+            })
+            .eq('id', tx.id);
+          console.log(`[FinAPI Verify] Successfully rejected transaction ${tx.id}`);
+        } else {
+          console.log(`[FinAPI Verify] Failed to find transaction to reject: ${transaction_id}`);
+        }
       }
     }
 
@@ -423,13 +492,22 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
 
     if (isTerminalFailure) {
       if (supabaseAdmin) {
-        await supabaseAdmin.from('transactions')
-          .update({ 
-            status: 'rejected', 
-            metadata: { ...errorData, api_error: true } 
-          })
-          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id}`)
+        const { data: txList } = await supabaseAdmin
+          .from('transactions')
+          .select('id')
+          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id},id.eq.${transaction_id}`)
           .eq('status', 'pending');
+        
+        const tx = txList?.[0];
+        if (tx) {
+          await supabaseAdmin.from('transactions')
+            .update({ 
+              status: 'rejected', 
+              metadata: { ...errorData, api_error: true, updated_at: new Date().toISOString() } 
+            })
+            .eq('id', tx.id);
+          console.log(`[FinAPI Verify] Terminal failure update for ${tx.id}`);
+        }
       }
       return res.json({ 
         success: false, 
@@ -460,12 +538,13 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
     if (!supabaseAdmin) throw new Error('Supabase admin not configured');
 
     // Find the transaction
-    const { data: tx } = await supabaseAdmin
+    const { data: txList } = await supabaseAdmin
       .from('transactions')
       .select('*')
-      .or(`external_id.eq.${idToUse},metadata->>internal_ref.eq.${idToUse}`)
-      .eq('status', 'pending')
-      .maybeSingle();
+      .or(`external_id.eq.${idToUse},metadata->>internal_ref.eq.${idToUse},id.eq.${idToUse}`)
+      .eq('status', 'pending');
+    
+    const tx = txList?.[0];
 
     if (tx) {
       if (isSuccess) {
@@ -1026,7 +1105,7 @@ router.post('/admin/update-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const isMasterAdmin = (user.email || '').toLowerCase() === 'wren20688@gmail.com' && user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user.email || '').toLowerCase());
     
     if (!isMasterAdmin) {
       console.warn(`Unauthorized admin attempt by: Email[${user.email}] ID[${user.id}]`);
@@ -1056,7 +1135,7 @@ router.post('/admin/credit-user', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const isMasterAdmin = (user.email || '').toLowerCase() === 'wren20688@gmail.com' && user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user.email || '').toLowerCase());
     
     if (!isMasterAdmin) {
       console.warn(`Unauthorized credit attempt by: Email[${user.email}] ID[${user.id}]`);
