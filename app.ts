@@ -38,6 +38,12 @@ if (!supabaseAdmin) {
   console.log('[Supabase] Admin client initialized successfully.');
 
   // Auto-reject stale transactions (older than 3 minutes)
+  console.log('[App] Environment Check:', {
+    hasSyncUrl: !!process.env.ONEAPP_SYNC_URL,
+    hasWebhookSecret: !!process.env.PREOCRYPTOFX_WEBHOOK_SECRET,
+    rate: process.env.USD_KES_RATE || '129.98'
+  });
+
   const cleanupStaleTransactions = async (forceAll = false) => {
     try {
       if (!supabaseAdmin) return;
@@ -47,12 +53,7 @@ if (!supabaseAdmin) {
       console.log(`[Auto-Reject] Running cleanup (forceAll: ${forceAll}, threshold: ${threeMinutesAgo})`);
 
       const updateData = { 
-        status: 'rejected', 
-        metadata: { 
-          auto_rejected: true, 
-          message: forceAll ? 'System cleared pending transactions' : 'Transaction expired after 3 minutes',
-          rejected_at: new Date().toISOString()
-        } 
+        status: 'rejected'
       };
 
       let query = supabaseAdmin
@@ -172,6 +173,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
       };
 
       console.log(`[OneApp Sync] Sending ${kesAmount} KES to ${ONEAPP_SYNC_URL} (Rate: ${kesRate})`);
+      console.log(`[OneApp Sync] Payload:`, JSON.stringify(payload));
       
       const signature = crypto
         .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET)
@@ -192,7 +194,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
       if (supabaseAdmin) {
         await supabaseAdmin.from('transactions')
           .update({ 
-            description: `Withdrawal synced to OneApp (${kesAmount} KES)` 
+            method: `Withdrawal synced to OneApp (${kesAmount} KES)` 
           })
           .eq('id', transactionId);
       }
@@ -205,9 +207,14 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
     }
   };
 
-  performSync();
-
-  return res.json({ success: true, message: 'Withdrawal sync initiated' });
+  // Perform sync and await it for serverless compatibility
+  try {
+    await performSync();
+    return res.json({ success: true, message: 'Withdrawal sync completed successfully' });
+  } catch (err: any) {
+    console.error(`[OneApp Sync] Route error:`, err.message);
+    return res.status(500).json({ success: false, error: 'Sync failed to complete', details: err.message });
+  }
 });
 
 // Config Health Check
@@ -359,12 +366,7 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
         
         const { error: updateError } = await supabaseAdmin.from('transactions')
           .update({ 
-            external_id: finalExternalId,
-            metadata: { 
-              ...response.data, 
-              internal_ref: reference,
-              initiated_at: new Date().toISOString()
-            }
+            external_id: finalExternalId
           })
           .eq('external_id', reference);
 
@@ -425,7 +427,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('*')
-          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id},id.eq.${transaction_id}`)
+          .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`)
           .eq('status', 'pending');
 
         const tx = txList?.[0];
@@ -463,15 +465,14 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('id')
-          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id},id.eq.${transaction_id}`)
+          .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`)
           .eq('status', 'pending');
         
         const tx = txList?.[0];
         if (tx) {
           await supabaseAdmin.from('transactions')
             .update({ 
-              status: 'rejected', 
-              metadata: { ...apiData, verification_error: true, updated_at: new Date().toISOString() } 
+              status: 'rejected' 
             })
             .eq('id', tx.id);
           console.log(`[FinAPI Verify] Successfully rejected transaction ${tx.id}`);
@@ -495,15 +496,14 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('id')
-          .or(`external_id.eq.${transaction_id},metadata->>internal_ref.eq.${transaction_id},id.eq.${transaction_id}`)
+          .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`)
           .eq('status', 'pending');
         
         const tx = txList?.[0];
         if (tx) {
           await supabaseAdmin.from('transactions')
             .update({ 
-              status: 'rejected', 
-              metadata: { ...errorData, api_error: true, updated_at: new Date().toISOString() } 
+              status: 'rejected'
             })
             .eq('id', tx.id);
           console.log(`[FinAPI Verify] Terminal failure update for ${tx.id}`);
@@ -541,7 +541,7 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
     const { data: txList } = await supabaseAdmin
       .from('transactions')
       .select('*')
-      .or(`external_id.eq.${idToUse},metadata->>internal_ref.eq.${idToUse},id.eq.${idToUse}`)
+      .or(`external_id.eq.${idToUse},id.eq.${idToUse}`)
       .eq('status', 'pending');
     
     const tx = txList?.[0];
@@ -583,8 +583,7 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
         console.log(`[FinAPI Webhook] Rejecting transaction ${idToUse} (Status: ${status})`);
         await supabaseAdmin.from('transactions')
           .update({ 
-            status: 'rejected', 
-            metadata: { ...tx.metadata, ...req.body, webhook_update: true } 
+            status: 'rejected'
           })
           .eq('id', tx.id);
       }
@@ -773,8 +772,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           console.warn('[HashBack Webhook] RPC failed, falling back to manual update:', rpcError.message);
           
           await supabaseAdmin.from('transactions').update({ 
-            status: 'completed',
-            metadata: { ...tx.metadata, ...req.body, webhook_processed: true, manual_fallback: true }
+            status: 'completed'
           }).eq('id', tx.id);
 
           const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
@@ -787,8 +785,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
         console.log(`[HashBack Webhook] Successfully processed completed transaction ${reference}`);
       } else if (tx && failure) {
         await supabaseAdmin.from('transactions').update({ 
-          status: 'rejected',
-          metadata: { ...tx.metadata, ...req.body, webhook_failure: true }
+          status: 'rejected'
         }).eq('id', tx.id);
         console.log(`[HashBack Webhook] Marked transaction ${reference} as rejected/cancelled`);
       } else if (!tx) {
@@ -833,18 +830,12 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
         console.log(`[HashBack Verify] Status for ${reference}:`, tx.status);
         
         if (tx.status !== 'pending') {
-          const metadata = tx.metadata || {};
-          const message = metadata.result_desc || 
-                          metadata.webhook_payload?.ResultDesc || 
-                          tx.description || 
-                          `Transaction ${tx.status}`;
-
           return res.json({
             success: true,
             status: tx.status,
             isSuccess: tx.status === 'completed' || tx.status === 'success',
             isFailed: tx.status === 'rejected' || tx.status === 'failed',
-            message: message
+            message: `Transaction ${tx.status}`
           });
         }
       } else {
@@ -906,8 +897,7 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
           console.warn('[HashBack Update] RPC failed, falling back to manual update:', rpcError.message);
           
           await supabaseAdmin.from('transactions').update({ 
-            status: 'completed',
-            metadata: { ...tx.metadata, ...metadata, client_callback: true, callback_status: status, manual_fallback: true }
+            status: 'completed'
           }).eq('id', tx.id);
 
           const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
@@ -921,8 +911,7 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
         return res.json({ success: true, credited: true, amount: usdToCredit });
       } else if (isFailure) {
         await supabaseAdmin.from('transactions').update({ 
-          status: 'rejected',
-          metadata: { ...tx.metadata, ...metadata, client_reason: message, client_callback: true, callback_status: status }
+          status: 'rejected'
         }).eq('id', tx.id);
         
         console.log(`[HashBack Update] Marked ${reference} as rejected (Client reason: ${message})`);
@@ -1226,28 +1215,6 @@ app.use('/.netlify/functions/api', router);
 
 export default app;
 
-// Background task to mark stale pending transactions as failed
-setInterval(async () => {
-  if (!supabaseAdmin || !supabaseUrl) return;
-
-  try {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    
-    const { data, error } = await supabaseAdmin
-      .from('transactions')
-      .update({ status: 'rejected' })
-      .eq('status', 'pending')
-      .neq('status', 'completed')
-      .eq('type', 'DEPOSIT')
-      .lt('timestamp', twentyFourHoursAgo)
-      .select();
-    
-    if (error) console.error('Error cleaning up stale transactions:', error);
-  } catch (err) {
-    console.error('Stale transaction cleanup exception:', err);
-  }
-}, 30 * 60 * 1000);
-
 // Background task for Automatic Account Verification (Offline)
 setInterval(async () => {
   if (!supabaseAdmin) return;
@@ -1285,3 +1252,48 @@ setInterval(async () => {
     console.error('Offline Verification Sync Exception:', err);
   }
 }, 60 * 1000);
+
+// Background task for Copy Trader Simulation
+setInterval(async () => {
+  if (!supabaseAdmin) return;
+
+  try {
+    const { data: traders, error } = await supabaseAdmin
+      .from('copy_traders')
+      .select('*')
+      .eq('status', 'active');
+
+    if (error || !traders) return;
+
+    for (const trader of traders) {
+      // Logic for profit/follower changes
+      const currentMaxCap = trader.is_simulated ? 150000 : 1000000;
+      const chance = Math.random();
+      let profitChange = 0;
+
+      if (chance < 0.3) {
+        profitChange = (Math.random() * 50) + 10; // Gain $10-$60
+      } else if (chance < 0.45) {
+        profitChange = -((Math.random() * 30) + 5); // Loss $5-$35
+      }
+
+      if (profitChange === 0 && Math.random() > 0.1) continue; // Skip most silent turns
+
+      const newTotalProfit = Math.min(currentMaxCap, Math.max(100, (Number(trader.total_profit) || 0) + profitChange));
+      
+      const followerChange = Math.floor(Math.random() * 7) - 2; 
+      const minFollowers = trader.is_simulated ? 150 : 0;
+      const newFollowers = Math.max(minFollowers, (Number(trader.followers) || 0) + followerChange);
+
+      await supabaseAdmin
+        .from('copy_traders')
+        .update({
+          total_profit: newTotalProfit,
+          followers: newFollowers
+        })
+        .eq('id', trader.id);
+    }
+  } catch (err) {
+    console.error('Copy Trader Simulation Exception:', err);
+  }
+}, 60 * 1000); // Run every minute on server
