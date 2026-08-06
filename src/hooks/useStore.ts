@@ -1546,6 +1546,8 @@ export function useStore() {
     if (transaction.type === 'WITHDRAW') {
       newBalance = Number((user[balanceKey] - transaction.amount).toFixed(2));
       isInternalUpdate.current = true;
+      // Auto-reset flag to allow sync updates to resume
+      setTimeout(() => { isInternalUpdate.current = false; }, 5000);
     }
 
     if (isSupabaseConfigured()) {
@@ -2371,6 +2373,8 @@ export function useStore() {
     if (!user) return;
     
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
+
     const now = Date.now();
     if (isSupabaseConfigured()) {
       await supabase.from('users').update({
@@ -2413,6 +2417,8 @@ export function useStore() {
     if (!user) return;
     
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
+
     const updatedUser = { ...user, ...updates };
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));

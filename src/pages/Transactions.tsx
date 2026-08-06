@@ -117,7 +117,7 @@ export default function Transactions() {
             console.log(`[Transactions] Poll result for ${currentTxRef}:`, result.status);
             
             const isSuccess = result.isSuccess || ['success', 'completed', 'successful', 'done', 'paid'].includes((result.status || '').toLowerCase()) || result.ResultCode === 0;
-            const isFailed = result.isFailed || ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied'].includes((result.status || '').toLowerCase());
+            const isFailed = result.isFailed || ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes((result.status || '').toLowerCase());
 
             if (isSuccess) {
               console.log('[Transactions] Payment SUCCESS detected via polling');

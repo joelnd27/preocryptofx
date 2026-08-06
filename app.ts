@@ -102,7 +102,11 @@ const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY;
 const FINAPI_BASE_URL = 'https://stkpush.co.ke/api';
 
 // PreoCryptoFX Webhook Config
-const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET || 'MySecureWebhookSecret123!';
+const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET;
+
+if (!PREOCRYPTOFX_WEBHOOK_SECRET) {
+  console.error('[OneApp Sync] CRITICAL: PREOCRYPTOFX_WEBHOOK_SECRET is NOT set! Sync to OneApp will likely fail authentication.');
+}
 
 // API Routes
 const router = express.Router();
@@ -176,14 +180,17 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
       console.log(`[OneApp Sync] Payload:`, JSON.stringify(payload));
       
       const signature = crypto
-        .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET)
+        .createHmac('sha256', PREOCRYPTOFX_WEBHOOK_SECRET || 'dev-secret')
         .update(JSON.stringify(payload))
         .digest('hex');
+
+      console.log(`[OneApp Sync] Secret used (masked): ${(PREOCRYPTOFX_WEBHOOK_SECRET || 'dev').substring(0, 3)}***`);
 
       const response = await axios.post(ONEAPP_SYNC_URL, payload, {
         timeout: 15000,
         headers: {
           'Content-Type': 'application/json',
+          'X-Signature': signature,
           'x-preo-signature': signature,
           'User-Agent': 'PreoCryptoFX-Sync/1.0'
         }
@@ -419,7 +426,9 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
     const apiData = response.data;
     const statusLower = (apiData.status || '').toLowerCase();
     const isSuccess = apiData.success === true && (statusLower === 'success' || statusLower === 'completed');
-    const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || statusLower.includes('failed') || statusLower.includes('cancel');
+    const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
+                    statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
+                    statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline');
 
     if (isSuccess) {
       if (supabaseAdmin) {
@@ -489,7 +498,15 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
     console.error('[FinAPI Verify] Error:', errorStatus, JSON.stringify(errorData || error.message));
     
     const apiStatusLower = (errorData?.status || '').toLowerCase();
-    const isTerminalFailure = errorData && (apiStatusLower === 'failed' || errorData.error_code === 'VERIFICATION_FAILED' || apiStatusLower.includes('cancel'));
+    const isTerminalFailure = errorData && (
+      apiStatusLower === 'failed' || 
+      apiStatusLower === 'cancelled' ||
+      apiStatusLower === 'rejected' ||
+      apiStatusLower === 'declined' ||
+      errorData.error_code === 'VERIFICATION_FAILED' || 
+      apiStatusLower.includes('cancel') ||
+      apiStatusLower.includes('decline')
+    );
 
     if (isTerminalFailure) {
       if (supabaseAdmin) {
@@ -532,7 +549,9 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
   const idToUse = transaction_id || reference;
   const statusLower = (status || '').toLowerCase();
   const isSuccess = statusLower === 'success' || statusLower === 'completed';
-  const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || statusLower.includes('cancel') || statusLower.includes('fail');
+  const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
+                  statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
+                  statusLower.includes('cancel') || statusLower.includes('fail') || statusLower.includes('decline');
 
   try {
     if (!supabaseAdmin) throw new Error('Supabase admin not configured');
