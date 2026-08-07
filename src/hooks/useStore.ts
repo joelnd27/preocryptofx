@@ -2535,7 +2535,8 @@ export function useStore() {
         
         // Use botStake (already calculated above with priority)
         const stake = Math.max(10, botStake);
-        baseAmount = (stake * 0.01 * (1 + Math.random() * 2)) * riskMultiplier;
+        // Significantly increase custom bot profit scaling: 2% to 8% of stake
+        baseAmount = (stake * (0.02 + Math.random() * 0.06)) * riskMultiplier;
       } else {
         const commonBots: Record<string, string> = {
           scalping: 'Scalper Pro v4.2',
@@ -2565,8 +2566,9 @@ export function useStore() {
         
         // Use botStake (already calculated above with priority)
         const stake = Math.max(10, botStake);
-        // Base profit is between 0.5% and 2.5% of stake per "trade"
-        baseAmount = (stake * (0.005 + Math.random() * 0.02));
+        // Increase base profit to be between 1.5% and 5.5% of stake per "trade"
+        // This makes a $100 stake yield $1.50 - $5.50 per win instead of pennies
+        baseAmount = (stake * (0.015 + Math.random() * 0.04));
       }
 
         const isDemo = currentUser.activeAccount === 'DEMO';
