@@ -41,7 +41,7 @@ if (!supabaseAdmin) {
   console.log('[App] Environment Check:', {
     hasSyncUrl: !!process.env.ONEAPP_SYNC_URL,
     hasWebhookSecret: !!process.env.PREOCRYPTOFX_WEBHOOK_SECRET,
-    rate: process.env.USD_KES_RATE || '129.98'
+    rate: process.env.USD_KES_RATE || '129.58'
   });
 
   const cleanupStaleTransactions = async (forceAll = false) => {
@@ -50,27 +50,23 @@ if (!supabaseAdmin) {
 
       const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
       
-      console.log(`[Auto-Reject] Running cleanup (forceAll: ${forceAll}, threshold: ${threeMinutesAgo})`);
+      console.log(`[Auto-Reject] Running cleanup (threshold: ${threeMinutesAgo})`);
 
       const updateData = { 
         status: 'rejected'
       };
 
-      let query = supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('transactions')
         .update(updateData)
-        .eq('status', 'pending');
-
-      if (!forceAll) {
-        query = query.lt('created_at', threeMinutesAgo);
-      }
-
-      const { data, error } = await query.select('id');
+        .eq('status', 'pending')
+        .lt('created_at', threeMinutesAgo)
+        .select('id');
       
       if (error) {
         console.error('[Auto-Reject] Update error:', error.code, error.message, error.details);
       } else if (data && data.length > 0) {
-        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions.`);
+        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 3 mins.`);
       } else {
         console.log('[Auto-Reject] No stale transactions found.');
       }
@@ -79,16 +75,8 @@ if (!supabaseAdmin) {
     }
   };
 
-  // Run cleanup every 60 seconds
+  // Run cleanup every 1 minute
   setInterval(() => cleanupStaleTransactions(false), 60 * 1000);
-  
-  // One-time sweep: Reject all CURRENTLY pending transactions as requested
-  // Then run normal 3-minute cleanup
-  setTimeout(async () => {
-    console.log('[Maintenance] Clearing ALL currently pending transactions...');
-    await cleanupStaleTransactions(true);
-    console.log('[Maintenance] Initial sweep complete.');
-  }, 5000);
 }
 
 // HashBack Config
@@ -164,7 +152,7 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
       }
 
       const usdAmount = parseFloat(String(amount));
-      const kesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+      const kesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
       const kesAmount = Math.round(usdAmount * kesRate);
 
       const payload = {
@@ -231,7 +219,7 @@ router.get('/hashback/config-check', (req, res) => {
     hasAccountId: !!HASHBACK_ACCOUNT_ID,
     hasApiKey: !!HASHBACK_API_KEY,
     hasWebhookSecret: !!HASHBACK_WEBHOOK_SECRET,
-    rate: process.env.USD_KES_RATE || '129.98',
+    rate: process.env.USD_KES_RATE || '129.58',
     nodeEnv: process.env.NODE_ENV
   });
 });
@@ -243,7 +231,7 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
   console.log(`[HashBack] Initiation Request: Amount=${amount}, User=${userId}`);
   
   // Convert USD to KES
-  const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+  const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
   const usdAmount = parseFloat(String(amount || 0));
   const kesAmount = Math.ceil(usdAmount * usdKesRate);
   
@@ -307,12 +295,12 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing phone_number, amount, or userId' });
   }
 
-  const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+  const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
   const usdAmount = parseFloat(String(amount || 0));
   const kesAmount = Math.ceil(usdAmount * usdKesRate);
 
-  if (usdAmount < 10) {
-    return res.status(400).json({ success: false, error: 'Minimum deposit is $10' });
+  if (usdAmount < 16) {
+    return res.status(400).json({ success: false, error: 'Minimum deposit is $16' });
   }
 
   const reference = `FIN${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -414,6 +402,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
     if (!FINAPI_SECRET_KEY) throw new Error('FINAPI_SECRET_KEY missing');
 
     const response = await axios.get(`${FINAPI_BASE_URL}/verify-payment/${transaction_id}/`, {
+      timeout: 10000,
       headers: {
         'Authorization': `Bearer ${FINAPI_SECRET_KEY}`,
         'Origin': 'https://preocryptofx.com',
@@ -421,28 +410,56 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
       }
     });
 
-    console.log(`[FinAPI Verify] Result:`, response.data);
+    console.log(`[FinAPI Verify] Result for ${transaction_id}:`, response.data);
 
     const apiData = response.data;
     const statusLower = (apiData.status || '').toLowerCase();
-    const isSuccess = apiData.success === true && (statusLower === 'success' || statusLower === 'completed');
+    const apiSuccess = apiData.success === true || apiData.success === 'true' || apiData.success === 1 || apiData.success === '1';
+    
+    // More robust success check: either explicit success flag OR a successful status
+    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'settled'].includes(statusLower)) || 
+                     ['success', 'completed'].includes(statusLower);
+                     
     const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
                     statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
-                    statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline');
+                    statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline') ||
+                    (apiData.message || '').toLowerCase().includes('cancel') ||
+                    (apiData.message || '').toLowerCase().includes('failed');
+
+    // Clean up unhelpful messages - do NOT map 'status retrieved' to failure yet
+    if (apiData.message && apiData.message.toLowerCase().includes('status retrieved')) {
+      // Just keep it as is or empty, don't force 'Transaction failed'
+      // This allows polling to continue if the status isn't terminal
+    }
 
     if (isSuccess) {
       if (supabaseAdmin) {
-        // More robust lookup
+        console.log(`[FinAPI Verify] Success confirmed for ${transaction_id}. Status: ${apiData.status}`);
+        // More robust lookup: try external_id then fallback to id
         const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('*')
           .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`)
           .eq('status', 'pending');
 
-        const tx = txList?.[0];
+        let tx = txList?.[0];
+        
+        // If not found in pending, check if it was already completed (maybe we missed the success log)
+        if (!tx) {
+           const { data: completedTx } = await supabaseAdmin
+            .from('transactions')
+            .select('*')
+            .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`)
+            .eq('status', 'completed');
+            
+           if (completedTx?.[0]) {
+             console.log(`[FinAPI Verify] Transaction ${transaction_id} was already completed.`);
+             return res.json(apiData);
+           }
+        }
 
         if (tx) {
-          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} for transaction ${tx.id}`);
+          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} for transaction ${tx.id}. Amount: $${tx.amount}`);
           
           const usdAmount = Number(tx.amount);
           const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
@@ -452,25 +469,26 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
           });
 
           if (rpcError) {
-            console.error('[FinAPI Verify] RPC Balance update failed:', rpcError);
+            console.error('[FinAPI Verify] RPC Balance update failed, falling back to manual update:', rpcError);
             await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
             const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
             if (userData) {
               const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
               await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+              console.log(`[FinAPI Verify] Manual balance update successful for user ${tx.user_id}. New balance: $${newBalance}`);
             }
           } else {
+            console.log(`[FinAPI Verify] Balance successfully incremented via RPC for transaction ${tx.id}`);
             await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
           }
         } else {
-          console.log(`[FinAPI Verify] No pending transaction found for: ${transaction_id}`);
+          console.log(`[FinAPI Verify] No pending transaction found for: ${transaction_id}. It might have been already processed.`);
         }
       }
     } else if (isFailed) {
        if (supabaseAdmin) {
         console.log(`[FinAPI Verify] Marking transaction ${transaction_id} as rejected (${apiData.status})`);
         
-        // Find first, then update by ID for safety
         const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('id')
@@ -480,13 +498,9 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         const tx = txList?.[0];
         if (tx) {
           await supabaseAdmin.from('transactions')
-            .update({ 
-              status: 'rejected' 
-            })
+            .update({ status: 'rejected' })
             .eq('id', tx.id);
           console.log(`[FinAPI Verify] Successfully rejected transaction ${tx.id}`);
-        } else {
-          console.log(`[FinAPI Verify] Failed to find transaction to reject: ${transaction_id}`);
         }
       }
     }
@@ -495,9 +509,9 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
   } catch (error: any) {
     const errorData = error.response?.data;
     const errorStatus = error.response?.status;
-    console.error('[FinAPI Verify] Error:', errorStatus, JSON.stringify(errorData || error.message));
     
     const apiStatusLower = (errorData?.status || '').toLowerCase();
+    const apiMessage = errorData?.message || '';
     const isTerminalFailure = errorData && (
       apiStatusLower === 'failed' || 
       apiStatusLower === 'cancelled' ||
@@ -505,10 +519,12 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
       apiStatusLower === 'declined' ||
       errorData.error_code === 'VERIFICATION_FAILED' || 
       apiStatusLower.includes('cancel') ||
-      apiStatusLower.includes('decline')
+      apiStatusLower.includes('decline') ||
+      apiMessage.toLowerCase().includes('cancel')
     );
 
     if (isTerminalFailure) {
+      console.log(`[FinAPI Verify] Terminal failure (e.g. Cancelled) for ${transaction_id}:`, JSON.stringify(errorData));
       if (supabaseAdmin) {
         const { data: txList } = await supabaseAdmin
           .from('transactions')
@@ -519,20 +535,22 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         const tx = txList?.[0];
         if (tx) {
           await supabaseAdmin.from('transactions')
-            .update({ 
-              status: 'rejected'
-            })
+            .update({ status: 'rejected' })
             .eq('id', tx.id);
-          console.log(`[FinAPI Verify] Terminal failure update for ${tx.id}`);
+          console.log(`[FinAPI Verify] Updated terminal failure for ${tx.id}`);
         }
       }
+      let errorMsg = errorData?.message || errorData?.error || 'Verification failed';
+
       return res.json({ 
         success: false, 
         status: 'Failed', 
-        message: errorData.message || 'Verification failed' 
+        isFailed: true,
+        message: errorMsg
       });
     }
 
+    console.error('[FinAPI Verify] Unexpected Error:', errorStatus, JSON.stringify(errorData || error.message));
     res.status(500).json({ success: false, error: 'Verification service temporarily unavailable' });
   }
 });
@@ -548,7 +566,11 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
 
   const idToUse = transaction_id || reference;
   const statusLower = (status || '').toLowerCase();
-  const isSuccess = statusLower === 'success' || statusLower === 'completed';
+  const apiSuccess = req.body.success === true || req.body.success === 'true' || req.body.success === 1 || req.body.success === '1';
+  
+  const isSuccess = (apiSuccess && (statusLower === 'success' || statusLower === 'completed' || statusLower === 'paid' || statusLower === 'settled')) || 
+                   (statusLower === 'success' || statusLower === 'completed');
+                   
   const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
                   statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
                   statusLower.includes('cancel') || statusLower.includes('fail') || statusLower.includes('decline');
@@ -563,11 +585,25 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
       .or(`external_id.eq.${idToUse},id.eq.${idToUse}`)
       .eq('status', 'pending');
     
-    const tx = txList?.[0];
+    let tx = txList?.[0];
+
+    // If not found in pending, check if it was already completed
+    if (!tx) {
+      const { data: completedTx } = await supabaseAdmin
+        .from('transactions')
+        .select('*')
+        .or(`external_id.eq.${idToUse},id.eq.${idToUse}`)
+        .eq('status', 'completed');
+        
+      if (completedTx?.[0]) {
+        console.log(`[FinAPI Webhook] Transaction ${idToUse} was already completed.`);
+        return res.json({ success: true, message: 'Already processed' });
+      }
+    }
 
     if (tx) {
       if (isSuccess) {
-        console.log(`[FinAPI Webhook] Crediting user ${tx.user_id} for transaction ${idToUse}`);
+        console.log(`[FinAPI Webhook] Crediting user ${tx.user_id} for transaction ${idToUse}. Amount: $${tx.amount}`);
         
         const usdAmount = Number(tx.amount);
         const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
@@ -577,11 +613,11 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
         });
 
         if (rpcError) {
-          console.error('[FinAPI Webhook] RPC Balance update failed:', rpcError);
+          console.error('[FinAPI Webhook] RPC Balance update failed, falling back to manual update:', rpcError);
           await supabaseAdmin.from('transactions')
             .update({ 
               status: 'completed', 
-              method: `FinAPI Webhook (${idToUse})` 
+              method: `FinAPI Webhook manual (${idToUse})` 
             })
             .eq('id', tx.id);
             
@@ -589,12 +625,14 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
           if (userData) {
             const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
             await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+            console.log(`[FinAPI Webhook] Manual balance update successful for user ${tx.user_id}. New balance: $${newBalance}`);
           }
         } else {
+          console.log(`[FinAPI Webhook] Balance successfully incremented via RPC for transaction ${tx.id}`);
           await supabaseAdmin.from('transactions')
             .update({ 
               status: 'completed',
-              method: `FinAPI Webhook (${idToUse})` 
+              method: `FinAPI Webhook RPC (${idToUse})` 
             })
             .eq('id', tx.id);
         }
@@ -775,7 +813,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
       if (tx && success) {
         // Use robust RPC for atomic balance increment and status update
-        const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.98');
+        const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
         const kesReceived = Number(req.body.amount || (req.body.payload && req.body.payload.amount) || req.body.Amount || 0);
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 

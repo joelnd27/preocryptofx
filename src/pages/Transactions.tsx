@@ -67,8 +67,8 @@ export default function Transactions() {
   });
 
   useEffect(() => {
-    // Slightly randomize withdrawal rate between 125 and 128
-    const rate = 125 + (Math.random() * 3);
+    // Slightly randomize withdrawal rate around 129.58
+    const rate = 129.58;
     setCurrentWithdrawalRate(Number(rate.toFixed(2)));
   }, [isModalOpen]);
 
@@ -93,7 +93,7 @@ export default function Transactions() {
           setCurrentTxRef(null);
         } else if (targetTx.status === 'failed' || targetTx.status === 'rejected') {
           setPaymentStatus('FAILED');
-          setErrorMessage('Transaction failed, was rejected, or was cancelled.');
+          setErrorMessage('Transaction failed');
           setCurrentTxRef(null);
         }
       }
@@ -116,8 +116,19 @@ export default function Transactions() {
           if (result) {
             console.log(`[Transactions] Poll result for ${currentTxRef}:`, result.status);
             
-            const isSuccess = result.isSuccess || ['success', 'completed', 'successful', 'done', 'paid'].includes((result.status || '').toLowerCase()) || result.ResultCode === 0;
-            const isFailed = result.isFailed || ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes((result.status || '').toLowerCase());
+            const statusLower = (result.status || '').toLowerCase();
+            const messageLower = (result.message || '').toLowerCase();
+            
+            // Be very strict about success: must be an explicit success status
+            const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled'].includes(statusLower);
+
+            const isFailed = result.isFailed || 
+                            ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
+                            statusLower.includes('fail') || 
+                            statusLower.includes('cancel') || 
+                            statusLower.includes('decline') ||
+                            messageLower.includes('cancelled') ||
+                            messageLower.includes('failed');
 
             if (isSuccess) {
               console.log('[Transactions] Payment SUCCESS detected via polling');
@@ -127,9 +138,21 @@ export default function Transactions() {
             } else if (isFailed) {
               console.log('[Transactions] Payment FAILURE detected via polling');
               setPaymentStatus('FAILED');
-              setErrorMessage(result.message || result.error || 'Transaction was rejected or cancelled.');
+              
+              // Only set error message if it's a real failure message
+              let displayMsg = result.message || result.error || 'Transaction failed';
+              if (displayMsg.toLowerCase().includes('status retrieved')) {
+                // If it just says status retrieved but we are here (isFailed is true), 
+                // it might be a false positive failure or a generic message.
+                // However, we should only be here if isFailed is true.
+                displayMsg = 'Transaction failed';
+              }
+              setErrorMessage(displayMsg);
               setCurrentTxRef(null);
               refreshData();
+            } else {
+              // Not success and not failed -> still pending/processing
+              console.log('[Transactions] Payment still pending/processing...');
             }
           }
         } catch (err) {
@@ -1104,8 +1127,18 @@ export default function Transactions() {
                                 // Try backend check
                                 const result = await checkPaymentStatus(currentTxRef);
                                 
-                                const isSuccess = result?.isSuccess || ['success', 'completed'].includes((result?.status || '').toLowerCase()) || result?.ResultCode === 0;
-                                const isFailed = result?.isFailed || ['failed', 'rejected', 'cancelled', 'error'].includes((result?.status || '').toLowerCase());
+                                const statusLower = (result?.status || '').toLowerCase();
+                                const messageLower = (result?.message || '').toLowerCase();
+                                
+                                const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled'].includes(statusLower);
+                                                 
+                                const isFailed = result?.isFailed || 
+                                                ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
+                                                statusLower.includes('fail') || 
+                                                statusLower.includes('cancel') || 
+                                                statusLower.includes('decline') ||
+                                                messageLower.includes('cancelled') ||
+                                                messageLower.includes('failed');
 
                                 if (isSuccess) {
                                   setPaymentStatus('SUCCESS');
@@ -1113,14 +1146,17 @@ export default function Transactions() {
                                   await refreshData();
                                 } else if (isFailed) {
                                   setPaymentStatus('FAILED');
-                                  setErrorMessage(result?.message || result?.error || 'Transaction was rejected.');
+                                  let msg = result?.message || result?.error || 'Transaction failed';
+                                  setErrorMessage(msg);
                                   setCurrentTxRef(null);
                                   await refreshData();
                                 } else {
+                                  // Still processing - don't fail, keep verifying
+                                  setPaymentStatus('VERIFYING');
                                   setAlertConfig({
                                     isOpen: true,
-                                    title: 'Processing...',
-                                    message: 'Your payment is still being processed. Please ensure you have completed the M-Pesa prompt on your phone.',
+                                    title: 'Still Processing',
+                                    message: 'Your payment status is being retrieved. If you have already paid, it will reflect shortly.',
                                     type: 'info'
                                   });
                                 }

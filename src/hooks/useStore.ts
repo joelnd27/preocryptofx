@@ -1082,6 +1082,7 @@ export function useStore() {
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
   };
 
   const resetDemoBalance = async () => {
@@ -1206,6 +1207,7 @@ export function useStore() {
     
     const newBalance = Number((currentBalance - trade.amount).toFixed(2));
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
     
     if (isSupabaseConfigured()) {
       try {
@@ -1320,6 +1322,7 @@ export function useStore() {
     const currentBalance = currentUser[balanceKey];
     const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((currentBalance + trade.amount + currentProfit).toFixed(2)));
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
 
     // 1. Sync with Supabase first via secure API
     if (isSupabaseConfigured()) {
@@ -1667,6 +1670,7 @@ export function useStore() {
 
     // Optimistic Update: Set state immediately to prevent UI lag/flicker
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
@@ -1723,6 +1727,7 @@ export function useStore() {
     };
 
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
@@ -1759,6 +1764,7 @@ export function useStore() {
     };
 
     isInternalUpdate.current = true;
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
@@ -2321,8 +2327,8 @@ export function useStore() {
   const processDeposit = async (amountUsd: number, phone?: string, onSdkError?: (msg: string) => void, onSdkSuccess?: (data: any) => void, onSdkCancel?: (msg?: string) => void) => {
     if (!user) return false;
     
-    if (amountUsd < 10) {
-      throw new Error('Minimum deposit is $10');
+    if (amountUsd < MIN_DEPOSIT_USD) {
+      throw new Error(`Minimum deposit is $${MIN_DEPOSIT_USD}`);
     }
 
     try {
@@ -2867,6 +2873,7 @@ export function useStore() {
         if (!session) return false;
 
         isInternalUpdate.current = true;
+        setTimeout(() => { isInternalUpdate.current = false; }, 3000);
         const response = await axios.post('/api/admin/credit-user', {
           userId,
           amount,
