@@ -119,16 +119,17 @@ export default function Transactions() {
             const statusLower = (result.status || '').toLowerCase();
             const messageLower = (result.message || '').toLowerCase();
             
-            // Be very strict about success: must be an explicit success status
-            const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled'].includes(statusLower);
+            // Robust success check matching server
+            const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || 
+                             result.ResultCode === 0 || result.result_code === 0;
 
             const isFailed = result.isFailed || 
                             ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
-                            statusLower.includes('fail') || 
-                            statusLower.includes('cancel') || 
-                            statusLower.includes('decline') ||
+                            (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
+                            (result.ResultCode !== undefined && result.ResultCode !== 0) ||
                             messageLower.includes('cancelled') ||
-                            messageLower.includes('failed');
+                            messageLower.includes('failed') ||
+                            messageLower.includes('rejected');
 
             if (isSuccess) {
               console.log('[Transactions] Payment SUCCESS detected via polling');
@@ -506,7 +507,10 @@ export default function Transactions() {
                                   try {
                                     const result = await checkPaymentStatus(tx.externalId || tx.id);
                                     
-                                    if (result?.status === 'success' || result?.status === 'Success' || result?.status === 'Successful' || result?.status === 'completed' || result?.ResultCode === 0) {
+                                    const statusLower = (result?.status || '').toLowerCase();
+                                    const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || result?.ResultCode === 0;
+                                    
+                                    if (isSuccess) {
                                       setAlertConfig({
                                         isOpen: true,
                                         title: 'Payment Confirmed',
@@ -1130,15 +1134,16 @@ export default function Transactions() {
                                 const statusLower = (result?.status || '').toLowerCase();
                                 const messageLower = (result?.message || '').toLowerCase();
                                 
-                                const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled'].includes(statusLower);
+                                // Robust success check matching server
+                                const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower);
                                                  
                                 const isFailed = result?.isFailed || 
                                                 ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
-                                                statusLower.includes('fail') || 
-                                                statusLower.includes('cancel') || 
-                                                statusLower.includes('decline') ||
+                                                (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
+                                                (result?.ResultCode !== undefined && result?.ResultCode !== 0) ||
                                                 messageLower.includes('cancelled') ||
-                                                messageLower.includes('failed');
+                                                messageLower.includes('failed') ||
+                                                messageLower.includes('rejected');
 
                                 if (isSuccess) {
                                   setPaymentStatus('SUCCESS');
