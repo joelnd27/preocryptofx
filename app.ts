@@ -9,7 +9,11 @@ dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Request Logger
@@ -227,8 +231,8 @@ router.get('/hashback/config-check', (req, res) => {
 // HashBack Pay Button Initiation (Renamed to stk-push as per user request)
 router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-push'], async (req, res) => {
   console.log(`[HashBack] STK Push Route hit`);
-  const { amount, userId } = req.body;
-  console.log(`[HashBack] Initiation Request: Amount=${amount}, User=${userId}`);
+  const { amount, userId, phone } = req.body;
+  console.log(`[HashBack] Initiation Request: Amount=${amount}, User=${userId}, Phone=${phone || 'N/A'}`);
   
   // Convert USD to KES
   const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
@@ -244,12 +248,10 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
   const reference = `HB${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   try {
-    if (!HASHBACK_ACCOUNT_ID) {
-      console.error('[HashBack] CRITICAL: HASHBACK_ACCOUNT_ID is missing in environment variables');
-      return res.status(500).json({ success: false, error: 'Payment system configuration error (Missing Account ID).' });
+    if (!HASHBACK_ACCOUNT_ID || !HASHBACK_API_KEY) {
+      console.error('[HashBack] CRITICAL: HASHBACK_ACCOUNT_ID or HASHBACK_API_KEY is missing');
+      return res.status(500).json({ success: false, error: 'Payment system configuration error.' });
     }
-
-    console.log(`[HashBack] Using Account ID: ${HASHBACK_ACCOUNT_ID}`);
 
     // Save pending transaction in Supabase
     if (supabaseAdmin && userId) {
@@ -259,7 +261,7 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
         amount: usdAmount,
         status: 'pending',
         account_type: 'REAL',
-        method: 'HashBack Pay Button',
+        method: 'HashBack STK Push',
         external_id: reference
       });
 
@@ -268,10 +270,10 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
         return res.status(500).json({ success: false, error: 'Failed to record transaction in database.' });
       }
     } else if (!userId) {
-      console.warn('[HashBack] No userId provided in request');
       return res.status(400).json({ success: false, error: 'User identification required for deposit.' });
     }
 
+    // Return configuration for HashPay Button flow (Frontend handles the actual prompt)
     console.log(`[HashBack] Initiation Success: Ref=${reference}, KES=${kesAmount}`);
     res.json({
       success: true,
@@ -280,8 +282,8 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
       reference: reference
     });
   } catch (error: any) {
-    console.error('[HashBack] Create Payment Exception:', error.message);
-    res.status(500).json({ success: false, error: 'Internal server error during payment initiation.' });
+    console.error('[HashBack] Initiation Error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to prepare payment.' });
   }
 });
 
@@ -776,9 +778,9 @@ router.get('/user/referrals', async (req, res) => {
 // Secure Balance Management (User accessible but strict)
 // HashBack Webhook handler
 // HashBack Webhook
-router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async (req, res) => {
+router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async (req: any, res) => {
   const signature = req.headers['x-hashpay-signature'] as string;
-  const rawPayload = JSON.stringify(req.body);
+  const rawBody = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
   
   console.log('[HashBack Webhook] Headers:', req.headers);
   console.log('[HashBack Webhook] Body:', JSON.stringify(req.body, null, 2));
@@ -787,13 +789,15 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   if (HASHBACK_WEBHOOK_SECRET) {
     const expectedSignature = crypto
       .createHmac('sha256', HASHBACK_WEBHOOK_SECRET)
-      .update(rawPayload)
+      .update(rawBody)
       .digest('hex');
 
     const receivedHash = signature?.startsWith('sha256=') ? signature.substring(7) : signature;
     if (receivedHash !== expectedSignature) {
-      console.warn('[HashBack Webhook] Invalid signature rejected (Warning only for now)');
+      console.warn('[HashBack Webhook] Invalid signature rejected');
+      return res.status(401).send('Invalid signature');
     }
+    console.log('[HashBack Webhook] Signature verified.');
   }
 
   // Robust extraction of all potential reference fields
@@ -804,12 +808,16 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
     body.reference,
     body.external_reference,
     body.ExternalReference,
+    body.TransactionReference,
     body.AccountReference,
     body.MerchantRequestID,
     body.CheckoutRequestID,
+    body.TransactionID,
+    body.TransactionReceipt,
     body.BillRefNumber,
     dataPayload.reference,
     dataPayload.external_reference,
+    dataPayload.TransactionReference,
     dataPayload.MerchantRequestID,
     dataPayload.CheckoutRequestID
   ].filter(Boolean).map(String);
@@ -817,6 +825,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   const reference = possibleReferences[0]; // Primary reference
 
   const rawStatus = (
+    body.event ||
     body.status || 
     dataPayload.status || 
     body.ResultDesc || 
@@ -824,10 +833,11 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
     'failed'
   ).toString().toLowerCase();
   
-  const resultCode = body.ResultCode !== undefined ? Number(body.ResultCode) : 
-                    (dataPayload.ResultCode !== undefined ? Number(dataPayload.ResultCode) : null);
+  const resultCode = body.ResponseCode !== undefined ? Number(body.ResponseCode) :
+                    (body.ResultCode !== undefined ? Number(body.ResultCode) : 
+                    (dataPayload.ResultCode !== undefined ? Number(dataPayload.ResultCode) : null));
                     
-  const success = ['success', 'completed', 'successful', 'done', 'paid', '0', '00'].some(s => rawStatus.includes(s)) || 
+  const success = ['success', 'completed', 'successful', 'done', 'paid', 'payment.success'].some(s => rawStatus.includes(s)) || 
                   body.success === true || 
                   dataPayload.success === true ||
                   resultCode === 0;
@@ -839,37 +849,53 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
   try {
     if (supabaseAdmin && possibleReferences.length > 0 && (success || failure)) {
-      // 1. Find transaction by ANY of the provided references
-      let { data: tx, error: txError } = await supabaseAdmin
+      // 1. Find transaction by ANY of the provided references in external_id OR metadata
+      const validRefs = possibleReferences.filter(r => r && r.length > 0);
+      const orFilter = [
+        `external_id.in.(${validRefs.join(',')})`,
+        ...validRefs.filter(r => r.length > 30).map(r => `id.eq.${r}`)
+      ].join(',');
+
+      let { data: txList, error: txError } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .in('external_id', possibleReferences)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-      // If not found by external_id, try by internal ID if any reference looks like a UUID
-      if (!tx && possibleReferences.some(r => r.length > 30)) {
-        const uuidRef = possibleReferences.find(r => r.length > 30);
-        if (uuidRef) {
-          const { data: txById } = await supabaseAdmin
-            .from('transactions')
-            .select('*')
-            .eq('id', uuidRef)
-            .eq('status', 'pending')
-            .maybeSingle();
-          tx = txById;
-        }
-      }
+        .or(orFilter);
 
       if (txError) {
         console.error('[HashBack Webhook] DB Query Error:', txError);
         throw txError;
       }
 
-      if (tx && success) {
+      let tx = txList?.find(t => t.status === 'pending');
+      
+      // If no pending found, maybe it was auto-rejected but we now have a success?
+      if (!tx && success) {
+        tx = txList?.find(t => t.status === 'rejected' || t.status === 'failed');
+      }
+
+      // If still not found by external_id, try metadata search for CheckoutRequestID/MerchantRequestID
+      if (!tx) {
+        for (const ref of possibleReferences) {
+          const { data: metaTx } = await supabaseAdmin
+            .from('transactions')
+            .select('*')
+            .filter('metadata->>CheckoutRequestID', 'eq', ref)
+            .maybeSingle();
+          if (metaTx) { tx = metaTx; break; }
+          
+          const { data: metaTx2 } = await supabaseAdmin
+            .from('transactions')
+            .select('*')
+            .filter('metadata->>MerchantRequestID', 'eq', ref)
+            .maybeSingle();
+          if (metaTx2) { tx = metaTx2; break; }
+        }
+      }
+
+      if (tx && success && tx.status !== 'completed') {
         // Use robust RPC for atomic balance increment and status update
         const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-        const kesReceived = Number(req.body.amount || (req.body.payload && req.body.payload.amount) || req.body.Amount || 0);
+        const kesReceived = Number(req.body.TransactionAmount || req.body.amount || (req.body.payload && req.body.payload.amount) || req.body.Amount || 0);
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
         console.log(`[HashBack Webhook] Attempting to credit user ${tx.user_id} for $${usdToCredit.toFixed(2)} via RPC`);
@@ -884,7 +910,8 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           console.warn('[HashBack Webhook] RPC failed, falling back to manual update:', rpcError.message);
           
           await supabaseAdmin.from('transactions').update({ 
-            status: 'completed'
+            status: 'completed',
+            metadata: { ...(tx.metadata || {}), webhook_received_at: new Date().toISOString(), webhook_raw: req.body }
           }).eq('id', tx.id);
 
           const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
@@ -895,13 +922,16 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
         }
         
         console.log(`[HashBack Webhook] Successfully processed completed transaction ${reference}`);
-      } else if (tx && failure) {
+      } else if (tx && failure && tx.status === 'pending') {
         await supabaseAdmin.from('transactions').update({ 
-          status: 'rejected'
+          status: 'rejected',
+          metadata: { ...(tx.metadata || {}), webhook_received_at: new Date().toISOString(), webhook_raw: req.body }
         }).eq('id', tx.id);
         console.log(`[HashBack Webhook] Marked transaction ${reference} as rejected/cancelled`);
+      } else if (tx && tx.status === 'completed') {
+        console.log(`[HashBack Webhook] Transaction ${reference} already completed. Skipping.`);
       } else if (!tx) {
-        console.warn(`[HashBack Webhook] Pending transaction not found for reference: ${reference} (or already processed)`);
+        console.warn(`[HashBack Webhook] Transaction not found for references: ${possibleReferences.join(', ')}`);
       }
     } else if (!reference) {
       console.warn('[HashBack Webhook] Missing reference in payload');
@@ -923,10 +953,15 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
   try {
     if (supabaseAdmin) {
-      const { data: tx, error: fetchError } = await supabaseAdmin
+      // Use a robust filter to avoid malformed query errors
+      const filter = reference && reference.length > 30 
+        ? `id.eq.${reference}` 
+        : `external_id.eq.${reference}`;
+
+      let { data: tx, error: fetchError } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .eq('external_id', reference)
+        .or(`${filter},metadata->>CheckoutRequestID.eq.${reference},metadata->>MerchantRequestID.eq.${reference}`)
         .maybeSingle();
 
       if (fetchError) {

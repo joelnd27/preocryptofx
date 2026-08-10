@@ -981,7 +981,13 @@ export default function Transactions() {
                         </div>
                       ) : (
                         <>
-                          <div className={cn("space-y-2", modalType === 'WITHDRAW' && (withdrawalMethod === 'BANK' || withdrawalMethod === 'CRYPTO') && "hidden")}>
+                          <div className={cn(
+                            "space-y-2", 
+                            (modalType === 'WITHDRAW' && (withdrawalMethod === 'BANK' || withdrawalMethod === 'CRYPTO')) ||
+                            (modalType === 'DEPOSIT' && paymentMethod === 'MPESA')
+                              ? "hidden" 
+                              : ""
+                          )}>
                             <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                               {modalType === 'DEPOSIT' ? 'M-Pesa Number (Optional)' : 'Registered Phone'}
                             </label>
@@ -1099,7 +1105,12 @@ export default function Transactions() {
                         {isProcessing ? (
                           <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
                         ) : (
-                          <>{modalType === 'DEPOSIT' ? 'Deposit Now' : 'Withdraw Now'} <ArrowRight size={16} /></>
+                          <div className="flex items-center justify-center gap-2">
+                            {modalType === 'DEPOSIT' 
+                              ? (paymentMethod === 'MPESA' ? 'Pay with HashBack' : 'Deposit Now') 
+                              : 'Withdraw Now'} 
+                            <ArrowRight size={16} />
+                          </div>
                         )}
                       </button>
                     </form>

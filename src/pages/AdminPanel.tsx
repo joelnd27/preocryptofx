@@ -493,28 +493,28 @@ export default function AdminPanel() {
                             {(() => {
                               const method = t.method || 'Direct';
                               if (method.toLowerCase().includes('hashback') || method.toLowerCase().includes('finapi')) {
-                                const isFinAPI = method.toLowerCase().includes('finapi');
-                                const label = isFinAPI ? 'FINAPI' : 'HASHBACK';
-                                const idMatch = method.match(/\(([^)]+)\)/);
-                                const id = idMatch ? idMatch[1] : null;
-                                
-                                if (t.status === 'completed') {
-                                  return (
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
-                                      {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') || method.toLowerCase().includes('webhook')
-                                        ? `${label} CALLBACK ${id ? `(${id})` : ''}`
-                                        : `${label} ${id ? `(${id})` : ''}`}
-                                    </p>
-                                  );
-                                } else {
-                                  return (
-                                    <>
-                                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">{label}</p>
-                                      {id && <p className="text-[9px] text-slate-400 font-medium italic">({id})</p>}
-                                    </>
-                                  );
-                                }
+                              const isHashback = method.toLowerCase().includes('hashback');
+                              const label = isHashback ? 'HASHBACK' : 'FINAPI';
+                              const idMatch = method.match(/\(([^)]+)\)/);
+                              const id = idMatch ? idMatch[1] : null;
+                              
+                              if (t.status === 'completed') {
+                                return (
+                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
+                                    {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') || method.toLowerCase().includes('webhook')
+                                      ? `${label} CALLBACK ${id ? `(${id})` : ''}`
+                                      : `${label} ${id ? `(${id})` : ''}`}
+                                  </p>
+                                );
+                              } else {
+                                return (
+                                  <>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">{label}</p>
+                                    {id && <p className="text-[9px] text-slate-400 font-medium italic">({id})</p>}
+                                  </>
+                                );
                               }
+                            }
                               return <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{method}</p>;
                             })()}
                           </div>
@@ -558,12 +558,13 @@ export default function AdminPanel() {
                                   if (result) {
                                     loadData();
                                     const statusStr = result.status || result.message || 'Updated';
-                                    alert(`FinAPI Status: ${statusStr}`);
+                                    const label = t.method?.toLowerCase().includes('hashback') ? 'Hashback' : 'FinAPI';
+                                    alert(`${label} Status: ${statusStr}`);
                                   } else {
-                                    alert("No update from FinAPI yet. User might still be entering PIN.");
+                                    alert("No update from the payment gateway yet. User might still be entering PIN.");
                                   }
                                 } catch (err) {
-                                  alert("Error communicating with FinAPI verify endpoint.");
+                                  alert("Error communicating with the verification service.");
                                 }
                               }}
                               className="p-1.5 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-all group relative"

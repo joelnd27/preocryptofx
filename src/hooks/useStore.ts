@@ -2332,21 +2332,48 @@ export function useStore() {
     }
 
     try {
-      console.log('[FinAPI] Initiating STK Push...');
-      const response = await axios.post('/api/finapi/stk-push', {
+      console.log('[Hashback] Initiating Payment...');
+      const response = await axios.post('/api/hashback/stk-push', {
         amount: amountUsd,
         userId: user.id,
-        phone_number: phone || user.phone
+        phone: phone || user.phone
       });
 
-      console.log('[FinAPI] Backend Response:', response.data);
+      console.log('[Hashback] Backend Response:', response.data);
 
       if (response.data.success) {
-        const { transaction_id, reference } = response.data;
+        const { reference, account, amount: kesAmount } = response.data;
         
-        // FinAPI STK Push is triggered. We just need to notify the user to check their phone
-        // and then we return the transaction_id/reference so the UI can start polling.
-        return transaction_id || reference;
+        // Use HashPay Button (Popup) if available
+        if (typeof window !== 'undefined' && (window as any).HashPay) {
+          console.log('[HashPay] Using HashPay Button popup');
+          const hp = (window as any).HashPay;
+          const handler = hp.setup({
+            account: account,
+            amount: kesAmount,
+            reference: reference,
+            onSuccess: (txn: any) => {
+              console.log('[HashPay] Success:', txn);
+              if (onSdkSuccess) onSdkSuccess(txn);
+            },
+            onCancel: () => {
+              console.log('[HashPay] Cancelled');
+              if (onSdkCancel) onSdkCancel('Payment cancelled');
+            },
+            onError: (err: any) => {
+              console.error('[HashPay] Error:', err);
+              if (onSdkError) onSdkError(typeof err === 'string' ? err : 'Payment error');
+            }
+          });
+          
+          if (handler && typeof handler.openIframe === 'function') {
+            handler.openIframe();
+          } else {
+            console.warn('[HashPay] handler.openIframe not found');
+          }
+        }
+        
+        return reference;
       }
       
       const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
@@ -2356,7 +2383,7 @@ export function useStore() {
       const serverError = typeof errorData === 'object' ? (errorData.message || errorData.error || errorData.details) : null;
       const errorMsg = serverError || error.message || 'Failed to initiate payment';
       
-      console.error('FinAPI Initiation Error Detail:', error.response?.status, errorData);
+      console.error('Hashback Initiation Error Detail:', error.response?.status, errorData);
       throw new Error(errorMsg);
     }
   };
@@ -2367,7 +2394,7 @@ export function useStore() {
 
   const checkPaymentStatus = async (transaction_id: string) => {
     try {
-      const response = await axios.get(`/api/finapi/verify/${transaction_id}`);
+      const response = await axios.get(`/api/hashback/verify/${transaction_id}`);
       return response.data;
     } catch (error: any) {
       console.error('Error checking payment status:', error.message);
