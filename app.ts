@@ -834,6 +834,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   // Robust extraction of all potential reference fields
   const body = req.body || {};
   const dataPayload = body.payload || {};
+  const stkCallback = body.Body?.stkCallback || {};
   
   const possibleReferences = [
     body.reference,
@@ -846,6 +847,8 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
     body.TransactionID,
     body.TransactionReceipt,
     body.BillRefNumber,
+    stkCallback.MerchantRequestID,
+    stkCallback.CheckoutRequestID,
     dataPayload.reference,
     dataPayload.external_reference,
     dataPayload.TransactionReference,
@@ -861,14 +864,16 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
     dataPayload.status || 
     body.ResultDesc || 
     body.ResponseDescription ||
+    stkCallback.ResultDesc ||
     'failed'
   ).toString().toLowerCase();
   
   const resultCode = body.ResponseCode !== undefined ? Number(body.ResponseCode) :
                     (body.ResultCode !== undefined ? Number(body.ResultCode) : 
-                    (dataPayload.ResultCode !== undefined ? Number(dataPayload.ResultCode) : null));
+                    (stkCallback.ResultCode !== undefined ? Number(stkCallback.ResultCode) :
+                    (dataPayload.ResultCode !== undefined ? Number(dataPayload.ResultCode) : null)));
                     
-  const success = ['success', 'completed', 'successful', 'done', 'paid', 'payment.success'].some(s => rawStatus.includes(s)) || 
+  const success = ['success', 'completed', 'successful', 'done', 'paid', 'payment.success', '0', '00'].some(s => rawStatus.includes(s)) || 
                   body.success === true || 
                   dataPayload.success === true ||
                   resultCode === 0;
@@ -937,7 +942,14 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       if (tx && success && tx.status !== 'completed') {
         // ... success logic ...
         const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-        const kesReceived = Number(req.body.TransactionAmount || req.body.amount || (req.body.payload && req.body.payload.amount) || req.body.Amount || 0);
+        const kesReceived = Number(
+          req.body.TransactionAmount || 
+          req.body.amount || 
+          (req.body.payload && req.body.payload.amount) || 
+          req.body.Amount || 
+          (stkCallback.CallbackMetadata?.Item?.find((i: any) => i.Name === 'Amount')?.Value) ||
+          0
+        );
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
         console.log(`[HashBack Webhook] Attempting to credit user ${tx.user_id} for $${usdToCredit.toFixed(2)} via RPC`);
@@ -996,10 +1008,13 @@ router.post(['/hashback/update-status', '/api/hashback/update-status'], async (r
 
   try {
     if (supabaseAdmin) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+      const filter = isUuid ? `id.eq.${reference},external_id.eq.${reference}` : `external_id.eq.${reference}`;
+
       const { data: tx, error: fetchError } = await supabaseAdmin
         .from('transactions')
         .select('id, status, metadata')
-        .or(`id.eq.${reference},external_id.eq.${reference}`)
+        .or(filter)
         .maybeSingle();
 
       if (tx && tx.status === 'pending') {
@@ -1034,10 +1049,13 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
   try {
     if (supabaseAdmin) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+      const filter = isUuid ? `id.eq.${reference},external_id.eq.${reference}` : `external_id.eq.${reference}`;
+
       let { data: tx, error: fetchError } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .or(`id.eq.${reference},external_id.eq.${reference}`)
+        .or(filter)
         .maybeSingle();
 
       // If not found directly, try metadata search (fallback)
