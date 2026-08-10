@@ -898,33 +898,44 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       }
 
       let tx = txList?.find(t => t.status === 'pending');
+      console.log(`[HashBack Webhook] Initial tx search (pending): ${tx ? 'found' : 'not found'}`);
       
       // If no pending found, maybe it was auto-rejected but we now have a success?
       if (!tx && success) {
         tx = txList?.find(t => t.status === 'rejected' || t.status === 'failed');
+        console.log(`[HashBack Webhook] Success recovery search (rejected/failed): ${tx ? 'found' : 'not found'}`);
       }
 
       // If still not found by external_id, try metadata search for CheckoutRequestID/MerchantRequestID
       if (!tx) {
+        console.log('[HashBack Webhook] Trying metadata search for references...');
         for (const ref of possibleReferences) {
           const { data: metaTx } = await supabaseAdmin
             .from('transactions')
             .select('*')
             .filter('metadata->>CheckoutRequestID', 'eq', ref)
             .maybeSingle();
-          if (metaTx) { tx = metaTx; break; }
+          if (metaTx) { 
+            tx = metaTx; 
+            console.log(`[HashBack Webhook] Found via CheckoutRequestID: ${ref}`);
+            break; 
+          }
           
           const { data: metaTx2 } = await supabaseAdmin
             .from('transactions')
             .select('*')
             .filter('metadata->>MerchantRequestID', 'eq', ref)
             .maybeSingle();
-          if (metaTx2) { tx = metaTx2; break; }
+          if (metaTx2) { 
+            tx = metaTx2; 
+            console.log(`[HashBack Webhook] Found via MerchantRequestID: ${ref}`);
+            break; 
+          }
         }
       }
 
       if (tx && success && tx.status !== 'completed') {
-        // Use robust RPC for atomic balance increment and status update
+        // ... success logic ...
         const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
         const kesReceived = Number(req.body.TransactionAmount || req.body.amount || (req.body.payload && req.body.payload.amount) || req.body.Amount || 0);
         const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
@@ -953,16 +964,17 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
         }
         
         console.log(`[HashBack Webhook] Successfully processed completed transaction ${reference}`);
-      } else if (tx && failure && tx.status === 'pending') {
+      } else if (tx && (failure || !success) && (tx.status === 'pending')) {
+        // If we have a transaction and it's NOT a success (either explicit failure or ambiguous), mark as rejected
         await supabaseAdmin.from('transactions').update({ 
           status: 'rejected',
-          metadata: { ...(tx.metadata || {}), webhook_received_at: new Date().toISOString(), webhook_raw: req.body }
+          metadata: { ...(tx.metadata || {}), webhook_received_at: new Date().toISOString(), webhook_raw: req.body, failure_reason: rawStatus }
         }).eq('id', tx.id);
-        console.log(`[HashBack Webhook] Marked transaction ${reference} as rejected/cancelled`);
+        console.log(`[HashBack Webhook] Marked transaction ${tx.id} as rejected. Reason: ${rawStatus}`);
       } else if (tx && tx.status === 'completed') {
-        console.log(`[HashBack Webhook] Transaction ${reference} already completed. Skipping.`);
+        console.log(`[HashBack Webhook] Transaction ${tx.id} already completed. Skipping.`);
       } else if (!tx) {
-        console.warn(`[HashBack Webhook] Transaction not found for references: ${possibleReferences.join(', ')}`);
+        console.warn(`[HashBack Webhook] Transaction NOT FOUND for references: ${possibleReferences.join(', ')}`);
       }
     } else if (!reference) {
       console.warn('[HashBack Webhook] Missing reference in payload');
@@ -975,6 +987,44 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   }
 });
 
+// Update payment status (Frontend fallback)
+router.post(['/hashback/update-status', '/api/hashback/update-status'], async (req, res) => {
+  const { reference, status, message } = req.body;
+  console.log(`[HashBack Update] Received update for ${reference}: ${status} (${message})`);
+
+  if (!reference || !status) return res.status(400).json({ error: 'Missing reference or status' });
+
+  try {
+    if (supabaseAdmin) {
+      const { data: tx, error: fetchError } = await supabaseAdmin
+        .from('transactions')
+        .select('id, status, metadata')
+        .or(`id.eq.${reference},external_id.eq.${reference}`)
+        .maybeSingle();
+
+      if (tx && tx.status === 'pending') {
+        const finalStatus = (status === 'cancelled' || status === 'failed') ? 'rejected' : tx.status;
+        
+        await supabaseAdmin.from('transactions').update({
+          status: finalStatus,
+          metadata: { 
+            ...(tx.metadata || {}), 
+            update_received_at: new Date().toISOString(),
+            client_status: status,
+            client_message: message
+          }
+        }).eq('id', tx.id);
+        
+        console.log(`[HashBack Update] Updated tx ${tx.id} to ${finalStatus}`);
+      }
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[HashBack Update] Error:', err.message);
+    res.status(500).json({ success: false });
+  }
+});
+
 // HashBack Verify (Polling endpoint)
 router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], async (req, res) => {
   const { reference } = req.params;
@@ -984,16 +1034,21 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
   try {
     if (supabaseAdmin) {
-      // Use a robust filter to avoid malformed query errors
-      const filter = reference && reference.length > 30 
-        ? `id.eq.${reference}` 
-        : `external_id.eq.${reference}`;
-
       let { data: tx, error: fetchError } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .or(`${filter},metadata->>CheckoutRequestID.eq.${reference},metadata->>MerchantRequestID.eq.${reference}`)
+        .or(`id.eq.${reference},external_id.eq.${reference}`)
         .maybeSingle();
+
+      // If not found directly, try metadata search (fallback)
+      if (!tx && !fetchError) {
+        const { data: metaTx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .or(`metadata->>CheckoutRequestID.eq.${reference},metadata->>MerchantRequestID.eq.${reference}`)
+          .maybeSingle();
+        tx = metaTx;
+      }
 
       if (fetchError) {
         console.error('[HashBack Verify] Database Error:', fetchError);
@@ -1005,8 +1060,58 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
       }
 
       if (tx) {
-        console.log(`[HashBack Verify] Status for ${reference}:`, tx.status);
+        console.log(`[HashBack Verify] Local Status for ${reference}:`, tx.status);
         
+        // If pending, try to fetch real-time status from HashBack API to be sure
+        if (tx.status === 'pending' && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
+          try {
+            console.log(`[HashBack Verify] Querying HashBack API for real-time status of ${reference}`);
+            const queryResponse = await axios.post(`${HASHBACK_BASE_URL}/stkpush/query/`, {
+              api_key: HASHBACK_API_KEY,
+              account_id: HASHBACK_ACCOUNT_ID,
+              reference: reference
+            }, { timeout: 10000 });
+
+            console.log(`[HashBack Verify] HashBack API Response:`, JSON.stringify(queryResponse.data, null, 2));
+            
+            const hbData = queryResponse.data;
+            const hbStatus = (hbData.status || hbData.ResultDesc || hbData.ResponseDescription || '').toLowerCase();
+            const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
+                               (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
+
+            const isHbSuccess = ['success', 'completed', 'successful', 'paid', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
+            const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
+
+            if (isHbSuccess && tx.status !== 'completed') {
+              console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);
+              // Sync success (Similar to webhook)
+              const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
+              const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
+              const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+
+              const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+                t_id: tx.id,
+                u_id: tx.user_id,
+                amount: usdToCredit
+              });
+
+              if (!rpcError) {
+                return res.json({ success: true, status: 'completed', isSuccess: true, isFailed: false });
+              }
+            } else if (isHbFailure) {
+              console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
+              await supabaseAdmin.from('transactions').update({ 
+                status: 'rejected',
+                metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), verify_raw: hbData }
+              }).eq('id', tx.id);
+              return res.json({ success: true, status: 'rejected', isSuccess: false, isFailed: true, message: hbStatus });
+            }
+          } catch (queryErr: any) {
+            console.error('[HashBack Verify] Real-time Query Failed:', queryErr.message);
+            // Fall through to return local pending status
+          }
+        }
+
         if (tx.status !== 'pending') {
           return res.json({
             success: true,
