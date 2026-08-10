@@ -84,17 +84,17 @@ if (!supabaseAdmin) {
 }
 
 // HashBack Config
-const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY;
-const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID;
-const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET;
+const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY || process.env.VITE_HASHBACK_API_KEY;
+const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID || process.env.VITE_HASHBACK_ACCOUNT_ID;
+const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET || process.env.VITE_HASHBACK_WEBHOOK_SECRET;
 const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 
 // FinAPI Config
-const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY;
+const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY || process.env.VITE_FINAPI_SECRET_KEY;
 const FINAPI_BASE_URL = 'https://stkpush.co.ke/api';
 
 // PreoCryptoFX Webhook Config
-const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET;
+const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET || process.env.VITE_PREOCRYPTOFX_WEBHOOK_SECRET;
 
 if (!PREOCRYPTOFX_WEBHOOK_SECRET) {
   console.error('[OneApp Sync] CRITICAL: PREOCRYPTOFX_WEBHOOK_SECRET is NOT set! Sync to OneApp will likely fail authentication.');
@@ -102,6 +102,19 @@ if (!PREOCRYPTOFX_WEBHOOK_SECRET) {
 
 // API Routes
 const router = express.Router();
+
+// HashBack Health Check (Safe)
+router.get(['/hashback/health', '/api/hashback/health'], (req, res) => {
+  res.json({
+    status: 'ok',
+    config: {
+      has_account_id: !!HASHBACK_ACCOUNT_ID,
+      has_api_key: !!HASHBACK_API_KEY,
+      has_webhook_secret: !!HASHBACK_WEBHOOK_SECRET,
+      account_id_preview: HASHBACK_ACCOUNT_ID ? `${HASHBACK_ACCOUNT_ID.substring(0, 3)}...` : null
+    }
+  });
+});
 
 // OneApp Marketing Sync Endpoint
 const syncCache = new Set<string>();
@@ -284,8 +297,11 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
     } else if (!userId) {
       return res.status(400).json({ success: false, error: 'User identification required for deposit.' });
     } else if (!supabaseAdmin) {
-      console.warn('[HashBack] supabaseAdmin is not initialized. Transaction will not be saved locally.');
-      return res.status(500).json({ success: false, error: 'Backend error: Database connection not established.' });
+      console.warn('[HashBack] supabaseAdmin is not initialized. Missing SUPABASE_SERVICE_ROLE_KEY.');
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Backend error: Database connection not established (SUPABASE_SERVICE_ROLE_KEY may be missing on your server).' 
+      });
     }
 
     // Return configuration for HashPay Button flow (Frontend handles the actual prompt)
