@@ -2345,32 +2345,45 @@ export function useStore() {
         const { reference, account, amount: kesAmount } = response.data;
         
         // Use HashPay Button (Popup) if available
-        if (typeof window !== 'undefined' && (window as any).HashPay) {
-          console.log('[HashPay] Using HashPay Button popup');
-          const hp = (window as any).HashPay;
-          const handler = hp.setup({
-            account: account,
-            amount: kesAmount,
-            reference: reference,
-            onSuccess: (txn: any) => {
-              console.log('[HashPay] Success:', txn);
-              if (onSdkSuccess) onSdkSuccess(txn);
-            },
-            onCancel: () => {
-              console.log('[HashPay] Cancelled');
-              if (onSdkCancel) onSdkCancel('Payment cancelled');
-            },
-            onError: (err: any) => {
-              console.error('[HashPay] Error:', err);
-              if (onSdkError) onSdkError(typeof err === 'string' ? err : 'Payment error');
+        const openPopup = () => {
+          if (typeof window !== 'undefined' && (window as any).HashPay) {
+            console.log('[HashPay] Using HashPay Button popup');
+            const hp = (window as any).HashPay;
+            const handler = hp.setup({
+              account: account,
+              amount: kesAmount,
+              reference: reference,
+              onSuccess: (txn: any) => {
+                console.log('[HashPay] Success:', txn);
+                if (onSdkSuccess) onSdkSuccess(txn);
+              },
+              onCancel: () => {
+                console.log('[HashPay] Cancelled');
+                if (onSdkCancel) onSdkCancel('Payment cancelled');
+              },
+              onError: (err: any) => {
+                console.error('[HashPay] Error:', err);
+                if (onSdkError) onSdkError(typeof err === 'string' ? err : 'Payment error');
+              }
+            });
+            
+            if (handler && typeof handler.openIframe === 'function') {
+              handler.openIframe();
+              return true;
             }
-          });
-          
-          if (handler && typeof handler.openIframe === 'function') {
-            handler.openIframe();
-          } else {
-            console.warn('[HashPay] handler.openIframe not found');
           }
+          return false;
+        };
+
+        // Try immediately, then with a small delay if it fails (script might still be loading)
+        if (!openPopup()) {
+          console.warn('[HashPay] Library not ready, retrying in 500ms...');
+          setTimeout(() => {
+            if (!openPopup()) {
+              console.error('[HashPay] Library failed to load after retry.');
+              if (onSdkError) onSdkError('Payment library failed to load. Please refresh and try again.');
+            }
+          }, 500);
         }
         
         return reference;

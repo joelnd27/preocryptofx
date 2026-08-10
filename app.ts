@@ -249,28 +249,43 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
 
   try {
     if (!HASHBACK_ACCOUNT_ID || !HASHBACK_API_KEY) {
-      console.error('[HashBack] CRITICAL: HASHBACK_ACCOUNT_ID or HASHBACK_API_KEY is missing');
-      return res.status(500).json({ success: false, error: 'Payment system configuration error.' });
+      const missing = [];
+      if (!HASHBACK_ACCOUNT_ID) missing.push('HASHBACK_ACCOUNT_ID');
+      if (!HASHBACK_API_KEY) missing.push('HASHBACK_API_KEY');
+      console.error(`[HashBack] CRITICAL: Missing environment variables: ${missing.join(', ')}`);
+      return res.status(500).json({ 
+        success: false, 
+        error: `Payment system configuration error (Missing: ${missing.join(', ')}). Please check your settings.` 
+      });
     }
 
     // Save pending transaction in Supabase
     if (supabaseAdmin && userId) {
-      const { error: dbError } = await supabaseAdmin.from('transactions').insert({
-        user_id: userId,
-        type: 'DEPOSIT',
-        amount: usdAmount,
-        status: 'pending',
-        account_type: 'REAL',
-        method: 'HashBack STK Push',
-        external_id: reference
-      });
+      try {
+        const { error: dbError } = await supabaseAdmin.from('transactions').insert({
+          user_id: userId,
+          type: 'DEPOSIT',
+          amount: usdAmount,
+          status: 'pending',
+          account_type: 'REAL',
+          method: 'HashBack STK Push',
+          external_id: reference
+        });
 
-      if (dbError) {
-        console.error('[HashBack] DB Error:', dbError);
-        return res.status(500).json({ success: false, error: 'Failed to record transaction in database.' });
+        if (dbError) {
+          console.error('[HashBack] DB Error:', dbError);
+          // If DB fails but credentials are OK, we might still want to return 500 to prevent unrecorded payments
+          return res.status(500).json({ success: false, error: 'Database error: Failed to record transaction.' });
+        }
+      } catch (e: any) {
+        console.error('[HashBack] DB Exception:', e.message);
+        return res.status(500).json({ success: false, error: 'Database exception: Failed to process transaction.' });
       }
     } else if (!userId) {
       return res.status(400).json({ success: false, error: 'User identification required for deposit.' });
+    } else if (!supabaseAdmin) {
+      console.warn('[HashBack] supabaseAdmin is not initialized. Transaction will not be saved locally.');
+      return res.status(500).json({ success: false, error: 'Backend error: Database connection not established.' });
     }
 
     // Return configuration for HashPay Button flow (Frontend handles the actual prompt)
