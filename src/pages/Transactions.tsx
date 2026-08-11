@@ -233,7 +233,7 @@ export default function Transactions() {
         return;
       }
 
-      const minDeposit = paymentMethod === 'CRYPTO' ? 29 : MIN_DEPOSIT_USD;
+      const minDeposit = paymentMethod === 'CRYPTO' ? 50 : MIN_DEPOSIT_USD;
       if (val < minDeposit) {
         setAlertConfig({
           isOpen: true,
@@ -925,7 +925,7 @@ export default function Transactions() {
                             type="number"
                             required
                             min={modalType === 'DEPOSIT' 
-                              ? (paymentMethod === 'CRYPTO' ? 29 : MIN_DEPOSIT_USD) 
+                              ? (paymentMethod === 'CRYPTO' ? 50 : MIN_DEPOSIT_USD) 
                               : (withdrawalMethod === 'CRYPTO' ? 54 : (withdrawalMethod === 'BANK' ? 34 : 30))}
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
@@ -935,7 +935,7 @@ export default function Transactions() {
                         </div>
                         <p className="text-[9px] text-slate-500 flex items-center justify-between px-1">
                           <span>Min: ${modalType === 'DEPOSIT' 
-                            ? (paymentMethod === 'CRYPTO' ? 29 : MIN_DEPOSIT_USD) 
+                            ? (paymentMethod === 'CRYPTO' ? 50 : MIN_DEPOSIT_USD) 
                             : (withdrawalMethod === 'CRYPTO' ? 54 : (withdrawalMethod === 'BANK' ? 34 : 30))}</span>
                           {modalType === 'WITHDRAW' && (
                             <span className="text-blue-500 font-bold">
