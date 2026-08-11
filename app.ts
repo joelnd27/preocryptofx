@@ -52,9 +52,9 @@ if (!supabaseAdmin) {
     try {
       if (!supabaseAdmin) return;
 
-      const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       
-      console.log(`[Auto-Reject] Running cleanup (threshold: ${twentyMinutesAgo})`);
+      console.log(`[Auto-Reject] Running cleanup (threshold: ${tenMinutesAgo})`);
 
       const updateData = { 
         status: 'rejected'
@@ -64,13 +64,13 @@ if (!supabaseAdmin) {
         .from('transactions')
         .update(updateData)
         .eq('status', 'pending')
-        .lt('created_at', twentyMinutesAgo)
+        .lt('created_at', tenMinutesAgo)
         .select('id');
       
       if (error) {
         console.error('[Auto-Reject] Update error:', error.code, error.message, error.details);
       } else if (data && data.length > 0) {
-        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 20 mins.`);
+        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 10 mins.`);
       } else {
         console.log('[Auto-Reject] No stale transactions found.');
       }
@@ -869,7 +869,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   const isSuccessEvent = ['payment.success', 'transaction.success', 'completed', 'success'].some(s => event.includes(s));
   const isResultSuccess = resultCode === 0;
   
-  // Success if event says so AND either code is 0 or code is missing
+  // Success if event says so AND either code is 0 or code is null/missing
   const success = isSuccessEvent && (resultCode === null || isResultSuccess);
   
   const failure = (resultCode !== null && resultCode !== 0) || 
@@ -877,7 +877,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
   console.log(`[HashBack Webhook] Final Decision: event="${event}", code=${resultCode}, success=${success}, fail=${failure}`);
 
-  if (!reference) {
+  if (possibleReferences.length === 0) {
     console.warn('[HashBack Webhook] No reference found in payload. Skipping.');
     return res.json({ success: false, error: 'No reference' });
   }
@@ -887,42 +887,36 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       // Find the transaction using any possible reference
       let tx = null;
       
-      // Attempt 1: Direct match by external_id (our reference)
+      const filteredRefs = possibleReferences.filter(r => r && r !== 'undefined' && r !== 'null' && r.length > 3);
+
+      // Attempt 1: Direct match by external_id
       const { data: tx1 } = await supabaseAdmin
         .from('transactions')
         .select('*')
-        .in('external_id', possibleReferences)
-        .eq('status', 'pending')
+        .in('external_id', filteredRefs)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
       
       tx = tx1;
 
       // Attempt 2: Metadata match
       if (!tx) {
-        for (const ref of possibleReferences) {
+        for (const ref of filteredRefs) {
           const { data: metaTx } = await supabaseAdmin
             .from('transactions')
             .select('*')
             .or(`metadata->>CheckoutRequestID.eq.${ref},metadata->>MerchantRequestID.eq.${ref},metadata->>TransactionReference.eq.${ref}`)
-            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
           if (metaTx) { tx = metaTx; break; }
         }
       }
 
-      // Attempt 3: Recovery (if already rejected but we have a success webhook)
-      if (!tx && success) {
-        const { data: txRec } = await supabaseAdmin
-          .from('transactions')
-          .select('*')
-          .in('external_id', possibleReferences)
-          .eq('status', 'rejected')
-          .maybeSingle();
-        tx = txRec;
-        if (tx) console.log('[HashBack Webhook] Recovering previously rejected transaction');
-      }
-
       if (tx) {
+        console.log(`[HashBack Webhook] Found transaction ${tx.id} (Status: ${tx.status})`);
+
         // Idempotency: Skip if already completed
         if (tx.status === 'completed') {
           console.log(`[HashBack Webhook] Transaction ${tx.id} already completed. Skipping.`);
@@ -943,7 +937,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           
           console.log(`[HashBack Webhook] Crediting User ${tx.user_id} for $${usdToCredit.toFixed(2)} (Transaction ${tx.id})`);
 
-          // Use RPC for atomic update
+          // 1. Try RPC for atomic update
           const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
             t_id: tx.id,
             u_id: tx.user_id,
@@ -951,19 +945,31 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           });
 
           if (rpcError) {
-            console.error('[HashBack Webhook] Balance Update RPC Failed:', rpcError.message);
-            // Fallback manual update (Less safe but necessary if RPC fails)
+            console.error('[HashBack Webhook] RPC Failed:', rpcError.message);
+            
+            // 2. Fallback: Manual update if RPC is missing/broken
+            console.log('[HashBack Webhook] Falling back to manual update...');
+            
+            // Update transaction status
             await supabaseAdmin.from('transactions').update({ 
               status: 'completed',
               metadata: { 
                 ...(tx.metadata || {}), 
                 webhook_at: new Date().toISOString(),
-                webhook_raw: body,
                 manual_fallback: true
               }
             }).eq('id', tx.id);
+
+            // Update user balance
+            const { data: user } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+            if (user) {
+              const currentBalance = Number(user.real_balance || 0);
+              const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
+              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+              console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
+            }
           } else {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} completed successfully.`);
+            console.log(`[HashBack Webhook] Transaction ${tx.id} completed via RPC.`);
           }
         } else if (failure) {
           console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
@@ -973,7 +979,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           }).eq('id', tx.id);
         }
       } else {
-        console.warn(`[HashBack Webhook] Matching transaction not found for references: ${possibleReferences.join(', ')}`);
+        console.warn(`[HashBack Webhook] Matching transaction not found for refs: ${filteredRefs.join(', ')}`);
       }
     }
 
