@@ -52,9 +52,9 @@ if (!supabaseAdmin) {
     try {
       if (!supabaseAdmin) return;
 
-      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
       
-      console.log(`[Auto-Reject] Running cleanup (threshold: ${fifteenMinutesAgo})`);
+      console.log(`[Auto-Reject] Running cleanup (threshold: ${threeMinutesAgo})`);
 
       const updateData = { 
         status: 'rejected'
@@ -64,13 +64,13 @@ if (!supabaseAdmin) {
         .from('transactions')
         .update(updateData)
         .eq('status', 'pending')
-        .lt('created_at', fifteenMinutesAgo)
+        .lt('created_at', threeMinutesAgo)
         .select('id');
       
       if (error) {
         console.error('[Auto-Reject] Update error:', error.code, error.message, error.details);
       } else if (data && data.length > 0) {
-        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 2 mins.`);
+        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 3 mins.`);
       } else {
         console.log('[Auto-Reject] No stale transactions found.');
       }
