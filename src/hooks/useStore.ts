@@ -2359,26 +2359,11 @@ export function useStore() {
               },
               onCancel: () => {
                 console.log('[HashPay] Cancelled');
-                // Notify backend immediately
-                axios.post('/api/hashback/update-status', {
-                  reference: reference,
-                  status: 'cancelled',
-                  message: 'User cancelled payment popup'
-                }).catch(err => console.warn('[HashPay] Failed to notify cancel:', err.message));
-                
                 if (onSdkCancel) onSdkCancel('Payment cancelled');
               },
               onError: (err: any) => {
                 console.error('[HashPay] Error:', err);
                 const errMsg = typeof err === 'string' ? err : (err?.message || 'Payment error');
-                
-                // Notify backend immediately
-                axios.post('/api/hashback/update-status', {
-                  reference: reference,
-                  status: 'failed',
-                  message: errMsg
-                }).catch(e => console.warn('[HashPay] Failed to notify error:', e.message));
-
                 if (onSdkError) onSdkError(errMsg);
               }
             });
