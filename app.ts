@@ -52,9 +52,9 @@ if (!supabaseAdmin) {
     try {
       if (!supabaseAdmin) return;
 
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const twoHoursAgo = new Date(Date.now() - 120 * 60 * 1000).toISOString();
       
-      console.log(`[Auto-Reject] Running cleanup (threshold: ${tenMinutesAgo})`);
+      console.log(`[Auto-Reject] Running cleanup (threshold: ${twoHoursAgo})`);
 
       const updateData = { 
         status: 'rejected'
@@ -64,13 +64,13 @@ if (!supabaseAdmin) {
         .from('transactions')
         .update(updateData)
         .eq('status', 'pending')
-        .lt('created_at', tenMinutesAgo)
+        .lt('created_at', twoHoursAgo)
         .select('id');
       
       if (error) {
         console.error('[Auto-Reject] Update error:', error.code, error.message, error.details);
       } else if (data && data.length > 0) {
-        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 10 mins.`);
+        console.log(`[Auto-Reject] Successfully rejected ${data.length} transactions older than 2 hours.`);
       } else {
         console.log('[Auto-Reject] No stale transactions found.');
       }
@@ -969,7 +969,17 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
               console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
             }
           } else {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} completed via RPC.`);
+            console.log(`[HashBack Webhook] Transaction ${tx.id} credited via RPC.`);
+            // Safety: Explicitly update status to completed just in case RPC only credited but didn't set status
+            await supabaseAdmin.from('transactions').update({ 
+              status: 'completed',
+              metadata: { 
+                ...(tx.metadata || {}), 
+                webhook_at: new Date().toISOString(),
+                rpc_safety_sync: true
+              }
+            }).eq('id', tx.id);
+            console.log(`[HashBack Webhook] Transaction ${tx.id} status synced to completed.`);
           }
         } else if (failure) {
           console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
@@ -1030,8 +1040,9 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
       if (tx) {
         console.log(`[HashBack Verify] Local Status for ${reference}:`, tx.status);
         
-        // If pending, try to fetch real-time status from HashBack API to be sure
-        if (tx.status === 'pending' && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
+        // If pending OR rejected, try to fetch real-time status from HashBack API to be sure
+        // We allow checking rejected transactions to recover from premature auto-rejection
+        if ((tx.status === 'pending' || tx.status === 'rejected') && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
           try {
             console.log(`[HashBack Verify] Querying HashBack API for real-time status of ${reference}`);
             const queryResponse = await axios.post(`${HASHBACK_BASE_URL}/stkpush/query/`, {
@@ -1063,10 +1074,25 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
                 amount: usdToCredit
               });
 
+              // Safety Status Update
+              await supabaseAdmin.from('transactions').update({ 
+                status: 'completed',
+                metadata: { 
+                  ...(tx.metadata || {}), 
+                  verified_at: new Date().toISOString(), 
+                  verify_success: true,
+                  rpc_success: !rpcError
+                }
+              }).eq('id', tx.id);
+
               if (!rpcError) {
+                console.log(`[HashBack Verify] Transaction ${tx.id} credited and completed.`);
+                return res.json({ success: true, status: 'completed', isSuccess: true, isFailed: false });
+              } else {
+                console.warn(`[HashBack Verify] RPC failed during sync, but status marked completed.`);
                 return res.json({ success: true, status: 'completed', isSuccess: true, isFailed: false });
               }
-            } else if (isHbFailure) {
+            } else if (isHbFailure && tx.status !== 'completed') {
               console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
               await supabaseAdmin.from('transactions').update({ 
                 status: 'rejected',
@@ -1379,6 +1405,12 @@ router.use((req, res) => {
       path: req.path
     }
   });
+});
+
+app.post('/', (req, res) => {
+  console.log('[Root POST] Received POST request to root. This might be a misconfigured webhook.');
+  console.log('[Root POST] Payload:', JSON.stringify(req.body, null, 2));
+  res.status(404).json({ error: 'Not Found', message: 'Please use a specific API endpoint for webhooks.' });
 });
 
 app.use('/api', router);
