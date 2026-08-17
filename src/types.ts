@@ -79,6 +79,7 @@ export interface User {
   referrals?: {
     userId: string;
     username: string;
+    email: string;
     joinedAt: number;
     status: 'pending' | 'confirmed';
     hasDeposited: boolean;

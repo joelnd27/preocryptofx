@@ -394,6 +394,35 @@ export function useStore() {
           active_states: botSettingsData?.bot_stats?.active_states || {}
         };
 
+        // Fetch Referrals
+        let fetchedReferrals: any[] = [];
+        if (userData.referral_code) {
+          const { data: refData } = await supabase
+            .from('users')
+            .select('id, username, email, created_at, transactions(type, status, amount)')
+            .eq('referred_by', userData.referral_code);
+          
+          if (refData) {
+            fetchedReferrals = refData.map((r: any) => {
+              const userTransactions = r.transactions || [];
+              const hasDeposited = userTransactions.some((t: any) => t.type === 'DEPOSIT' && t.status === 'completed');
+              const totalDeposited = userTransactions
+                .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed')
+                .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+
+              return {
+                userId: r.id,
+                username: r.username,
+                email: r.email,
+                joinedAt: new Date(r.created_at).getTime(),
+                status: hasDeposited ? 'confirmed' : 'pending',
+                hasDeposited,
+                totalDeposited
+              };
+            });
+          }
+        }
+
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
@@ -470,7 +499,7 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           botStake: Number(botSettingsData?.bot_stake || 10),
           targetProfitPercentage: Number(botSettingsData?.target_profit_percentage || 0),
-          referrals: [],
+          referrals: fetchedReferrals,
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           copyingTraderId: userData.copying_trader_id,
           createdAt: new Date(userData.created_at).getTime()
