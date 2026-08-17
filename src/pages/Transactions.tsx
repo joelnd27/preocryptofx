@@ -207,8 +207,13 @@ export default function Transactions() {
     }
   }, [user?.phone, isModalOpen, modalType]);
 
-  const isValidKenyanPhone = (p: string) => {
-    return /^\+254[71]\d{8}$/.test(p);
+  const isValidPhone = (p: string) => {
+    // If it looks like a Kenyan number, use strict validation
+    if (p.startsWith('+254')) {
+      return /^\+254[71]\d{8}$/.test(p);
+    }
+    // Otherwise, just ensure it starts with + and has at least 7 digits
+    return /^\+\d{7,15}$/.test(p);
   };
 
   const maskPhone = (p: string) => {
@@ -1001,13 +1006,10 @@ export default function Transactions() {
                                   if (modalType === 'DEPOSIT') {
                                     let val = e.target.value;
                                     // Ensure it starts with +254
-                                    if (val && !val.startsWith('+254')) {
-                                      val = '+254' + val.replace(/^\+?254?/, '').replace(/\D/g, '');
+                                    if (val && !val.startsWith('+')) {
+                                      val = '+' + val.replace(/\D/g, '');
                                     } else if (val) {
-                                      // Only allow digits after +254
-                                      const prefix = '+254';
-                                      const rest = val.substring(4).replace(/\D/g, '').substring(0, 9);
-                                      val = prefix + rest;
+                                      val = '+' + val.substring(1).replace(/\D/g, '');
                                     }
                                     setPhone(val);
                                   }
@@ -1016,13 +1018,15 @@ export default function Transactions() {
                                   "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
                                   modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"
                                 )}
-                                placeholder="+254XXXXXXXXX"
+                                placeholder="+CountryCodeXXXXXXXXX"
                                 readOnly={modalType === 'WITHDRAW'}
                               />
                             </div>
-                            {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && phone.length > 4 && !isValidKenyanPhone(phone) && (
+                            {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && phone.length > 4 && !isValidPhone(phone) && (
                               <p className="text-[10px] text-red-500 font-bold mt-1 animate-pulse">
-                                Invalid Kenyan number. Format: +254 (7/1)XXXXXXXX
+                                {phone.startsWith('+254') 
+                                  ? 'Invalid Kenyan number. Format: +254 (7/1)XXXXXXXX'
+                                  : 'Invalid phone format. Please include country code (e.g. +44...)'}
                               </p>
                             )}
                           </div>

@@ -267,16 +267,14 @@ export default function Profile() {
                         value={phone}
                         onChange={(e) => {
                           let val = e.target.value;
-                          if (!val.startsWith('+254')) {
-                            val = '+254' + val.replace(/^\+?254?/, '').replace(/\D/g, '');
-                          } else {
-                            const prefix = '+254';
-                            const rest = val.substring(4).replace(/\D/g, '').substring(0, 9);
-                            val = prefix + rest;
+                          if (val && !val.startsWith('+')) {
+                            val = '+' + val.replace(/\D/g, '');
+                          } else if (val) {
+                            val = '+' + val.substring(1).replace(/\D/g, '');
                           }
                           setPhone(val);
                         }}
-                        placeholder="+254XXXXXXXXX"
+                        placeholder="+CountryCodeXXXXXXXXX"
                         className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 transition-all disabled:opacity-50"
                       />
                     </div>

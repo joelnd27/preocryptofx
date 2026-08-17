@@ -8,8 +8,9 @@ import { cn } from '../lib/utils';
 export default function Register() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('+254');
-  const [countryFlag, setCountryFlag] = useState('🇰🇪');
+  const [phone, setPhone] = useState('');
+  const [countryFlag, setCountryFlag] = useState('🌍');
+  const [callingCode, setCallingCode] = useState('');
   const [password, setPassword] = useState('');
   const [referralCodeInput, setReferralCodeInput] = useState('');
 
@@ -27,7 +28,11 @@ export default function Register() {
         const response = await fetch('https://ipapi.co/json/');
         const data = await response.json();
         if (data.country_calling_code) {
-          setPhone(data.country_calling_code);
+          const code = data.country_calling_code.startsWith('+') 
+            ? data.country_calling_code 
+            : `+${data.country_calling_code}`;
+          setPhone(code);
+          setCallingCode(code);
           // Try to get country flag emoji if available
           if (data.country_code) {
             const codePoints = data.country_code
@@ -235,11 +240,21 @@ export default function Register() {
                   value={phone}
                   onChange={(e) => {
                     let val = e.target.value;
-                    if (!val.startsWith('+254')) {
-                      val = '+254' + val.replace(/^\+?254?/, '').replace(/\D/g, '');
+                    const prefix = callingCode || '+';
+                    
+                    if (!val.startsWith(prefix)) {
+                      // If they deleted the prefix or changed it, try to maintain it if it was detected
+                      if (val.startsWith('+')) {
+                        // Allow them to type their own prefix if they want, 
+                        // but we'll strip non-digits after the +
+                        const plus = val.startsWith('+') ? '+' : '';
+                        val = plus + val.replace(/\D/g, '');
+                      } else {
+                        val = prefix + val.replace(/\D/g, '');
+                      }
                     } else {
-                      const prefix = '+254';
-                      const rest = val.substring(4).replace(/\D/g, '').substring(0, 9);
+                      // Maintain the prefix and just clean the rest
+                      const rest = val.substring(prefix.length).replace(/\D/g, '');
                       val = prefix + rest;
                     }
                     setPhone(val);
@@ -248,7 +263,7 @@ export default function Register() {
                     "w-full border rounded-xl py-3 pl-12 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500",
                     isDarkMode ? "bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500" : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
                   )}
-                  placeholder="+254XXXXXXXXX"
+                  placeholder={callingCode ? `${callingCode}XXXXXXXXX` : "+CountryCodeXXXXXXXXX"}
                 />
               </div>
             </div>
