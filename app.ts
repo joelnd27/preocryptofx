@@ -935,9 +935,23 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           
           const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
           
-          console.log(`[HashBack Webhook] Crediting User ${tx.user_id} for $${usdToCredit.toFixed(2)} (Transaction ${tx.id})`);
+          // Update status to 'completed' FIRST to ensure dashboard reflects success immediately
+          console.log(`[HashBack Webhook] Updating status for ${tx.id} to completed...`);
+          const { error: statusUpdateError } = await supabaseAdmin.from('transactions').update({ 
+            status: 'completed',
+            metadata: { 
+              ...(tx.metadata || {}), 
+              webhook_at: new Date().toISOString(),
+              credited_amount: usdToCredit
+            }
+          }).eq('id', tx.id);
+          
+          if (statusUpdateError) {
+            console.error(`[HashBack Webhook] Initial Status Update Error:`, statusUpdateError.message);
+          }
 
-          // 1. Try RPC for atomic update
+          // 1. Try RPC for atomic balance update
+          console.log(`[HashBack Webhook] Crediting User ${tx.user_id} for $${usdToCredit.toFixed(2)} (Transaction ${tx.id})`);
           const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
             t_id: tx.id,
             u_id: tx.user_id,
@@ -948,45 +962,32 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
             console.error('[HashBack Webhook] RPC Failed:', rpcError.message);
             
             // 2. Fallback: Manual update if RPC is missing/broken
-            console.log(`[HashBack Webhook] Falling back to manual update for tx ${tx.id}...`);
+            console.log(`[HashBack Webhook] Falling back to manual balance update for tx ${tx.id}...`);
             
-            // Update transaction status
-            const { error: statusError } = await supabaseAdmin.from('transactions').update({ 
-              status: 'completed',
-              metadata: { 
-                ...(tx.metadata || {}), 
-                webhook_at: new Date().toISOString(),
-                manual_fallback: true
-              }
-            }).eq('id', tx.id);
-            
-            if (statusError) console.error(`[HashBack Webhook] Manual Status Update Error:`, statusError.message);
-
-            // Update user balance
             const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
             if (userData) {
               const currentBalance = Number(userData.real_balance || 0);
               const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
               const { error: balanceError } = await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+              
               if (balanceError) {
                 console.error(`[HashBack Webhook] Manual Balance Update Error:`, balanceError.message);
               } else {
                 console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
+                
+                // Add metadata to show it was a manual fallback
+                await supabaseAdmin.from('transactions').update({
+                  metadata: { 
+                    ...(tx.metadata || {}), 
+                    webhook_at: new Date().toISOString(),
+                    manual_fallback: true,
+                    credited_amount: usdToCredit
+                  }
+                }).eq('id', tx.id);
               }
             }
           } else {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} credited via RPC. Performing safety sync.`);
-            // Safety: Explicitly update status to completed just in case RPC only credited but didn't set status
-            const { error: safetyError } = await supabaseAdmin.from('transactions').update({ 
-              status: 'completed',
-              metadata: { 
-                ...(tx.metadata || {}), 
-                webhook_at: new Date().toISOString(),
-                rpc_safety_sync: true
-              }
-            }).eq('id', tx.id);
-            if (safetyError) console.error(`[HashBack Webhook] Safety Status Sync Error:`, safetyError.message);
-            console.log(`[HashBack Webhook] Transaction ${tx.id} status sync attempt completed.`);
+            console.log(`[HashBack Webhook] Transaction ${tx.id} balance successfully updated via RPC.`);
           }
         } else if (failure) {
           console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
@@ -1075,6 +1076,21 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
               const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
               const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
+              // 1. Update status to 'completed' FIRST to lock it and show success in UI
+              console.log(`[HashBack Verify] Locking status to completed for ${tx.id}...`);
+              const { error: statusLockError } = await supabaseAdmin.from('transactions').update({ 
+                status: 'completed',
+                metadata: { 
+                  ...(tx.metadata || {}), 
+                  verified_at: new Date().toISOString(), 
+                  verify_success: true,
+                  credited_amount: usdToCredit
+                }
+              }).eq('id', tx.id);
+              
+              if (statusLockError) console.error(`[HashBack Verify] Status Lock Error:`, statusLockError.message);
+
+              // 2. Try RPC for atomic balance update
               const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
                 t_id: tx.id,
                 u_id: tx.user_id,
@@ -1084,45 +1100,45 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
               if (rpcError) {
                 console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
                 // Manual Fallback if RPC failed
-                console.log(`[HashBack Verify] Falling back to manual update for ${tx.id}`);
+                console.log(`[HashBack Verify] Falling back to manual balance update for ${tx.id}`);
                 
-                // 1. Update Transaction Status
-                const { error: statusError } = await supabaseAdmin.from('transactions').update({ 
-                  status: 'completed',
-                  metadata: { 
-                    ...(tx.metadata || {}), 
-                    verified_at: new Date().toISOString(), 
-                    verify_manual_fallback: true
-                  }
-                }).eq('id', tx.id);
-                
-                if (statusError) console.error(`[HashBack Verify] Manual Status Update Failed:`, statusError.message);
-
-                // 2. Update User Balance
                 const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
                 if (userData) {
                   const currentBalance = Number(userData.real_balance || 0);
                   const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-                  await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-                  console.log(`[HashBack Verify] Manual Balance Update Success: ${currentBalance} -> ${newBalance}`);
+                  const { error: balanceError } = await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+                  
+                  if (balanceError) {
+                    console.error(`[HashBack Verify] Manual Balance Update Failed:`, balanceError.message);
+                  } else {
+                    console.log(`[HashBack Verify] Manual Balance Update Success: ${currentBalance} -> ${newBalance}`);
+                    
+                    // Add fallback metadata
+                    await supabaseAdmin.from('transactions').update({ 
+                      metadata: { 
+                        ...(tx.metadata || {}), 
+                        verified_at: new Date().toISOString(), 
+                        verify_manual_fallback: true,
+                        credited_amount: usdToCredit
+                      }
+                    }).eq('id', tx.id);
+                  }
                 }
               } else {
-                console.log(`[HashBack Verify] RPC Success for ${tx.id}. Performing safety status sync.`);
-                // Safety Status Update
-                const { error: safetyError } = await supabaseAdmin.from('transactions').update({ 
-                  status: 'completed',
-                  metadata: { 
-                    ...(tx.metadata || {}), 
-                    verified_at: new Date().toISOString(), 
-                    verify_success: true,
-                    rpc_success: true
-                  }
-                }).eq('id', tx.id);
-                if (safetyError) console.error(`[HashBack Verify] Safety Status Sync Failed:`, safetyError.message);
+                console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
               }
 
-              console.log(`[HashBack Verify] Verification complete for ${tx.id}. Returning completed status.`);
-              return res.json({ success: true, status: 'completed', isSuccess: true, isFailed: false });
+              // Fetch final state to return accurate status
+              const { data: finalTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
+              const displayStatus = finalTx?.status || 'completed';
+
+              console.log(`[HashBack Verify] Verification complete for ${tx.id}. Status: ${displayStatus}`);
+              return res.json({ 
+                success: true, 
+                status: displayStatus, 
+                isSuccess: displayStatus === 'completed', 
+                isFailed: displayStatus === 'rejected' || displayStatus === 'failed'
+              });
             } else if (isHbFailure && tx.status !== 'completed') {
               console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
               await supabaseAdmin.from('transactions').update({ 
