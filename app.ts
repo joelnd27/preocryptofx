@@ -807,6 +807,10 @@ router.get('/user/referrals', async (req, res) => {
 });
 
 // Secure Balance Management (User accessible but strict)
+app.get('/api/server-time', (req, res) => {
+  res.json({ server_time_iso: new Date().toISOString() });
+});
+
 // HashBack Webhook handler
 // HashBack Webhook
 router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async (req: any, res) => {

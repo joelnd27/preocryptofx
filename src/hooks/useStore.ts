@@ -54,6 +54,8 @@ export function useStore() {
   const userRef = useRef<User | null>(user);
   const isInternalUpdate = useRef(false);
   const closingTrades = useRef<Set<string>>(new Set());
+  const serverTimeOffset = useRef<number>(0);
+  const serverTimeSynced = useRef<boolean>(false);
   
   useEffect(() => {
     userRef.current = user;
@@ -337,6 +339,21 @@ export function useStore() {
     const syncStartTime = Date.now();
 
     try {
+      // Sync clock once or periodically
+      if (!serverTimeSynced.current) {
+        try {
+          const stRes = await axios.get('/api/server-time');
+          if (stRes.data.server_time_iso) {
+            const serverTime = new Date(stRes.data.server_time_iso).getTime();
+            serverTimeOffset.current = serverTime - Date.now();
+            serverTimeSynced.current = true;
+            console.log(`[Sync] Clock calibrated. Offset: ${serverTimeOffset.current}ms`);
+          }
+        } catch (e) {
+          console.warn('[Sync] Could not calibrate clock:', e);
+        }
+      }
+
       const session = providedSession || await getSafeSession();
       if (!session || !session.user) {
         console.log('[Sync] No active session found');
@@ -378,13 +395,49 @@ export function useStore() {
 
       if (userData) {
         console.log('[Sync] User profile found, formatting...');
-        // ... (formatted user logic)
-        const sortedTrades = (userData.trades || [])
-          .sort((a: any, b: any) => new Date(b.timestamp || b.created_at).getTime() - new Date(a.timestamp || a.created_at).getTime());
         
+        // Calculate server time offset
+        if (userData.server_time_iso) {
+          const serverTime = new Date(userData.server_time_iso).getTime();
+          serverTimeOffset.current = serverTime - Date.now();
+          console.log(`[Sync] Calculated server time offset: ${serverTimeOffset.current}ms`);
+        }
+        
+        // ... (formatted user logic)
         const sortedTransactions = (userData.transactions || [])
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 50);
+
+        // Preserve very recent local trades to prevent "vanishing" due to Supabase join lag
+        const currentOpenTrades = (userRef.current?.trades || []).filter(t => t.status === 'OPEN');
+        const now = Date.now();
+        const incomingTrades = (userData.trades || []).map((t: any) => ({
+          id: t.id,
+          coin: t.coin,
+          amount: Number(t.amount),
+          type: t.type,
+          price: Number(t.price),
+          status: t.status,
+          profit: Number(t.profit),
+          targetProfit: Number(t.target_profit),
+          timestamp: new Date(t.timestamp || t.created_at).getTime(),
+          accountType: t.account_type,
+          duration: t.duration,
+          source: t.source
+        }));
+
+        // Merging logic: Keep local open trades if they are missing from incoming but were created recently (< 60s)
+        const mergedTrades = [...incomingTrades];
+        currentOpenTrades.forEach(localTrade => {
+          const isMissing = !incomingTrades.some(t => t.id === localTrade.id);
+          const isRecent = (now - localTrade.timestamp) < 60000;
+          if (isMissing && isRecent) {
+            console.log(`[Sync] Preserving recent local trade ${localTrade.id} missing from server response.`);
+            mergedTrades.push(localTrade);
+          }
+        });
+
+        const finalTrades = mergedTrades.sort((a, b) => b.timestamp - a.timestamp);
 
         const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
         const isHardcodedAdmin = (userData.email || '').toLowerCase() === 'wren20688@gmail.com' && userData.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
@@ -447,20 +500,6 @@ export function useStore() {
           lastProfitResetDate: userData.last_profit_reset_date,
           referralCode: userData.referral_code,
           referredBy: userData.referred_by,
-          trades: sortedTrades.map((t: any) => ({
-            id: t.id,
-            coin: t.coin,
-            amount: Number(t.amount),
-            type: t.type,
-            price: Number(t.price),
-            status: t.status,
-            profit: Number(t.profit),
-            targetProfit: Number(t.target_profit),
-            timestamp: new Date(t.timestamp || t.created_at).getTime(),
-            accountType: t.account_type,
-            duration: t.duration,
-            source: t.source
-          })),
           transactions: sortedTransactions.map((t: any) => ({
             id: t.id,
             userId: t.user_id,
@@ -502,7 +541,8 @@ export function useStore() {
           referrals: fetchedReferrals,
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           copyingTraderId: userData.copying_trader_id,
-          createdAt: new Date(userData.created_at).getTime()
+          createdAt: new Date(userData.created_at).getTime(),
+          trades: finalTrades
         };
 
         // Safety: If sync took too long and user interacted in between, skip applying to avoid flicker
@@ -1477,8 +1517,11 @@ export function useStore() {
       );
 
       openTradesWithDuration.forEach(trade => {
+        const adjustedNow = Date.now() + serverTimeOffset.current;
         const expiryTime = trade.timestamp + (trade.duration! * 1000);
-        if (now >= expiryTime) {
+        
+        if (adjustedNow >= expiryTime) {
+          console.log(`[Auto-Close] Trade ${trade.id} expired. Time left: ${expiryTime - adjustedNow}ms`);
           const finalProfit = trade.targetProfit !== undefined ? trade.targetProfit : -trade.amount;
           closeTrade(trade.id, finalProfit);
         }
