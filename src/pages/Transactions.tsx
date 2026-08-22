@@ -88,10 +88,13 @@ export default function Transactions() {
       const targetTx = user.transactions.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
         
       if (targetTx) {
-        if (targetTx.status === 'completed') {
+        const isSuccess = targetTx.status === 'completed' || targetTx.status === 'success' || targetTx.status === 'successful';
+        const isFailed = targetTx.status === 'failed' || targetTx.status === 'rejected' || targetTx.status === 'cancelled';
+          
+        if (isSuccess) {
           setPaymentStatus('SUCCESS');
           setCurrentTxRef(null);
-        } else if (targetTx.status === 'failed' || targetTx.status === 'rejected') {
+        } else if (isFailed) {
           setPaymentStatus('FAILED');
           setErrorMessage('Transaction failed');
           setCurrentTxRef(null);
@@ -494,15 +497,18 @@ export default function Transactions() {
                         <div className="flex items-center gap-1.5">
                           <span className={cn(
                             "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 w-fit",
-                            tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                            (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? "bg-green-500/10 text-green-500" :
                             (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
                             "bg-yellow-500/10 text-yellow-500"
                           )}>
-                            {tx.status === 'completed' ? <CheckCircle2 size={10} /> : 
+                            {(tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? <CheckCircle2 size={10} /> : 
                              (tx.status === 'failed' || tx.status === 'rejected') ? 
                              <div className="w-1 h-1 rounded-full bg-current" /> :
                              <Clock size={10} />}
-                            {tx.status === 'pending' ? 'pending' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
+                            {tx.status === 'pending' ? 'pending' : 
+                             (tx.status === 'failed' ? 'REJECTED' : 
+                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'SUCCESSFUL' :
+                             tx.status.toUpperCase())}
                           </span>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                             <div className="flex items-center gap-1">
@@ -628,15 +634,18 @@ export default function Transactions() {
                       <div className="flex items-center gap-1">
                         <span className={cn(
                           "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest flex items-center gap-1 w-fit",
-                          tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                          (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? "bg-green-500/10 text-green-500" :
                           (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
                           "bg-yellow-500/10 text-yellow-500"
                         )}>
-                          {tx.status === 'completed' ? <CheckCircle2 size={10} /> : 
+                          {(tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? <CheckCircle2 size={10} /> : 
                            (tx.status === 'failed' || tx.status === 'rejected') ? 
                            <div className="w-1 h-1 rounded-full bg-current" /> :
                            <Clock size={10} />}
-                          {tx.status === 'pending' ? 'pending' : (tx.status === 'failed' ? 'REJECTED' : tx.status.toUpperCase())}
+                          {tx.status === 'pending' ? 'pending' : 
+                           (tx.status === 'failed' ? 'REJECTED' : 
+                           (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'SUCCESSFUL' :
+                           tx.status.toUpperCase())}
                         </span>
                         
                         {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
@@ -1139,7 +1148,9 @@ export default function Transactions() {
                               
                               // Check if the transaction is now completed in our local state
                               const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
-                              if (latestTx && latestTx.status === 'completed') {
+                              const isLatestSuccess = latestTx && (latestTx.status === 'completed' || latestTx.status === 'success' || latestTx.status === 'successful');
+                              
+                              if (isLatestSuccess) {
                                 setPaymentStatus('SUCCESS');
                                 setCurrentTxRef(null);
                               } else if (currentTxRef) {

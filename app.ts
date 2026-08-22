@@ -941,18 +941,15 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           
           // Update status to 'completed' FIRST to ensure dashboard reflects success immediately
           console.log(`[HashBack Webhook] Updating status for ${tx.id} to completed...`);
-          const { error: statusUpdateError } = await supabaseAdmin.from('transactions').update({ 
+          await supabaseAdmin.from('transactions').update({ 
             status: 'completed',
             metadata: { 
               ...(tx.metadata || {}), 
               webhook_at: new Date().toISOString(),
-              credited_amount: usdToCredit
+              credited_amount: usdToCredit,
+              processed_as: 'completed'
             }
           }).eq('id', tx.id);
-          
-          if (statusUpdateError) {
-            console.error(`[HashBack Webhook] Initial Status Update Error:`, statusUpdateError.message);
-          }
 
           // 1. Try RPC for atomic balance update
           console.log(`[HashBack Webhook] Crediting User ${tx.user_id} for $${usdToCredit.toFixed(2)} (Transaction ${tx.id})`);
@@ -979,8 +976,9 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
               } else {
                 console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
                 
-                // Add metadata to show it was a manual fallback
+                // Add metadata to show it was a manual fallback AND ensure status is completed
                 await supabaseAdmin.from('transactions').update({
+                  status: 'completed',
                   metadata: { 
                     ...(tx.metadata || {}), 
                     webhook_at: new Date().toISOString(),
@@ -1117,8 +1115,9 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
                   } else {
                     console.log(`[HashBack Verify] Manual Balance Update Success: ${currentBalance} -> ${newBalance}`);
                     
-                    // Add fallback metadata
+                    // Add fallback metadata AND ensure status is completed
                     await supabaseAdmin.from('transactions').update({ 
+                      status: 'completed',
                       metadata: { 
                         ...(tx.metadata || {}), 
                         verified_at: new Date().toISOString(), 
@@ -1139,8 +1138,8 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
               console.log(`[HashBack Verify] Verification complete for ${tx.id}. Status: ${displayStatus}`);
               return res.json({ 
                 success: true, 
-                status: displayStatus, 
-                isSuccess: displayStatus === 'completed', 
+                status: (displayStatus === 'success' || displayStatus === 'successful') ? 'completed' : displayStatus, 
+                isSuccess: displayStatus === 'completed' || displayStatus === 'success' || displayStatus === 'successful', 
                 isFailed: displayStatus === 'rejected' || displayStatus === 'failed'
               });
             } else if (isHbFailure && tx.status !== 'completed') {

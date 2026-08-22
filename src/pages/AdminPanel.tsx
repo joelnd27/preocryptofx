@@ -498,7 +498,7 @@ export default function AdminPanel() {
                               const idMatch = method.match(/\(([^)]+)\)/);
                               const id = idMatch ? idMatch[1] : null;
                               
-                              if (t.status === 'completed') {
+                              if (t.status === 'completed' || t.status === 'success' || t.status === 'successful') {
                                 return (
                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
                                     {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') || method.toLowerCase().includes('webhook')
@@ -523,13 +523,13 @@ export default function AdminPanel() {
                       <td className="px-6 py-5">
                         <span className={cn(
                           "px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-2 w-fit shadow-sm",
-                          t.status === 'completed' 
+                          (t.status === 'completed' || t.status === 'success' || t.status === 'successful') 
                             ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" 
                             : t.status === 'pending' 
                               ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" 
                               : "bg-rose-500/10 text-rose-600 border border-rose-500/20 shadow-rose-500/5"
                         )}>
-                          {t.status === 'completed' ? (
+                          {(t.status === 'completed' || t.status === 'success' || t.status === 'successful') ? (
                             <><CheckCircle2 size={12} className="text-emerald-500" /> SUCCESSFUL</>
                           ) : t.status === 'pending' ? (
                             <><Clock size={12} className="text-amber-500" /> PENDING</>
