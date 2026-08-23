@@ -453,15 +453,18 @@ export function useStore() {
           const { data: refData } = await supabase
             .from('users')
             .select('id, username, email, created_at, transactions(type, status, amount)')
-            .eq('referred_by', userData.referral_code);
+            .or(`referred_by.eq.${userData.referral_code},referred_by.eq.${userData.id},referred_by.eq.${userData.email}`);
           
           if (refData) {
             fetchedReferrals = refData.map((r: any) => {
               const userTransactions = r.transactions || [];
-              const hasDeposited = userTransactions.some((t: any) => t.type === 'DEPOSIT' && t.status === 'completed');
-              const totalDeposited = userTransactions
-                .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed')
-                .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+              const successfulDeposits = userTransactions.filter((t: any) => 
+                t.type === 'DEPOSIT' && 
+                ['completed', 'success', 'successful'].includes(t.status?.toLowerCase())
+              );
+              
+              const hasDeposited = successfulDeposits.length > 0;
+              const totalDeposited = successfulDeposits.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
               return {
                 userId: r.id,
@@ -1016,6 +1019,13 @@ export function useStore() {
         }
         // Wait a small moment for the Database Trigger to create the record in the 'users' table
         await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Ensure referral fields are synced (Fallback if Database Trigger missed them)
+        await supabase.from('users').update({
+          referral_code: userReferralCode,
+          referred_by: refCode
+        }).eq('id', authData.user.id);
+
         await syncWithSupabase();
         return true;
       }
