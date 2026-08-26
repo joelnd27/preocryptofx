@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
+import { supabase } from '../lib/supabase';
 
 const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
@@ -29,6 +30,7 @@ type AdminTab = 'users' | 'deposits' | 'copy-traders';
 export default function AdminPanel() {
   const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus, checkPaymentStatus, copyTraders, updateCopyTrader, deleteCopyTrader } = useStore();
   const [users, setUsers] = useState<any[]>([]);
+  const [referralCounts, setReferralCounts] = useState<Record<string, number>>({});
   const [transactions, setTransactions] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalDeposited: 0, userCount: 0 });
   const [search, setSearch] = useState('');
@@ -72,11 +74,40 @@ export default function AdminPanel() {
     setLoading(true);
     try {
       console.log(`[Admin] Fetching platform data (search: ${searchQuery || 'none'})...`);
-      const [allUsers, globalStats, allTrans] = await Promise.all([
+      const [allUsers, globalStats, allTrans, allReferralMappings] = await Promise.all([
         getAllUsers(searchQuery),
         getGlobalStats(),
-        getAllTransactions(searchQuery)
+        getAllTransactions(searchQuery),
+        supabase.from('users').select('id, referral_code, referred_by')
       ]);
+
+      // Calculate true referral counts across the entire database
+      const counts: Record<string, number> = {};
+      if (allReferralMappings.data) {
+        // Build maps for code, ID, and email to ID resolution
+        const codeToId: Record<string, string> = {};
+        const emailToId: Record<string, string> = {};
+        
+        allReferralMappings.data.forEach((u: any) => {
+          if (u.referral_code) codeToId[u.referral_code.toUpperCase()] = u.id;
+          if (u.email) emailToId[u.email.toLowerCase()] = u.id;
+          codeToId[u.id] = u.id; // Map ID to itself for easy resolution
+        });
+
+        allReferralMappings.data.forEach((u: any) => {
+          if (u.referred_by) {
+            const ref = u.referred_by.trim();
+            // Try to resolve referred_by to a user ID
+            const referrerId = codeToId[ref.toUpperCase()] || 
+                             emailToId[ref.toLowerCase()] || 
+                             codeToId[ref] || 
+                             ref;
+            
+            counts[referrerId] = (counts[referrerId] || 0) + 1;
+          }
+        });
+      }
+      setReferralCounts(counts);
 
       // Optimize: Map transactions to users for faster lookup
       const userTotals: Record<string, { deposits: number, withdrawals: number }> = {};
@@ -360,7 +391,7 @@ export default function AdminPanel() {
                             <p className="text-[8px] text-slate-400 italic">By: {u.referred_by}</p>
                           )}
                           <div className="mt-1 px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[9px] font-bold">
-                            {users.filter(usr => (usr.referred_by && (usr.referred_by === u.referral_code || usr.referred_by === u.id))).length} Refs
+                            {referralCounts[u.id] || 0} Refs
                           </div>
                         </div>
                       </td>
