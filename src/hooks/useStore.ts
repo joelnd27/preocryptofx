@@ -368,7 +368,7 @@ export function useStore() {
         .maybeSingle();
 
       if (error) {
-        const msg = (error.message || '').toLowerCase();
+        const msg = String(error.message || error || '').toLowerCase();
         const isAuthError = 
           msg.includes('refresh token not found') || 
           msg.includes('invalid refresh token') || 
@@ -385,7 +385,15 @@ export function useStore() {
           return;
         }
 
-        if (msg.includes('failed to fetch') || msg.includes('network error') || msg.includes('load failed')) {
+        const isNetworkError = 
+          msg.includes('failed to fetch') || 
+          msg.includes('network error') || 
+          msg.includes('load failed') || 
+          msg.includes('fetch') || 
+          msg.includes('typeerror') ||
+          msg.includes('connection');
+
+        if (isNetworkError) {
           console.warn('[Sync] Supabase connection unavailable (Network Error). Working offline with local state.');
         } else {
           console.error('[Sync] DB Error:', error.message);
@@ -566,8 +574,16 @@ export function useStore() {
             .order('total_profit', { ascending: false });
 
           if (tradersError) {
-            const tMsg = (tradersError.message || '').toLowerCase();
-            if (tMsg.includes('failed to fetch') || tMsg.includes('network error') || tMsg.includes('load failed')) {
+            const tMsg = String(tradersError.message || tradersError || '').toLowerCase();
+            const isNetworkErr = 
+              tMsg.includes('failed to fetch') || 
+              tMsg.includes('network error') || 
+              tMsg.includes('load failed') ||
+              tMsg.includes('fetch') ||
+              tMsg.includes('typeerror') ||
+              tMsg.includes('connection');
+
+            if (isNetworkErr) {
               console.warn('[Sync] Supabase connection unavailable for copy traders. Using local/simulated traders.');
             } else {
               console.error('[Sync] Error fetching copy traders:', tradersError.message);
