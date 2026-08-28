@@ -144,12 +144,11 @@ export default function Bots() {
     BOTS.forEach(bot => {
       // Use persisted config if available
       const persisted = user?.botConfigs?.[bot.id];
-      const isActive = user?.bots?.[bot.id as keyof typeof user.bots] || (user?.activeCustomBotIds || []).includes(bot.id);
       
       initial[bot.id] = { 
         coin: persisted?.coin || (bot.type === 'trend' ? 'ETH' : bot.type === 'ai' ? 'SOL' : 'BTC'), 
         timeframe: persisted?.timeframe || (bot.type === 'scalping' ? '1M' : '1H'),
-        stake: isActive ? (persisted?.stake || user?.botStake || 10) : 10,
+        stake: persisted?.stake || 10,
         targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
       };
     });
@@ -157,12 +156,11 @@ export default function Bots() {
     // Custom bots
     (user?.customBots || []).forEach(bot => {
       const persisted = user?.botConfigs?.[bot.id];
-      const isActive = user?.activeCustomBotIds?.includes(bot.id);
 
       initial[bot.id] = {
         coin: persisted?.coin || 'BTC',
         timeframe: persisted?.timeframe || '1H',
-        stake: isActive ? (persisted?.stake || user?.botStake || 10) : 10,
+        stake: persisted?.stake || 10,
         targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
       };
     });
@@ -179,11 +177,10 @@ export default function Bots() {
       if (user?.botConfigs) {
         Object.entries(user.botConfigs || {}).forEach(([id, config]: [string, any]) => {
           if (config) {
-            const isActive = user?.bots?.[id as keyof typeof user.bots] || (user?.activeCustomBotIds || []).includes(id);
             next[id] = {
               coin: config.coin || next[id]?.coin || 'BTC',
               timeframe: config.timeframe || next[id]?.timeframe || '1M',
-              stake: isActive ? (config.stake || next[id]?.stake || 10) : 10,
+              stake: config.stake || next[id]?.stake || 10,
               targetProfit: config.targetProfit || next[id]?.targetProfit || 0
             };
           }
@@ -194,11 +191,10 @@ export default function Bots() {
       if (user?.customBots) {
         user.customBots.forEach(bot => {
           if (!next[bot.id]) {
-            const isActive = user?.activeCustomBotIds?.includes(bot.id);
             next[bot.id] = {
               coin: 'BTC',
               timeframe: '1M',
-              stake: isActive ? (user.botStake || 10) : 10,
+              stake: 10,
               targetProfit: user.targetProfitPercentage || 0
             };
           }
@@ -417,22 +413,6 @@ export default function Bots() {
                 key={bot.id}
                 onClick={() => {
                   setSelectedBot(bot);
-                  const isActive = user?.bots[bot.id as keyof typeof user.bots] || (user?.activeCustomBotIds || []).includes(bot.id);
-                  if (!isActive) {
-                    const currentSettings = botSettings[bot.id];
-                    setBotSettings(prev => ({
-                      ...prev,
-                      [bot.id]: { ...prev[bot.id], stake: 10 }
-                    }));
-                    // Persist the reset to 10 in the store/server
-                    updateBotConfig(
-                      bot.id, 
-                      currentSettings?.coin || 'BTC/USDT', 
-                      currentSettings?.timeframe || '1M', 
-                      10, 
-                      currentSettings?.targetProfit || 0
-                    );
-                  }
                 }}
                 className={cn(
                   "relative p-3.5 sm:p-4 rounded-xl border transition-all text-left group overflow-hidden",
