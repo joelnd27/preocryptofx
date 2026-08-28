@@ -7,6 +7,10 @@
     <meta name="description" content="PreoCryptoFX offers a secure, professional cryptocurrency trading experience with advanced AI-powered tools, real-time analytics, and 24/7 support for every level of trader." />
     <meta name="keywords" content="crypto trading, AI trading, bitcoin, ethereum, professional trading platform, PreoCryptoFX" />
     <meta id="meta-theme-color" name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta id="meta-status-bar-style" name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="mobile-web-app-capable" content="yes" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -72,8 +76,14 @@
           }
           
           var themeColor = isDark ? '#0f172a' : '#ffffff';
+          var statusBarStyle = isDark ? 'black-translucent' : 'default';
+          
           var metaTheme = document.getElementById('meta-theme-color');
           if (metaTheme) metaTheme.setAttribute('content', themeColor);
+          
+          var metaStatus = document.getElementById('meta-status-bar-style');
+          if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
+          
           var metaTile = document.getElementById('meta-tile-color');
           if (metaTile) metaTile.setAttribute('content', themeColor);
         } catch (e) {}

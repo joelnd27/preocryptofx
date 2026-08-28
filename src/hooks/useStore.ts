@@ -2920,12 +2920,16 @@ export function useStore() {
       document.documentElement.classList.add('dark');
       const metaTheme = document.getElementById('meta-theme-color');
       if (metaTheme) metaTheme.setAttribute('content', '#0f172a');
+      const metaStatus = document.getElementById('meta-status-bar-style');
+      if (metaStatus) metaStatus.setAttribute('content', 'black-translucent');
       const metaTile = document.getElementById('meta-tile-color');
       if (metaTile) metaTile.setAttribute('content', '#0f172a');
     } else {
       document.documentElement.classList.remove('dark');
       const metaTheme = document.getElementById('meta-theme-color');
       if (metaTheme) metaTheme.setAttribute('content', '#ffffff');
+      const metaStatus = document.getElementById('meta-status-bar-style');
+      if (metaStatus) metaStatus.setAttribute('content', 'default');
       const metaTile = document.getElementById('meta-tile-color');
       if (metaTile) metaTile.setAttribute('content', '#ffffff');
     }
