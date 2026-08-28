@@ -279,6 +279,16 @@ export default function Bots() {
 
     const currentStake = botSettings[botId]?.stake || 10;
 
+    if (!isBotActive && currentStake > 50000) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Stake Limit Exceeded',
+        message: `The maximum allowed stake for any bot is $50,000. Please reduce your stake and try again.`,
+        type: 'error'
+      });
+      return;
+    }
+
     if (!isBotActive && balance < currentStake) {
       setAlertConfig({
         isOpen: true,
@@ -581,9 +591,12 @@ export default function Bots() {
                       <input 
                         type="number"
                         min="10"
+                        max="50000"
                         value={botSettings[selectedBot.id].stake}
                         onChange={(e) => {
-                          const val = Number(e.target.value);
+                          let val = Number(e.target.value);
+                          if (val > 50000) val = 50000;
+                          
                           setBotSettings(prev => ({
                             ...prev,
                             [selectedBot.id]: { ...prev[selectedBot.id], stake: val }

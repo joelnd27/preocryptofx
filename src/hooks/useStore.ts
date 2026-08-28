@@ -1866,9 +1866,10 @@ export function useStore() {
   const updateBotConfig = async (botId: string, coin: string, timeframe: string, stake?: number, targetProfit?: number) => {
     if (!user) return;
     
+    const finalStake = stake !== undefined ? Math.min(stake, 50000) : undefined;
     const updatedConfigs = {
       ...(user.botConfigs || {}),
-      [botId]: { coin, timeframe, stake, targetProfit }
+      [botId]: { coin, timeframe, stake: finalStake, targetProfit }
     };
 
     const updatedUser = {
@@ -1907,6 +1908,8 @@ export function useStore() {
   const updateBotGlobalSettings = async (stake: number, targetPercentage: number) => {
     if (!user) return;
     
+    const finalStake = Math.min(stake, 50000);
+    
     // Also update individual bot configs that are currently using the default stake
     // to ensure they follow the global setting immediately
     const currentConfigs = { ...(user.botConfigs || {}) };
@@ -1917,7 +1920,7 @@ export function useStore() {
       if (updatedConfigs[botId].stake === user.botStake || !updatedConfigs[botId].stake) {
         updatedConfigs[botId] = {
           ...updatedConfigs[botId],
-          stake: stake,
+          stake: finalStake,
           targetProfit: targetPercentage
         };
       }
@@ -1925,7 +1928,7 @@ export function useStore() {
 
     const updatedUser = { 
       ...user, 
-      botStake: stake, 
+      botStake: finalStake, 
       targetProfitPercentage: targetPercentage,
       botConfigs: updatedConfigs
     };

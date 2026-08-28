@@ -137,6 +137,7 @@ export const MIN_STAKE_USD = 3;
 export const MIN_BALANCE_AFTER_LOSS = 3;
 export const MIN_BOT_STOP_BALANCE = 10;
 export const MIN_MANUAL_STOP_BALANCE = 3;
+export const MAX_STAKE_USD = 50000;
 
 export const CRYPTO_LIST = [
   { symbol: 'BTC', name: 'Bitcoin', basePrice: 65000 },
