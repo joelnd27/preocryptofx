@@ -1965,8 +1965,9 @@ export function useStore() {
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     const currentBalance = currentUser[balanceKey];
 
-    // Safety: Auto-stop bot if balance is below $10 threshold
-    if (currentBalance <= 10) {
+    // Safety: Auto-stop bot if balance is below stake or minimum threshold
+    const botStake = botId ? (currentUser.botConfigs?.[botId]?.stake || 10) : 10;
+    if (currentBalance < botStake || currentBalance <= 10) {
       const updatedBots = { 
         scalping: false, 
         trend: false, 
@@ -2011,7 +2012,9 @@ export function useStore() {
       window.dispatchEvent(new CustomEvent('trade-closed', {
         detail: {
           title: 'Bots Deactivated',
-          message: 'Trading bots have been stopped automatically because your balance is at or below $10.',
+          message: currentBalance < botStake 
+            ? `Trading bots have been stopped because your balance ($${currentBalance.toFixed(2)}) is insufficient for the set stake ($${botStake.toFixed(2)}).`
+            : 'Trading bots have been stopped automatically because your balance is at or below $10.',
           type: 'warning'
         }
       }));

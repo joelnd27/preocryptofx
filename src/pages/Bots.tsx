@@ -277,15 +277,14 @@ export default function Bots() {
       ? user?.bots[botId as keyof typeof user.bots] 
       : (user?.activeCustomBotIds || []).includes(botId);
 
-    if (!isBotActive && balance < (bot.minDeposit || 10)) {
-      const isAI = bot.type === 'ai' || (botId.startsWith('custom-'));
+    const currentStake = botSettings[botId]?.stake || 10;
+
+    if (!isBotActive && balance < currentStake) {
       setAlertConfig({
         isOpen: true,
-        title: isAI ? 'Trading Bot Limit' : 'Manual Bot Limit',
-        message: isAI 
-          ? `Trading bots require a minimum of $${bot.minDeposit}. Your current balance is below this limit.`
-          : `This manual bot requires at least $${bot.minDeposit} to operate. Please increase your balance.`,
-        type: 'warning'
+        title: 'Insufficient Balance',
+        message: `Your account balance ($${balance.toFixed(2)}) is less than the requested stake ($${currentStake.toFixed(2)}). Please increase your balance or reduce the stake amount to start the bot.`,
+        type: 'error'
       });
       return;
     }
