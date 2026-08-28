@@ -48,7 +48,7 @@ export default function Landing() {
   return (
     <div className={cn(
       "min-h-screen overflow-x-hidden transition-colors duration-300",
-      isDarkMode ? "bg-background text-foreground" : "bg-slate-50 text-slate-900"
+      isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
     )}>
       <div className="sticky top-0 z-[100] w-full">
         {/* Navbar */}

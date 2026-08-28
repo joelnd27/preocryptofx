@@ -676,6 +676,8 @@ export function useStore() {
           realBalance: 0,
           activeAccount: 'DEMO',
           verificationStatus: 'unverified',
+          botStake: 10,
+          targetProfitPercentage: 50,
           trades: [],
           transactions: []
         });
@@ -1117,6 +1119,8 @@ export function useStore() {
         wizard2: false,
         custom: false,
       },
+      botStake: 10,
+      targetProfitPercentage: 50,
       createdAt: Date.now()
     };
     
@@ -1784,6 +1788,15 @@ export function useStore() {
     // Check if it's a built-in bot
     const isActivating = botId in updatedBots ? !updatedBots[botId as keyof User['bots']] : !updatedActiveCustomBotIds.includes(botId);
 
+    // Update bot config if deactivating to reset stake to 10
+    let updatedConfigs = { ...(user.botConfigs || {}) };
+    if (!isActivating) {
+      updatedConfigs[botId] = {
+        ...(updatedConfigs[botId] || { coin: 'BTC', timeframe: '1M', targetProfit: 0 }),
+        stake: 10
+      };
+    }
+
     if (botId in updatedBots) {
       const key = botId as keyof User['bots'];
       updatedBots[key] = !updatedBots[key];
@@ -1807,7 +1820,8 @@ export function useStore() {
     const updatedUser = {
       ...user,
       bots: updatedBots,
-      activeCustomBotIds: updatedActiveCustomBotIds
+      activeCustomBotIds: updatedActiveCustomBotIds,
+      botConfigs: updatedConfigs
     };
 
     isInternalUpdate.current = true;
@@ -1836,7 +1850,8 @@ export function useStore() {
               wizard1: updatedBots.wizard1,
               wizard2: updatedBots.wizard2,
               active_custom_ids: updatedActiveCustomBotIds
-            }
+            },
+            configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
         }, {
@@ -2729,8 +2744,14 @@ export function useStore() {
 
         delete botSessionStartProfits.current[botId];
 
+        // Reset stake to 10 for the bot that reached its goal
+        const updatedConfigs = { ...(currentUser.botConfigs || {}) };
+        if (updatedConfigs[botId]) {
+          updatedConfigs[botId] = { ...updatedConfigs[botId], stake: 10 };
+        }
+
         isInternalUpdate.current = true;
-        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botStats: updatedStats } : null);
+        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botStats: updatedStats, botConfigs: updatedConfigs } : null);
         
         if (isSupabaseConfigured()) {
           try {
@@ -2738,6 +2759,7 @@ export function useStore() {
               user_id: currentUser.id,
               [`${botId}_active`]: false,
               bot_stats: updatedStats,
+              bot_configs: updatedConfigs,
               updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
           } catch (err) {
@@ -2844,13 +2866,20 @@ export function useStore() {
         
         delete botSessionStartProfits.current[botId];
         
-        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds } : null);
+        // Reset stake to 10 for all bots
+        const updatedConfigs = { ...(currentUser.botConfigs || {}) };
+        Object.keys(updatedConfigs).forEach(key => {
+          updatedConfigs[key] = { ...updatedConfigs[key], stake: 10 };
+        });
+        
+        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botConfigs: updatedConfigs } : null);
         
         if (isSupabaseConfigured()) {
           try {
             await supabase.from('bot_settings').upsert({
               user_id: currentUser.id,
               [`${botId}_active`]: false,
+              bot_configs: updatedConfigs,
               updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
           } catch (err) {
@@ -2896,9 +2925,9 @@ export function useStore() {
     } else {
       document.documentElement.classList.remove('dark');
       const metaTheme = document.getElementById('meta-theme-color');
-      if (metaTheme) metaTheme.setAttribute('content', '#f8fafc');
+      if (metaTheme) metaTheme.setAttribute('content', '#ffffff');
       const metaTile = document.getElementById('meta-tile-color');
-      if (metaTile) metaTile.setAttribute('content', '#f8fafc');
+      if (metaTile) metaTile.setAttribute('content', '#ffffff');
     }
   }, [isDarkMode]);
 
