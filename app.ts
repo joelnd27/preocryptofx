@@ -975,8 +975,9 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
             }
           } else if (rpcResult === true) {
             console.log(`[HashBack Webhook] Transaction ${tx.id} successfully processed via RPC.`);
-            // RPC already set status to 'completed', but let's add metadata
+            // Explicitly set status to 'completed' to ensure it's not caught by auto-reject
             await supabaseAdmin.from('transactions').update({
+              status: 'completed',
               metadata: { 
                 ...(tx.metadata || {}), 
                 webhook_at: new Date().toISOString(),
@@ -1066,7 +1067,7 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
             const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
                                (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
 
-            const isHbSuccess = ['success', 'completed', 'successful', 'paid', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
+            const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
             const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
 
             if (isHbSuccess && tx.status !== 'completed') {
@@ -1104,9 +1105,15 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
                 }
               } else if (rpcResult === true) {
                 console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
-                // Ensure metadata reflects verification
+                // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI
                 await supabaseAdmin.from('transactions').update({
-                  metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), verify_rpc_success: true }
+                  status: 'completed',
+                  metadata: { 
+                    ...(tx.metadata || {}), 
+                    verified_at: new Date().toISOString(), 
+                    verify_rpc_success: true,
+                    credited_amount: usdToCredit
+                  }
                 }).eq('id', tx.id);
               } else {
                 console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);

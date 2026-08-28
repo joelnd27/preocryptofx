@@ -391,10 +391,19 @@ export function useStore() {
           msg.includes('load failed') || 
           msg.includes('fetch') || 
           msg.includes('typeerror') ||
-          msg.includes('connection');
+          msg.includes('connection') ||
+          msg.includes('aborted') ||
+          msg.includes('timeout') ||
+          msg.includes('undefined') ||
+          !navigator.onLine;
 
         if (isNetworkError) {
-          console.warn('[Sync] Supabase connection unavailable (Network Error). Working offline with local state.');
+          // Suppress noise for network issues
+          if (msg.includes('fetch') || msg.includes('network') || msg.includes('typeerror')) {
+            console.warn('[Sync] Network connection unavailable. Using offline state.');
+          } else {
+            console.error('[Sync] DB Error:', error.message);
+          }
         } else {
           console.error('[Sync] DB Error:', error.message);
         }
@@ -532,6 +541,8 @@ export function useStore() {
             starlight: botStats.active_states?.starlight || false,
             galaxy: botStats.active_states?.galaxy || false,
             nova: botStats.active_states?.nova || false,
+            wizard1: botStats.active_states?.wizard1 || false,
+            wizard2: botStats.active_states?.wizard2 || false,
             custom: botSettingsData.custom_active || false,
           } : (userRef.current?.bots || {
             scalping: false,
@@ -542,10 +553,14 @@ export function useStore() {
             starlight: false,
             galaxy: false,
             nova: false,
+            wizard1: false,
+            wizard2: false,
             custom: false,
           }),
+          botConfigs: botSettingsData?.bot_stats?.configs || {},
           botStats: botStats,
-          customBotConfig: botSettingsData?.custom_config,
+          customBots: botStats.custom_bots || [],
+          activeCustomBotIds: botStats.active_states?.active_custom_ids || [],
           botLogs: botSettingsData?.bot_logs || [],
           botStake: Number(botSettingsData?.bot_stake || 10),
           targetProfitPercentage: Number(botSettingsData?.target_profit_percentage || 0),
@@ -1098,6 +1113,8 @@ export function useStore() {
         starlight: false,
         galaxy: false,
         nova: false,
+        wizard1: false,
+        wizard2: false,
         custom: false,
       },
       createdAt: Date.now()
@@ -1754,39 +1771,45 @@ export function useStore() {
     }
   };
 
-  const toggleBot = async (bot: keyof User['bots']) => {
+  const toggleBot = async (botId: string) => {
     if (!user) return;
     
-    const updatedBots = {
-      ...user.bots,
-      [bot]: !user.bots[bot]
-    };
+    let updatedBots = { ...user.bots };
+    let updatedActiveCustomBotIds = [...(user.activeCustomBotIds || [])];
+
+    // Check if it's a built-in bot
+    if (botId in updatedBots) {
+      const key = botId as keyof User['bots'];
+      updatedBots[key] = !updatedBots[key];
+    } else {
+      // It's a custom bot
+      if (updatedActiveCustomBotIds.includes(botId)) {
+        updatedActiveCustomBotIds = updatedActiveCustomBotIds.filter(id => id !== botId);
+      } else {
+        updatedActiveCustomBotIds.push(botId);
+      }
+    }
 
     const updatedUser = {
       ...user,
-      bots: updatedBots
+      bots: updatedBots,
+      activeCustomBotIds: updatedActiveCustomBotIds
     };
 
-    // Optimistic Update: Set state immediately to prevent UI lag/flicker
     isInternalUpdate.current = true;
-    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
-    // Clear the internal update flag after a short delay to allow syncs to resume
-    setTimeout(() => {
-      isInternalUpdate.current = false;
-    }, 3000);
+    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
 
     if (isSupabaseConfigured()) {
       try {
-        const { error } = await supabase.from('bot_settings').upsert({
+        await supabase.from('bot_settings').upsert({
           user_id: user.id,
           scalping_active: updatedBots.scalping,
           trend_active: updatedBots.trend,
           ai_active: updatedBots.ai,
           custom_active: updatedBots.custom,
-          custom_config: user.customBotConfig, // Preserve custom config on toggle
           bot_stats: {
             ...(user.botStats || {}),
             active_states: {
@@ -1795,19 +1818,18 @@ export function useStore() {
               orbit: updatedBots.orbit,
               starlight: updatedBots.starlight,
               galaxy: updatedBots.galaxy,
-              nova: updatedBots.nova
+              nova: updatedBots.nova,
+              wizard1: updatedBots.wizard1,
+              wizard2: updatedBots.wizard2,
+              active_custom_ids: updatedActiveCustomBotIds
             }
           },
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
         });
-        
-        if (error) {
-          console.error('[Store] Supabase toggle error:', error.message);
-        }
       } catch (err) {
-        console.error('[Store] Error toggling bot in Supabase:', err);
+        console.error('Failed to toggle bot in Supabase:', err);
       }
     }
   };
@@ -1856,10 +1878,27 @@ export function useStore() {
   const updateBotGlobalSettings = async (stake: number, targetPercentage: number) => {
     if (!user) return;
     
-    const updatedUser = {
-      ...user,
-      botStake: stake,
-      targetProfitPercentage: targetPercentage
+    // Also update individual bot configs that are currently using the default stake
+    // to ensure they follow the global setting immediately
+    const currentConfigs = { ...(user.botConfigs || {}) };
+    const updatedConfigs: Record<string, any> = { ...currentConfigs };
+    
+    Object.keys(updatedConfigs).forEach(botId => {
+      // If stake matches current global stake or is missing, update it to the new one
+      if (updatedConfigs[botId].stake === user.botStake || !updatedConfigs[botId].stake) {
+        updatedConfigs[botId] = {
+          ...updatedConfigs[botId],
+          stake: stake,
+          targetProfit: targetPercentage
+        };
+      }
+    });
+
+    const updatedUser = { 
+      ...user, 
+      botStake: stake, 
+      targetProfitPercentage: targetPercentage,
+      botConfigs: updatedConfigs
     };
 
     isInternalUpdate.current = true;
@@ -1867,17 +1906,16 @@ export function useStore() {
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
-    // Clear flag after delay
-    setTimeout(() => {
-      isInternalUpdate.current = false;
-    }, 3000);
-
     if (isSupabaseConfigured()) {
       try {
         await supabase.from('bot_settings').upsert({
           user_id: user.id,
           bot_stake: stake,
           target_profit_percentage: targetPercentage,
+          bot_stats: {
+            ...(user.botStats || {}),
+            configs: updatedConfigs
+          },
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
@@ -1900,7 +1938,6 @@ export function useStore() {
 
     // Safety: Auto-stop bot if balance is below $10 threshold
     if (currentBalance <= 10) {
-      console.log(`[Store] Balance at or below $10 limit. Deactivating bots for safety.`);
       const updatedBots = { 
         scalping: false, 
         trend: false, 
@@ -1910,6 +1947,8 @@ export function useStore() {
         starlight: false,
         galaxy: false,
         nova: false,
+        wizard1: false,
+        wizard2: false,
         custom: false 
       };
       
@@ -1928,14 +1967,17 @@ export function useStore() {
               orbit: false,
               starlight: false,
               galaxy: false,
-              nova: false
+              nova: false,
+              wizard1: false,
+              wizard2: false,
+              active_custom_ids: []
             }
           },
           updated_at: new Date().toISOString()
         }).eq('user_id', currentUser.id);
       }
       
-      setUser(prev => prev ? { ...prev, bots: updatedBots } : null);
+      setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: [] } : null);
       
       window.dispatchEvent(new CustomEvent('trade-closed', {
         detail: {
@@ -2539,24 +2581,33 @@ export function useStore() {
   };
 
   const importBot = async (config: { name: string, strategy: string, risk: string, currency: string }) => {
-    if (!user) return;
+    if (!user) return null;
     
-    const expiresAt = Date.now() + (3650 * 24 * 60 * 60 * 1000); // 10 years from now (effectively no expiration)
-    const customConfig = { ...config, expiresAt };
+    const newBot = {
+      id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      ...config,
+      createdAt: Date.now()
+    };
+    
+    const updatedCustomBots = [...(user.customBots || []), newBot];
     
     if (isSupabaseConfigured()) {
       await supabase.from('bot_settings').upsert({
         user_id: user.id,
-        custom_config: customConfig,
-        custom_active: false // Require manual start
+        bot_stats: {
+          ...(user.botStats || {}),
+          custom_bots: updatedCustomBots
+        },
+        updated_at: new Date().toISOString()
       });
     }
     
     setUser(prev => prev ? {
       ...prev,
-      customBotConfig: customConfig,
-      bots: { ...prev.bots, custom: false } // Require manual start
+      customBots: updatedCustomBots
     } : null);
+
+    return newBot;
   };
   
   const updateProfile = async (updates: Partial<Pick<User, 'username' | 'email' | 'phone' | 'avatar'>>) => {
@@ -2590,15 +2641,18 @@ export function useStore() {
       const currentUser = userRef.current;
       if (!currentUser) return;
       
-      const botsToSimulate = Object.entries(currentUser.bots || {}).filter(([_, active]) => active);
+      const botsToSimulate = [
+        ...Object.entries(currentUser.bots || {}).filter(([id, active]) => active && id !== 'custom').map(([id]) => ({ id, type: 'standard' })),
+        ...(currentUser.activeCustomBotIds || []).map(id => ({ id, type: 'custom' }))
+      ];
       
       // Stop the simulation if no bots are active
       if (botsToSimulate.length === 0) {
-        console.log('[Store] No active bots, stopping simulation loop.');
         return;
       }
 
-      const [botId] = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
+      const activeBotInfo = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
+      const botId = activeBotInfo.id;
       
       // Check if target profit has been reached
       const botConfig = currentUser.botConfigs?.[botId];
@@ -2611,22 +2665,23 @@ export function useStore() {
 
       // IMMEDIATE CHECK: If target already reached before trade, stop now
       if (botTargetPercentage > 0 && botStake >= 10 && currentDailyProfit >= targetProfitAmount) {
-        console.log(`[Store] Target reached ($${currentDailyProfit} >= $${targetProfitAmount.toFixed(2)}). Stopping simulation.`);
-        
         const deactivatedBots = { 
           scalping: false, trend: false, ai: false, vortex: false,
-          orbit: false, starlight: false, galaxy: false, nova: false, custom: false 
+          orbit: false, starlight: false, galaxy: false, nova: false, 
+          wizard1: false, wizard2: false, custom: false 
         };
         
         const deactivatedStats = {
           ...(currentUser.botStats || {}),
           active_states: {
-            vortex: false, orbit: false, starlight: false, galaxy: false, nova: false
+            vortex: false, orbit: false, starlight: false, galaxy: false, 
+            nova: false, wizard1: false, wizard2: false,
+            active_custom_ids: []
           }
         };
 
         isInternalUpdate.current = true;
-        setUser(prev => prev ? { ...prev, bots: deactivatedBots, botStats: deactivatedStats } : null);
+        setUser(prev => prev ? { ...prev, bots: deactivatedBots, activeCustomBotIds: [], botStats: deactivatedStats } : null);
         
         if (isSupabaseConfigured()) {
           try {
@@ -2660,18 +2715,25 @@ export function useStore() {
       let coin = 'BTC';
       let baseAmount = 0;
 
-      if (botId === 'custom' && currentUser.customBotConfig) {
-        botName = currentUser.customBotConfig.name;
-        coin = currentUser.customBotConfig.currency || 'BTC';
-        const risk = currentUser.customBotConfig.risk || 'Medium';
-        const riskMultiplier = 
-          risk === 'Low' ? 0.5 :
-          risk === 'High' ? 2.5 :
-          risk === 'Aggressive' ? 6.0 : 1.2;
-        
-        const stake = Math.max(10, botStake);
-        // Aggressive scaling: 5% to 22% of stake
-        baseAmount = (stake * (0.05 + Math.random() * 0.17)) * riskMultiplier;
+      const stake = Math.max(10, botStake);
+
+      if (activeBotInfo.type === 'custom') {
+        const customBot = (currentUser.customBots || []).find(b => b.id === botId);
+        if (customBot) {
+          botName = customBot.name;
+          coin = customBot.currency || 'BTC';
+          const risk = customBot.risk || 'Medium';
+          const riskMultiplier = 
+            risk === 'Low' ? 0.7 :
+            risk === 'High' ? 2.5 :
+            risk === 'Aggressive' ? 6.0 : 1.3;
+          
+          // Varied scaling: 8% to 25% of stake, ensuring no "pennies" for high stakes
+          baseAmount = (stake * (0.08 + Math.random() * 0.17)) * riskMultiplier;
+        } else {
+          // Fallback
+          baseAmount = (stake * (0.07 + Math.random() * 0.15));
+        }
       } else {
         const commonBots: Record<string, string> = {
           scalping: 'Scalper Pro v4.2',
@@ -2681,7 +2743,9 @@ export function useStore() {
           orbit: 'Orbit Swing Bot',
           starlight: 'Starlight AI',
           galaxy: 'Galaxy Arbi-Bot',
-          nova: 'Nova Alpha v2'
+          nova: 'Nova Alpha v2',
+          wizard1: 'Wizard bot 1',
+          wizard2: 'Wizard bot 2'
         };
         botName = commonBots[botId] || 'Trading Bot';
         
@@ -2693,9 +2757,8 @@ export function useStore() {
           else coin = 'BTC';
         }
         
-        const stake = Math.max(10, botStake);
-        // Aggressive scaling: 4% to 18% of stake
-        baseAmount = (stake * (0.04 + Math.random() * 0.14));
+        // Varied scaling: 7% to 22% of stake, keeping floor higher
+        baseAmount = (stake * (0.07 + Math.random() * 0.15));
       }
 
       const isDemo = currentUser.activeAccount === 'DEMO';
@@ -2705,7 +2768,7 @@ export function useStore() {
       let winChance = 0.5;
       if (isDemo) winChance = 0.92;
       else if (isMarketer || isAdmin) winChance = 0.98;
-      else winChance = 0.05; // Slightly improved for real accounts
+      else winChance = 0.88; // Highly profitable for real accounts as requested
       
       const isActiveReal = currentUser.activeAccount === 'REAL';
       const isWin = Math.random() < winChance;
@@ -2727,14 +2790,13 @@ export function useStore() {
       // POST-TRADE DEACTIVATION CHECK
       const newDailyTotal = Number((currentDailyProfit + profitAmountNum).toFixed(2));
       if (botTargetPercentage > 0 && botStake >= 10 && newDailyTotal >= targetProfitAmount) {
-        console.log(`[Store] Target reached after trade ($${newDailyTotal} >= $${targetProfitAmount.toFixed(2)}). Deactivating.`);
-        
         const deactivatedBots = { 
           scalping: false, trend: false, ai: false, vortex: false,
-          orbit: false, starlight: false, galaxy: false, nova: false, custom: false 
+          orbit: false, starlight: false, galaxy: false, nova: false, 
+          wizard1: false, wizard2: false, custom: false 
         };
         
-        setUser(prev => prev ? { ...prev, bots: deactivatedBots } : null);
+        setUser(prev => prev ? { ...prev, bots: deactivatedBots, activeCustomBotIds: [] } : null);
         
         if (isSupabaseConfigured()) {
           try {
@@ -2760,13 +2822,13 @@ export function useStore() {
         }));
       }
 
-      // Random delay between 10 and 15 seconds
-      const nextDelay = Math.floor(Math.random() * 5000) + 10000;
+      // Faster execution delay: 5 to 8 seconds
+      const nextDelay = Math.floor(Math.random() * 3000) + 5000;
       timeoutId = setTimeout(simulate, nextDelay);
     };
 
-    // Initial random delay
-    const initialDelay = Math.floor(Math.random() * 5000) + 10000;
+    // Initial faster start: 1 to 3 seconds
+    const initialDelay = Math.floor(Math.random() * 2000) + 1000;
     timeoutId = setTimeout(simulate, initialDelay);
 
     return () => clearTimeout(timeoutId);

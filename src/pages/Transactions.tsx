@@ -168,7 +168,7 @@ export default function Transactions() {
       poll();
       
       // Then set interval
-      pollInterval = setInterval(poll, 4000); // 4s to be gentler
+      pollInterval = setInterval(poll, 2000); // 2s for more responsive updates
     }
 
     return () => {

@@ -178,14 +178,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Main Content Area */}
       <div className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative", isDarkMode ? "bg-slate-950" : "bg-slate-50")}>
-        <div className="sticky top-0 z-50 w-full shrink-0">
+        <div className={cn(
+          "sticky top-0 z-50 w-full shrink-0",
+          isDarkMode ? "bg-slate-950" : "bg-white"
+        )}>
           
           {/* Top Header */}
           <header className={cn(
             "h-16 border-b flex items-center justify-between px-2.5 sm:px-4 lg:px-8 shrink-0 relative z-10",
-          isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white/80 border-slate-200",
-          "backdrop-blur-md text-slate-900 dark:text-white"
-        )}>
+            isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white/95 border-slate-200",
+            "backdrop-blur-md text-slate-900 dark:text-white"
+          )}>
           <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <button 
               onClick={() => {

@@ -112,26 +112,35 @@ const BOTS: BotConfig[] = [
     winRate: '79.4%',
     risk: 'High',
     minDeposit: 10
+  },
+  {
+    id: 'wizard1',
+    name: 'Wizard bot 1',
+    description: 'Elite algorithmic trader using complex mathematical patterns for consistent gains.',
+    type: 'ai',
+    winRate: '95.8%',
+    risk: 'Medium',
+    minDeposit: 10
+  },
+  {
+    id: 'wizard2',
+    name: 'Wizard bot 2',
+    description: 'Advanced liquidity harvester that executes high-frequency trades with minimal slippage.',
+    type: 'ai',
+    winRate: '96.2%',
+    risk: 'High',
+    minDeposit: 10
   }
 ];
 
 export default function Bots() {
-  const { user, toggleBot, updateBotConfig, updateBotGlobalSettings, addBotProfit, addTrade, importBot } = useStore();
+  const { user, toggleBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
-  const [globalStake, setGlobalStake] = useState(user?.botStake || 10);
-  const [globalTargetProfit, setGlobalTargetProfit] = useState(user?.targetProfitPercentage || 0);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }>>(() => {
-    const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }> = {
-      custom: { 
-        coin: user?.customBotConfig?.currency || 'BTC', 
-        timeframe: '1M',
-        stake: user?.botConfigs?.custom?.stake || user?.botStake || 10,
-        targetProfit: user?.botConfigs?.custom?.targetProfit || user?.targetProfitPercentage || 0
-      }
-    };
+    const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }> = {};
     
+    // Built-in bots
     BOTS.forEach(bot => {
       // Use persisted config if available
       const persisted = user?.botConfigs?.[bot.id];
@@ -142,20 +151,69 @@ export default function Bots() {
         targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
       };
     });
+
+    // Custom bots
+    (user?.customBots || []).forEach(bot => {
+      const persisted = user?.botConfigs?.[bot.id];
+      initial[bot.id] = {
+        coin: persisted?.coin || 'BTC',
+        timeframe: persisted?.timeframe || '1H',
+        stake: persisted?.stake || user?.botStake || 10,
+        targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
+      };
+    });
+
     return initial;
   });
 
+  // Sync botSettings with user.botConfigs and customBots when user changes
+  useEffect(() => {
+    setBotSettings(prev => {
+      const next = { ...prev };
+      
+      // Sync from botConfigs
+      if (user?.botConfigs) {
+        Object.entries(user.botConfigs || {}).forEach(([id, config]: [string, any]) => {
+          if (config) {
+            next[id] = {
+              coin: config.coin || next[id]?.coin || 'BTC',
+              timeframe: config.timeframe || next[id]?.timeframe || '1M',
+              stake: config.stake || next[id]?.stake || 10,
+              targetProfit: config.targetProfit || next[id]?.targetProfit || 0
+            };
+          }
+        });
+      }
+
+      // Ensure all custom bots have settings
+      if (user?.customBots) {
+        user.customBots.forEach(bot => {
+          if (!next[bot.id]) {
+            next[bot.id] = {
+              coin: 'BTC',
+              timeframe: '1M',
+              stake: user.botStake || 10,
+              targetProfit: user.targetProfitPercentage || 0
+            };
+          }
+        });
+      }
+      
+      return next;
+    });
+  }, [user?.botConfigs, user?.customBots]);
+
   const allBots = [
     ...BOTS,
-    ...(user?.customBotConfig ? [{
-      id: 'custom',
-      name: user.customBotConfig.name,
-      description: `Custom neural bot using ${user.customBotConfig.strategy} strategy.`,
+    ...(user?.customBots || []).map(cb => ({
+      id: cb.id,
+      name: cb.name,
+      description: cb.description || `Custom neural bot using ${cb.strategy} strategy.`,
       type: 'ai' as const,
       winRate: 'Adaptive',
-      risk: user.customBotConfig.risk as any,
+      risk: cb.risk as any,
       minDeposit: 10
-    }] : [])
+    }))
   ];
 
   const logs = user?.botLogs || [];
@@ -207,38 +265,18 @@ export default function Bots() {
 
   const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
 
-  const handleSaveGlobalSettings = async () => {
-    setIsSavingSettings(true);
-    try {
-      await updateBotGlobalSettings(globalStake, globalTargetProfit);
-      setAlertConfig({
-        isOpen: true,
-        title: 'Settings Saved',
-        message: 'Your global bot trading parameters have been updated and synchronized.',
-        type: 'success'
-      });
-    } catch (err) {
-      setAlertConfig({
-        isOpen: true,
-        title: 'Update Failed',
-        message: 'Failed to synchronize bot settings. Please try again.',
-        type: 'error'
-      });
-    } finally {
-      setIsSavingSettings(false);
-    }
-  };
-
   const handleToggle = (botId: string) => {
-    const bot = botId === 'custom' && user?.customBotConfig 
-      ? { id: 'custom', name: user.customBotConfig.name, minDeposit: 10, type: 'ai' as const }
-      : BOTS.find(b => b.id === botId);
+    const bot = BOTS.find(b => b.id === botId) || (user?.customBots || []).find(b => b.id === botId);
       
     if (!bot) return;
     
     const balance = user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance;
-    if (!user?.bots[botId as keyof typeof user.bots] && balance < bot.minDeposit) {
-      const isAI = bot.type === 'ai' || botId === 'custom';
+    const isBotActive = botId in (user?.bots || {}) 
+      ? user?.bots[botId as keyof typeof user.bots] 
+      : (user?.activeCustomBotIds || []).includes(botId);
+
+    if (!isBotActive && balance < (bot.minDeposit || 10)) {
+      const isAI = bot.type === 'ai' || (botId.startsWith('custom-'));
       setAlertConfig({
         isOpen: true,
         title: isAI ? 'Trading Bot Limit' : 'Manual Bot Limit',
@@ -250,7 +288,7 @@ export default function Bots() {
       return;
     }
     
-    const isActivating = !user?.bots[botId as keyof typeof user.bots];
+    const isActivating = !isBotActive;
     toggleBot(botId as any);
 
     setAlertConfig({
@@ -285,23 +323,25 @@ export default function Bots() {
           throw new Error('Invalid bot configuration format. Missing name or strategy.');
         }
 
-        await importBot({
+        const newBot = await importBot({
           name: importConfig.name || config.name,
           strategy: config.strategy,
           risk: config.risk || importConfig.risk,
           currency: config.currency || importConfig.currency
         });
 
-        // Automatically select the newly imported bot
-        setSelectedBot({
-          id: 'custom',
-          name: importConfig.name || config.name,
-          description: `Custom neural bot using ${config.strategy} strategy.`,
-          type: 'ai',
-          winRate: 'Adaptive',
-          risk: (importConfig.risk || config.risk || 'Medium') as any,
-          minDeposit: 10
-        });
+        if (newBot) {
+          // Automatically select the newly imported bot
+          setSelectedBot({
+            id: newBot.id,
+            name: newBot.name,
+            description: `Custom neural bot using ${newBot.strategy} strategy.`,
+            type: 'ai',
+            winRate: 'Adaptive',
+            risk: newBot.risk as any,
+            minDeposit: 10
+          });
+        }
 
         setAlertConfig({
           isOpen: true,
@@ -346,99 +386,14 @@ export default function Bots() {
           >
             <Upload size={14} /> <span className="hidden sm:inline">Import Bot</span><span className="sm:hidden">Import</span>
           </button>
-          {!user?.customBotConfig && (
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-600/10 text-[10px] sm:text-xs"
-            >
-              <Plus size={14} /> <span className="hidden sm:inline">Create</span><span className="sm:hidden">Create</span>
-            </button>
-          )}
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-600/10 text-[10px] sm:text-xs"
+          >
+            <Plus size={14} /> <span className="hidden sm:inline">Create</span><span className="sm:hidden">Create</span>
+          </button>
         </div>
       </div>
-
-      {/* Global Strategy Parameters */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm overflow-hidden relative group">
-        <div className="absolute top-0 left-0 w-1 h-full bg-blue-600"></div>
-        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20 shrink-0">
-              <Shield size={20} strokeWidth={1.5} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Strategy Parameters</h3>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Risk management for all active bots</p>
-            </div>
-          </div>
-          
-          <div className="flex flex-wrap items-end gap-3 w-full lg:w-auto">
-            <div className="flex-1 sm:flex-none space-y-1">
-              <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 px-0.5">
-                <Activity size={10} className="text-blue-500" /> Stake
-              </label>
-              <div className="relative group/input">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400 transition-colors group-focus-within/input:text-blue-500">$</div>
-                <input 
-                  type="number"
-                  min="10"
-                  value={globalStake}
-                  onChange={(e) => setGlobalStake(Number(e.target.value))}
-                  className="w-full lg:w-28 pl-6 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 sm:flex-none space-y-1">
-              <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 px-0.5">
-                <Target size={10} className="text-indigo-500" /> Target
-              </label>
-              <div className="relative group/input">
-                <input 
-                  type="number"
-                  min="0"
-                  value={globalTargetProfit}
-                  onChange={(e) => setGlobalTargetProfit(Number(e.target.value))}
-                  className="w-full lg:w-28 pl-3 pr-7 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400 transition-colors group-focus-within/input:text-indigo-500">%</div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSaveGlobalSettings}
-              disabled={isSavingSettings || globalStake < 10}
-              className={cn(
-                "h-8 px-4 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider shadow-sm transition-all hover:bg-slate-800 dark:hover:bg-blue-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2",
-                isSavingSettings ? "cursor-wait" : ""
-              )}
-            >
-              {isSavingSettings ? (
-                <>
-                  <div className="w-2.5 h-2.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  <span>Syncing</span>
-                </>
-              ) : (
-                <>
-                  <Save size={12} />
-                  <span>Update Setting</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-        {globalTargetProfit > 0 && (
-          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-0.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Profit Target:</span>
-              <span className="text-[11px] font-black text-blue-600 dark:text-blue-400 tracking-tight">${((globalStake * globalTargetProfit) / 100).toFixed(2)} USDT</span>
-            </div>
-            <p className="px-1 text-[8px] text-slate-500 dark:text-slate-500 font-medium leading-tight">
-              All active bots will pause automatically once your daily profit reaches this amount.
-            </p>
-          </div>
-        )}
-      </div>
-
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
       {/* Bot Selection & Config */}
@@ -495,7 +450,7 @@ export default function Bots() {
                       "text-xs font-black font-mono leading-none",
                       isCustom ? "text-blue-500" : "text-green-500"
                     )}>
-                      {isCustom ? (user?.customBotConfig?.currency || 'BTC') : bot.winRate}
+                      {isCustom ? ((user?.customBots || []).find(b => b.id === bot.id)?.currency || 'BTC') : bot.winRate}
                     </p>
                   </div>
                   <div>
@@ -538,11 +493,17 @@ export default function Bots() {
                   : "bg-green-500 hover:bg-green-600"
               )}
             >
-              {user?.bots[selectedBot.id as keyof typeof user.bots] ? (
-                <><Square size={12} fill="currentColor" /> Deactivate</>
-              ) : (
-                <><Play size={12} fill="currentColor" /> Run {selectedBot.id === 'custom' ? 'Bot' : 'Pro'}</>
-              )}
+              {(() => {
+                const isBotActive = selectedBot.id in (user?.bots || {}) 
+                  ? user?.bots[selectedBot.id as keyof typeof user.bots] 
+                  : (user?.activeCustomBotIds || []).includes(selectedBot.id);
+                
+                return isBotActive ? (
+                  <><Square size={12} fill="currentColor" /> Deactivate</>
+                ) : (
+                  <><Play size={12} fill="currentColor" /> Run {selectedBot.id.startsWith('custom-') ? 'Bot' : 'Pro'}</>
+                );
+              })()}
             </button>
           </div>
 
@@ -869,22 +830,24 @@ export default function Bots() {
                         return;
                       }
 
-                      await importBot({
+                      const newBot = await importBot({
                         name: newBotConfig.name,
                         strategy: newBotConfig.strategy,
                         risk: newBotConfig.risk,
                         currency: 'BTC'
                       });
 
-                      setSelectedBot({
-                        id: 'custom',
-                        name: newBotConfig.name,
-                        description: `Custom neural bot using ${newBotConfig.strategy} strategy.`,
-                        type: 'ai',
-                        winRate: 'Adaptive',
-                        risk: newBotConfig.risk as any,
-                        minDeposit: 10
-                      });
+                      if (newBot) {
+                        setSelectedBot({
+                          id: newBot.id,
+                          name: newBot.name,
+                          description: `Custom neural bot using ${newBot.strategy} strategy.`,
+                          type: 'ai',
+                          winRate: 'Adaptive',
+                          risk: newBot.risk as any,
+                          minDeposit: 10
+                        });
+                      }
 
                       setAlertConfig({
                         isOpen: true,

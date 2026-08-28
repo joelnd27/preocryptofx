@@ -58,16 +58,21 @@ export interface User {
     starlight: boolean;
     galaxy: boolean;
     nova: boolean;
+    wizard1: boolean;
+    wizard2: boolean;
     custom: boolean;
   };
   botConfigs?: Record<string, { coin: string, timeframe: string, stake?: number, targetProfit?: number }>;
-  customBotConfig?: {
+  customBots?: Array<{
+    id: string;
     name: string;
     strategy: string;
     risk: string;
     currency: string;
-    expiresAt: number;
-  };
+    description?: string;
+    createdAt: number;
+  }>;
+  activeCustomBotIds?: string[];
   botStats?: Record<string, { profit: number, trades: number }>;
   botLogs?: string[];
   botStake?: number;
