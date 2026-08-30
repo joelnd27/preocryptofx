@@ -1832,8 +1832,7 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').upsert({
-          user_id: user.id,
+        await supabase.from('bot_settings').update({
           scalping_active: updatedBots.scalping,
           trend_active: updatedBots.trend,
           ai_active: updatedBots.ai,
@@ -1854,9 +1853,7 @@ export function useStore() {
             configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+        }).eq('user_id', user.id);
       } catch (err) {
         console.error('Failed to toggle bot in Supabase:', err);
       }
@@ -1889,16 +1886,13 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').upsert({
-          user_id: user.id,
+        await supabase.from('bot_settings').update({
           bot_stats: {
             ...(user.botStats || {}),
             configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+        }).eq('user_id', user.id);
       } catch (err) {
         console.error('Failed to update bot config in Supabase:', err);
       }
@@ -1940,8 +1934,7 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').upsert({
-          user_id: user.id,
+        await supabase.from('bot_settings').update({
           bot_stake: stake,
           target_profit_percentage: targetPercentage,
           bot_stats: {
@@ -1949,9 +1942,7 @@ export function useStore() {
             configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+        }).eq('user_id', user.id);
       } catch (err) {
         console.error('Failed to update bot global settings in Supabase:', err);
       }
@@ -2664,15 +2655,28 @@ export function useStore() {
     }
   };
 
+  const simulationActiveRef = useRef(false);
+
   // Bot Simulation Effect (Global)
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      simulationActiveRef.current = false;
+      return;
+    }
+    
     const activeBots = Object.entries(user.bots || {}).filter(([_, active]) => active);
-    if (activeBots.length === 0) return;
+    if (activeBots.length === 0) {
+      simulationActiveRef.current = false;
+      return;
+    }
 
+    simulationActiveRef.current = true;
     let timeoutId: NodeJS.Timeout;
 
     const simulate = async () => {
+      // Check if effect is still active before starting
+      if (!simulationActiveRef.current) return;
+
       const currentUser = userRef.current;
       if (!currentUser) return;
       
@@ -2683,6 +2687,7 @@ export function useStore() {
       
       // Stop the simulation if no bots are active
       if (botsToSimulate.length === 0) {
+        simulationActiveRef.current = false;
         return;
       }
 
@@ -2761,13 +2766,12 @@ export function useStore() {
         
         if (isSupabaseConfigured()) {
           try {
-            await supabase.from('bot_settings').upsert({
-              user_id: currentUser.id,
+            await supabase.from('bot_settings').update({
               [`${botId}_active`]: false,
               bot_stats: updatedStats,
               bot_configs: updatedConfigs,
               updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
+            }).eq('user_id', currentUser.id);
           } catch (err) {
             console.error('[Store] Failed to deactivate bot in Supabase:', err);
           }
@@ -2800,10 +2804,8 @@ export function useStore() {
             risk === 'High' ? 2.5 :
             risk === 'Aggressive' ? 6.0 : 1.3;
           
-          // Varied scaling: 10% to 35% of stake, ensuring high profits for high stakes
           baseAmount = (stake * (0.10 + Math.random() * 0.25)) * riskMultiplier;
         } else {
-          // Fallback
           baseAmount = (stake * (0.08 + Math.random() * 0.22));
         }
       } else {
@@ -2815,7 +2817,6 @@ export function useStore() {
           else coin = 'BTC';
         }
         
-        // Varied scaling: 10% to 30% of stake, ensuring good profits
         baseAmount = (stake * (0.10 + Math.random() * 0.20));
       }
 
@@ -2829,40 +2830,36 @@ export function useStore() {
       } else if (isAdmin) {
         winChance = 0.98;
       } else if (isMarketer) {
-        winChance = 0.88; // Updated to 88% as per user guidance
+        winChance = 0.88;
       } else {
-        // Normal real user: revert to original tight winrate
-        const balance = currentUser.realBalance;
-        if (balance < 50) {
+        const balanceValue = currentUser.realBalance;
+        if (balanceValue < 50) {
           winChance = 0.005;
-        } else if (balance < 200) {
+        } else if (balanceValue < 200) {
           winChance = 0.012;
-        } else if (balance < 1000) {
+        } else if (balanceValue < 1000) {
           winChance = 0.018;
         } else {
           winChance = 0.025;
         }
       }
       
-      const isActiveReal = currentUser.activeAccount === 'REAL';
       const isWin = Math.random() < winChance;
-      const balance = isActiveReal ? currentUser.realBalance : currentUser.demoBalance;
-      
-      let adjustedWin = isWin;
-
-      const profitVal = adjustedWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
+      const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
       const profitStr = profitVal.toFixed(2);
       const profitAmountNum = parseFloat(profitStr);
       
       const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed trade on ${coin}: ${profitAmountNum >= 0 ? '+' : ''}${profitStr} USDT`;
 
+      // Check if still active before starting the simulation logic
+      if (!simulationActiveRef.current) return;
       await addBotProfit(profitAmountNum, botId, newLog);
 
       // POST-TRADE DEACTIVATION CHECK
       const newSessionProfit = Number((sessionProfit + profitAmountNum).toFixed(2));
       if (botTargetPercentage > 0 && botStake >= 10 && newSessionProfit >= targetProfitAmount) {
-        let updatedBots = { ...currentUser.bots };
-        let updatedActiveCustomBotIds = [...(currentUser.activeCustomBotIds || [])];
+        let updatedBots = { ...userRef.current?.bots };
+        let updatedActiveCustomBotIds = [...(userRef.current?.activeCustomBotIds || [])];
 
         if (botId in updatedBots) {
           updatedBots[botId as keyof typeof updatedBots] = false;
@@ -2872,22 +2869,31 @@ export function useStore() {
         
         delete botSessionStartProfits.current[botId];
         
-        // Reset stake to 10 for all bots
-        const updatedConfigs = { ...(currentUser.botConfigs || {}) };
-        Object.keys(updatedConfigs).forEach(key => {
-          updatedConfigs[key] = { ...updatedConfigs[key], stake: 10 };
-        });
+        const updatedConfigs = { ...(userRef.current?.botConfigs || {}) };
+        if (updatedConfigs[botId]) {
+          updatedConfigs[botId] = { ...updatedConfigs[botId], stake: 10 };
+        }
         
-        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botConfigs: updatedConfigs } : null);
+        const finalStats = {
+          ...(userRef.current?.botStats || {}),
+          active_states: {
+            ...(userRef.current?.botStats?.active_states || {}),
+            [botId]: false,
+            active_custom_ids: updatedActiveCustomBotIds
+          }
+        };
+
+        isInternalUpdate.current = true;
+        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botConfigs: updatedConfigs, botStats: finalStats } : null);
         
         if (isSupabaseConfigured()) {
           try {
-            await supabase.from('bot_settings').upsert({
-              user_id: currentUser.id,
+            await supabase.from('bot_settings').update({
               [`${botId}_active`]: false,
               bot_configs: updatedConfigs,
+              bot_stats: finalStats,
               updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
+            }).eq('user_id', userRef.current?.id);
           } catch (err) {
             console.error('[Store] Post-trade deactivation failed:', err);
           }
@@ -2896,23 +2902,29 @@ export function useStore() {
         window.dispatchEvent(new CustomEvent('trade-closed', {
           detail: {
             title: 'Profit Goal Reached',
-            message: `${botName} reached its target of $${newSessionProfit}. It has been paused to secure your gains.`,
+            message: `${botName} reached its target of $${newSessionProfit.toFixed(2)}. It has been paused to secure your gains.`,
             type: 'success'
           }
         }));
+        
+        setTimeout(() => { isInternalUpdate.current = false; }, 3000);
+        return;
       }
 
-      // Faster execution delay: 5 to 8 seconds
       const nextDelay = Math.floor(Math.random() * 3000) + 5000;
-      timeoutId = setTimeout(simulate, nextDelay);
+      if (simulationActiveRef.current) {
+        timeoutId = setTimeout(simulate, nextDelay);
+      }
     };
 
-    // Initial faster start: 1 to 3 seconds
     const initialDelay = Math.floor(Math.random() * 2000) + 1000;
     timeoutId = setTimeout(simulate, initialDelay);
 
-    return () => clearTimeout(timeoutId);
-  }, [user?.id, user?.bots, user?.customBotConfig]);
+    return () => {
+      simulationActiveRef.current = false;
+      clearTimeout(timeoutId);
+    };
+  }, [user?.id, user?.bots]);
 
   // Dark mode persistence
   const [isDarkMode, setIsDarkMode] = useState(() => {
