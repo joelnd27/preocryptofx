@@ -506,9 +506,9 @@ export default function Transactions() {
                              <div className="w-1 h-1 rounded-full bg-current" /> :
                              <Clock size={10} />}
                             {tx.status === 'pending' ? 'pending' : 
-                             (tx.status === 'failed' ? 'REJECTED' : 
-                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'SUCCESSFUL' :
-                             tx.status.toUpperCase())}
+                             (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED' : 
+                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'CONFIRMED' :
+                             tx.status.toUpperCase()}
                           </span>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
                             <div className="flex items-center gap-1">
@@ -1144,50 +1144,63 @@ export default function Transactions() {
                           <button 
                             onClick={async () => {
                               setIsChecking(true);
-                              await refreshData();
                               
-                              // Check if the transaction is now completed in our local state
-                              const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
-                              const isLatestSuccess = latestTx && (latestTx.status === 'completed' || latestTx.status === 'success' || latestTx.status === 'successful');
+                              // Check backend status
+                              const result = await checkPaymentStatus(currentTxRef || '');
                               
-                              if (isLatestSuccess) {
-                                setPaymentStatus('SUCCESS');
-                                setCurrentTxRef(null);
-                              } else if (currentTxRef) {
-                                // Try backend check
-                                const result = await checkPaymentStatus(currentTxRef);
-                                
-                                const statusLower = (result?.status || '').toLowerCase();
-                                const messageLower = (result?.message || '').toLowerCase();
-                                
-                                // Robust success check matching server
-                                const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower);
-                                                 
-                                const isFailed = result?.isFailed || 
-                                                ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
-                                                (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
-                                                (result?.ResultCode !== undefined && result?.ResultCode !== 0) ||
-                                                messageLower.includes('cancelled') ||
-                                                messageLower.includes('failed') ||
-                                                messageLower.includes('rejected');
+                              const statusLower = (result?.status || '').toLowerCase();
+                              const messageLower = (result?.message || '').toLowerCase();
+                              
+                              // Robust success check matching server
+                              const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || result?.isSuccess;
+                                               
+                              const isFailed = result?.isFailed || 
+                                              ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
+                                              (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
+                                              (result?.ResultCode !== undefined && result?.ResultCode !== 0) ||
+                                              messageLower.includes('cancelled') ||
+                                              messageLower.includes('failed') ||
+                                              messageLower.includes('rejected');
 
-                                if (isSuccess) {
+                              if (isSuccess) {
+                                setPaymentStatus('SUCCESS');
+                                setAlertConfig({
+                                  isOpen: true,
+                                  title: 'Payment Confirmed',
+                                  message: 'Your payment has been verified and your account credited.',
+                                  type: 'success'
+                                });
+                                setCurrentTxRef(null);
+                                await refreshData();
+                              } else if (isFailed) {
+                                setPaymentStatus('FAILED');
+                                let msg = result?.message || result?.error || 'Transaction was rejected or failed.';
+                                setErrorMessage(msg);
+                                setAlertConfig({
+                                  isOpen: true,
+                                  title: 'Payment Rejected',
+                                  message: msg,
+                                  type: 'error'
+                                });
+                                setCurrentTxRef(null);
+                                await refreshData();
+                              } else {
+                                // Still processing - don't fail, keep verifying
+                                await refreshData();
+                                
+                                // Re-check if local state was updated by webhook in background
+                                const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
+                                const isLatestSuccess = latestTx && (latestTx.status === 'completed' || latestTx.status === 'success' || latestTx.status === 'successful');
+                                
+                                if (isLatestSuccess) {
                                   setPaymentStatus('SUCCESS');
                                   setCurrentTxRef(null);
-                                  await refreshData();
-                                } else if (isFailed) {
-                                  setPaymentStatus('FAILED');
-                                  let msg = result?.message || result?.error || 'Transaction failed';
-                                  setErrorMessage(msg);
-                                  setCurrentTxRef(null);
-                                  await refreshData();
                                 } else {
-                                  // Still processing - don't fail, keep verifying
                                   setPaymentStatus('VERIFYING');
                                   setAlertConfig({
                                     isOpen: true,
-                                    title: 'Still Processing',
-                                    message: 'Your payment status is being retrieved. If you have already paid, it will reflect shortly.',
+                                    title: 'Still Pending',
+                                    message: 'We are still waiting for confirmation from the provider. Please wait a moment or check your history later.',
                                     type: 'info'
                                   });
                                 }

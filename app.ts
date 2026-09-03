@@ -543,128 +543,73 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         // Prioritize pending, then rejected
         let tx = txList?.find(t => t.status === 'pending') || txList?.find(t => t.status === 'rejected');
         
-        // If not found in pending/rejected, check if it was already completed
-        if (!tx) {
-           const completedTx = txList?.find(t => t.status === 'completed');
-            
-           if (completedTx) {
-             console.log(`[FinAPI Verify] Transaction ${transaction_id} was already completed.`);
-             return res.json(apiData);
-           }
-        }
-
         if (tx) {
-          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} for transaction ${tx.id}. Amount: $${tx.amount} (Status: ${tx.status})`);
-          
-          const usdAmount = Number(tx.amount);
-          const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+          console.log(`[FinAPI Verify] Updating transaction ${tx.id} to completed...`);
+          const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
+          const kesReceived = Number(apiData.Amount || apiData.amount || 0);
+          const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+
+          const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
             t_id: tx.id,
             u_id: tx.user_id,
-            amount: usdAmount
+            amount: usdToCredit
           });
 
           if (rpcError) {
-            console.error('[FinAPI Verify] RPC Balance update failed, falling back to manual update:', rpcError);
-            await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
+            console.warn(`[FinAPI Verify] RPC failed for ${tx.id}:`, rpcError.message);
+            // Fallback manual update
             const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
             if (userData) {
-              const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
+              const currentBalance = Number(userData.real_balance || 0);
+              const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
               await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-              console.log(`[FinAPI Verify] Manual balance update successful for user ${tx.user_id}. New balance: $${newBalance}`);
+              await supabaseAdmin.from('transactions').update({ 
+                status: 'completed',
+                metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), credited_amount: usdToCredit }
+              }).eq('id', tx.id);
             }
-          } else {
-            console.log(`[FinAPI Verify] Balance successfully incremented via RPC for transaction ${tx.id}`);
-            await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
           }
-        } else {
-          console.log(`[FinAPI Verify] No pending transaction found for: ${transaction_id}. It might have been already processed.`);
         }
       }
-    } else if (isFailed) {
-       if (supabaseAdmin) {
-        console.log(`[FinAPI Verify] Marking transaction ${transaction_id} as rejected (${apiData.status || apiData.message})`);
-        
-        const { data: txList } = await supabaseAdmin
-          .from('transactions')
-          .select('*')
-          .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`);
-        
-        const tx = txList?.find(t => t.status === 'pending');
-        if (tx) {
-          await supabaseAdmin.from('transactions')
-            .update({ 
-              status: 'rejected',
-              metadata: { ...tx.metadata, verify_error: apiData.status || apiData.message }
-            })
-            .eq('id', tx.id);
-          console.log(`[FinAPI Verify] Successfully rejected transaction ${tx.id}`);
-        } else {
-          console.log(`[FinAPI Verify] No pending transaction found to reject for ${transaction_id}`);
-        }
-      }
+      
+      return res.json({
+        success: true,
+        status: 'completed',
+        isSuccess: true,
+        message: 'Transaction confirmed',
+        db_status: 'completed'
+      });
     }
 
-    res.json(apiData);
-  } catch (error: any) {
-    const errorData = error.response?.data;
-    const errorStatus = error.response?.status;
-    
-    const apiStatusLower = (errorData?.status || '').toLowerCase();
-    const apiMessage = errorData?.message || '';
-    const isTerminalFailure = errorData && (
-      apiStatusLower === 'failed' || 
-      apiStatusLower === 'cancelled' ||
-      apiStatusLower === 'rejected' ||
-      apiStatusLower === 'declined' ||
-      errorData.error_code === 'VERIFICATION_FAILED' || 
-      apiStatusLower.includes('cancel') ||
-      apiStatusLower.includes('decline') ||
-      apiMessage.toLowerCase().includes('cancel')
-    );
-
-    if (isTerminalFailure) {
-      console.log(`[FinAPI Verify] Terminal failure (e.g. Cancelled) for ${transaction_id}:`, JSON.stringify(errorData));
+    if (isFailed) {
+      console.log(`[FinAPI Verify] Failure detected for ${transaction_id}. Marking as rejected.`);
       if (supabaseAdmin) {
-        const { data: txList } = await supabaseAdmin
-          .from('transactions')
-          .select('id, status, metadata')
-          .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`);
-        
-        const tx = txList?.find(t => t.status === 'pending') || txList?.find(t => t.status === 'rejected');
-        if (tx) {
-          await supabaseAdmin.from('transactions')
-            .update({ 
-              status: 'rejected',
-              metadata: { ...tx.metadata, terminal_error: errorData?.message || errorData?.error || apiStatusLower }
-            })
-            .eq('id', tx.id);
-          console.log(`[FinAPI Verify] Updated terminal failure for ${tx.id}`);
-        }
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'rejected',
+            metadata: { verified_at: new Date().toISOString(), verify_raw: apiData }
+          })
+          .eq('external_id', transaction_id)
+          .eq('status', 'pending');
       }
-      let errorMsg = errorData?.message || errorData?.error || 'Verification failed';
-      if (errorMsg === 'Transaction was not completed successfully') {
-        errorMsg = 'Transaction failed';
-      }
-
-      return res.json({ 
-        success: false, 
-        status: 'Failed', 
+      return res.json({
+        success: false,
+        status: 'rejected',
         isFailed: true,
-        message: errorMsg
+        message: apiData.message || 'Transaction rejected',
+        db_status: 'rejected'
       });
     }
 
-    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.warn(`[FinAPI Verify] Timeout for ${transaction_id}.`);
-      return res.status(200).json({ 
-        success: false, 
-        status: 'Pending', 
-        message: 'Status check timed out. We are still checking...' 
-      });
-    }
-
-    console.error('[FinAPI Verify] Unexpected Error:', errorStatus || error.code, JSON.stringify(errorData || error.message));
-    res.status(500).json({ success: false, error: 'Verification service temporarily unavailable' });
+    return res.json({
+      success: false,
+      status: 'pending',
+      message: apiData.message || 'Waiting for payment...',
+      db_status: 'pending'
+    });
+  } catch (error: any) {
+    console.error('[FinAPI Verify] Exception:', error.message);
+    res.status(500).json({ success: false, error: error.message, isFailed: true });
   }
 });
 
@@ -1183,19 +1128,26 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
       if (tx) {
         console.log(`[HashBack Verify] Local Status for ${reference}:`, tx.status);
+        
+        // Return standard response matching frontend expectations
+        const isActuallySuccessful = tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful';
+        const isActuallyFailed = tx.status === 'rejected' || tx.status === 'failed';
+
         return res.json({
-          success: tx.status === 'completed',
-          status: tx.status === 'completed' ? 'Success' : (tx.status === 'pending' ? 'Pending' : 'Failed'),
-          message: tx.status === 'completed' ? 'Transaction completed' : (tx.status === 'pending' ? 'Waiting for payment...' : 'Transaction rejected'),
+          success: isActuallySuccessful,
+          status: isActuallySuccessful ? 'completed' : (isActuallyFailed ? 'rejected' : 'pending'),
+          isSuccess: isActuallySuccessful,
+          isFailed: isActuallyFailed,
+          message: isActuallySuccessful ? 'Transaction confirmed' : (isActuallyFailed ? 'Transaction rejected' : 'Waiting for payment...'),
           db_status: tx.status
         });
       }
     }
     
-    res.json({ success: true, status: 'pending', isSuccess: false, isFailed: false });
+    res.json({ success: true, status: 'pending', isSuccess: false, isFailed: false, message: 'Transaction record not found yet.' });
   } catch (error: any) {
     console.error('[HashBack Verify] Exception:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message, isFailed: true });
   }
 });
 

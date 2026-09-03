@@ -561,7 +561,7 @@ export default function AdminPanel() {
                               : "bg-rose-500/10 text-rose-600 border border-rose-500/20 shadow-rose-500/5"
                         )}>
                           {(t.status === 'completed' || t.status === 'success' || t.status === 'successful') ? (
-                            <><CheckCircle2 size={12} className="text-emerald-500" /> SUCCESSFUL</>
+                            <><CheckCircle2 size={12} className="text-emerald-500" /> CONFIRMED</>
                           ) : t.status === 'pending' ? (
                             <><Clock size={12} className="text-amber-500" /> PENDING</>
                           ) : (
