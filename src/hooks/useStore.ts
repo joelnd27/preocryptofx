@@ -50,8 +50,8 @@ export function useStore() {
       return null;
     }
   });
-  const [globalWizardPassword, setGlobalWizardPassword] = useState('8899');
-  const [globalWizard2Password, setGlobalWizard2Password] = useState('8899');
+  const [globalWizardPassword, setGlobalWizardPassword] = useState('Wiz1@Alpha7');
+  const [globalWizard2Password, setGlobalWizard2Password] = useState('Wiz2#Beta9');
 
   const fetchGlobalSettings = async () => {
     if (!isSupabaseConfigured()) return;
