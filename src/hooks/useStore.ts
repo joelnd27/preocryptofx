@@ -1959,56 +1959,44 @@ export function useStore() {
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     const currentBalance = currentUser[balanceKey];
 
-    // Safety: Auto-stop bot if balance is below stake or minimum threshold
+    // Safety: Auto-stop bot if balance is below stake
     const botStake = botId ? (currentUser.botConfigs?.[botId]?.stake || 10) : 10;
-    if (currentBalance < botStake || currentBalance <= 10) {
-      const updatedBots = { 
-        scalping: false, 
-        trend: false, 
-        ai: false, 
-        vortex: false,
-        orbit: false,
-        starlight: false,
-        galaxy: false,
-        nova: false,
-        wizard1: false,
-        wizard2: false,
-        custom: false 
-      };
+    if (currentBalance < botStake) {
+      // Only deactivate the specific bot that has insufficient balance
+      let updatedBots = { ...currentUser.bots };
+      let updatedActiveCustomBotIds = [...(currentUser.activeCustomBotIds || [])];
+
+      if (botId) {
+        if (botId in updatedBots) {
+          updatedBots[botId as keyof typeof updatedBots] = false;
+        } else {
+          updatedActiveCustomBotIds = updatedActiveCustomBotIds.filter(id => id !== botId);
+        }
+      }
       
       if (isSupabaseConfigured()) {
         const currentStats = currentUser.botStats || {};
+        const updatedStats = {
+          ...currentStats,
+          active_states: {
+            ...(currentStats.active_states || {}),
+            [botId || 'custom']: false,
+          }
+        };
+
         await supabase.from('bot_settings').update({
-          scalping_active: false,
-          trend_active: false,
-          ai_active: false,
-          custom_active: false,
-          bot_stats: {
-            ...currentStats,
-            active_states: {
-              ...(currentStats.active_states || {}),
-              vortex: false,
-              orbit: false,
-              starlight: false,
-              galaxy: false,
-              nova: false,
-              wizard1: false,
-              wizard2: false,
-              active_custom_ids: []
-            }
-          },
+          [`${botId}_active`]: false,
+          bot_stats: updatedStats,
           updated_at: new Date().toISOString()
         }).eq('user_id', currentUser.id);
       }
       
-      setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: [] } : null);
+      setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds } : null);
       
       window.dispatchEvent(new CustomEvent('trade-closed', {
         detail: {
-          title: 'Bots Deactivated',
-          message: currentBalance < botStake 
-            ? `Trading bots have been stopped because your balance ($${currentBalance.toFixed(2)}) is insufficient for the set stake ($${botStake.toFixed(2)}).`
-            : 'Trading bots have been stopped automatically because your balance is at or below $10.',
+          title: 'Bot Deactivated',
+          message: `Trading bot ${botId || ''} has been stopped because your balance ($${currentBalance.toFixed(2)}) is insufficient for the set stake ($${botStake.toFixed(2)}).`,
           type: 'warning'
         }
       }));
@@ -2734,6 +2722,45 @@ export function useStore() {
 
       // IMMEDIATE CHECK: If session target reached before trade, stop now
       if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
+        // ... deactivation logic ...
+        return;
+      }
+
+      // BALANCE CHECK BEFORE TRADE
+      const currentBalance = currentUser.activeAccount === 'REAL' ? currentUser.realBalance : currentUser.demoBalance;
+      if (currentBalance < botStake) {
+        console.warn(`[Store] Bot ${botId} insufficient balance to trade. Required: ${botStake}, Available: ${currentBalance}`);
+        
+        let updatedBots = { ...currentUser.bots };
+        let updatedActiveCustomBotIds = [...(currentUser.activeCustomBotIds || [])];
+
+        if (botId in updatedBots) {
+          updatedBots[botId as keyof typeof updatedBots] = false;
+        } else {
+          updatedActiveCustomBotIds = updatedActiveCustomBotIds.filter(id => id !== botId);
+        }
+
+        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds } : null);
+        
+        if (isSupabaseConfigured()) {
+          await supabase.from('bot_settings').update({
+            [`${botId}_active`]: false,
+            updated_at: new Date().toISOString()
+          }).eq('user_id', currentUser.id);
+        }
+
+        window.dispatchEvent(new CustomEvent('trade-closed', {
+          detail: {
+            title: 'Bot Paused',
+            message: `Bot ${botName} paused due to insufficient balance ($${currentBalance.toFixed(2)}).`,
+            type: 'warning'
+          }
+        }));
+        return;
+      }
+
+      // IMMEDIATE CHECK: If session target reached before trade, stop now
+      if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
         // Only deactivate the specific bot that hit its goal
         let updatedBots = { ...currentUser.bots };
         let updatedActiveCustomBotIds = [...(currentUser.activeCustomBotIds || [])];
@@ -2918,6 +2945,7 @@ export function useStore() {
     };
 
     const initialDelay = Math.floor(Math.random() * 2000) + 1000;
+    simulationActiveRef.current = true;
     timeoutId = setTimeout(simulate, initialDelay);
 
     return () => {
@@ -2942,6 +2970,9 @@ export function useStore() {
       if (metaStatus) metaStatus.setAttribute('content', 'black-translucent');
       const metaTile = document.getElementById('meta-tile-color');
       if (metaTile) metaTile.setAttribute('content', '#0f172a');
+      
+      // Also update background directly to prevent flickering
+      document.body.style.backgroundColor = '#0f172a';
     } else {
       document.documentElement.classList.remove('dark');
       const metaTheme = document.getElementById('meta-theme-color');
@@ -2950,6 +2981,9 @@ export function useStore() {
       if (metaStatus) metaStatus.setAttribute('content', 'default');
       const metaTile = document.getElementById('meta-tile-color');
       if (metaTile) metaTile.setAttribute('content', '#ffffff');
+      
+      // Also update background directly to prevent flickering
+      document.body.style.backgroundColor = '#ffffff';
     }
   }, [isDarkMode]);
 

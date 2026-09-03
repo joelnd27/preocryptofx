@@ -57,7 +57,8 @@ if (!supabaseAdmin) {
       console.log(`[Auto-Reject] Running cleanup (threshold: ${tenMinutesAgo})`);
 
       const updateData = { 
-        status: 'rejected'
+        status: 'rejected',
+        metadata: { auto_rejected: true, rejected_at: new Date().toISOString() }
       };
 
       const { data, error } = await supabaseAdmin
@@ -273,9 +274,10 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
     }
 
     // Save pending transaction in Supabase
+    let txId: string | null = null;
     if (supabaseAdmin && userId) {
       try {
-        const { error: dbError } = await supabaseAdmin.from('transactions').insert({
+        const { data: insertedTx, error: dbError } = await supabaseAdmin.from('transactions').insert({
           user_id: userId,
           type: 'DEPOSIT',
           amount: usdAmount,
@@ -283,13 +285,13 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
           account_type: 'REAL',
           method: 'HashBack STK Push',
           external_id: reference
-        });
+        }).select('id').single();
 
         if (dbError) {
           console.error('[HashBack] DB Error:', dbError);
-          // If DB fails but credentials are OK, we might still want to return 500 to prevent unrecorded payments
           return res.status(500).json({ success: false, error: 'Database error: Failed to record transaction.' });
         }
+        txId = insertedTx.id;
       } catch (e: any) {
         console.error('[HashBack] DB Exception:', e.message);
         return res.status(500).json({ success: false, error: 'Database exception: Failed to process transaction.' });
@@ -314,6 +316,25 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
     });
   } catch (error: any) {
     console.error('[HashBack] Initiation Error:', error.message);
+    
+    // If initiation failed but we created a transaction, mark it as rejected
+    try {
+      const authHeader = req.headers.authorization;
+      const userId = req.body.userId;
+      if (supabaseAdmin && userId) {
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'rejected', 
+            metadata: { initiation_error: error.message } 
+          })
+          .eq('user_id', userId)
+          .eq('status', 'pending')
+          .eq('external_id', reference);
+      }
+    } catch (cleanupErr) {
+      console.error('[HashBack] Failed to reject failed initiation:', cleanupErr);
+    }
+
     res.status(500).json({ success: false, error: 'Failed to prepare payment.' });
   }
 });
@@ -344,7 +365,7 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
     }
 
     if (supabaseAdmin) {
-      const { error: dbError } = await supabaseAdmin.from('transactions').insert({
+      await supabaseAdmin.from('transactions').insert({
         user_id: userId,
         type: 'DEPOSIT',
         amount: usdAmount,
@@ -353,8 +374,6 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
         method: 'FinAPI M-Pesa',
         external_id: reference
       });
-
-      if (dbError) throw dbError;
     }
 
     console.log(`[FinAPI] Triggering STK Push for ${kesAmount} KES to ${phone_number}`);
@@ -365,9 +384,6 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
       normalizedPhone = '254' + normalizedPhone.substring(1);
     } else if (normalizedPhone.startsWith('7') || normalizedPhone.startsWith('1')) {
       normalizedPhone = '254' + normalizedPhone;
-    } else if (!normalizedPhone.startsWith('254')) {
-      // If it doesn't start with 254 or 0 or 7, assume it's already correct or needs manual fix
-      // but most common case in Kenya is 07... or 2547...
     }
 
     console.log(`[FinAPI] Normalized Phone: ${normalizedPhone}`);
@@ -392,15 +408,11 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
         // Use either transaction_id from FinAPI or keep the internal reference if not provided
         const finalExternalId = response.data.transaction_id || reference;
         
-        const { error: updateError } = await supabaseAdmin.from('transactions')
+        await supabaseAdmin.from('transactions')
           .update({ 
             external_id: finalExternalId
           })
           .eq('external_id', reference);
-
-        if (updateError) {
-          console.error('[FinAPI] Failed to update transaction after STK Push:', updateError);
-        }
       }
 
       res.json({
@@ -410,10 +422,30 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
         reference: reference
       });
     } else {
+      // Initiation was rejected by provider
+      if (supabaseAdmin) {
+        await supabaseAdmin.from('transactions')
+          .update({ 
+            status: 'rejected',
+            metadata: { finapi_error: response.data.message || 'Rejected by provider' }
+          })
+          .eq('external_id', reference);
+      }
       res.status(400).json(response.data);
     }
   } catch (error: any) {
     console.error('[FinAPI] STK Push Error:', error.response?.data || error.message);
+    
+    // If initiation failed but we created a transaction, mark it as rejected
+    if (supabaseAdmin) {
+      await supabaseAdmin.from('transactions')
+        .update({ 
+          status: 'rejected',
+          metadata: { finapi_error: error.response?.data?.message || error.message }
+        })
+        .eq('external_id', reference);
+    }
+
     res.status(500).json({ 
       success: false, 
       error: error.response?.data?.message || 'Failed to initiate STK push' 
@@ -439,7 +471,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         .select('*')
         .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`);
       
-      const terminalTx = txList?.find(t => t.status === 'completed' || t.status === 'rejected');
+      const terminalTx = txList?.find(t => t.status === 'completed' || (t.status === 'rejected' && !t.metadata?.auto_rejected));
       if (terminalTx) {
         console.log(`[FinAPI Verify] Transaction ${transaction_id} already in terminal state (${terminalTx.status}) in DB.`);
         return res.json({
@@ -448,6 +480,12 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
           message: terminalTx.status === 'completed' ? 'Transaction completed' : 'Transaction rejected',
           db_status: terminalTx.status
         });
+      }
+      
+      // If it was auto-rejected, we allow it to proceed to real verification
+      const wasAutoRejected = txList?.some(t => t.status === 'rejected' && t.metadata?.auto_rejected);
+      if (wasAutoRejected) {
+        console.log(`[FinAPI Verify] Transaction ${transaction_id} was auto-rejected. Proceeding to real API check...`);
       }
     } catch (err) {
       console.error('[FinAPI Verify] Pre-check DB error (non-fatal):', err);
@@ -1046,116 +1084,111 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
         });
       }
 
-      if (tx) {
-        console.log(`[HashBack Verify] Local Status for ${reference}:`, tx.status);
-        
-        // If pending OR rejected, try to fetch real-time status from HashBack API to be sure
-        // We allow checking rejected transactions to recover from premature auto-rejection
-        if ((tx.status === 'pending' || tx.status === 'rejected') && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
-          try {
-            console.log(`[HashBack Verify] Querying HashBack API for real-time status of ${reference}`);
-            const queryResponse = await axios.post(`${HASHBACK_BASE_URL}/stkpush/query/`, {
-              api_key: HASHBACK_API_KEY,
-              account_id: HASHBACK_ACCOUNT_ID,
-              reference: reference
-            }, { timeout: 10000 });
+      // If pending OR rejected (especially auto-rejected), try to fetch real-time status
+      const needsRealCheck = tx && (tx.status === 'pending' || (tx.status === 'rejected' && tx.metadata?.auto_rejected));
+      
+      if (needsRealCheck && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
+        try {
+          console.log(`[HashBack Verify] Querying HashBack API for real-time status of ${reference}`);
+          const queryResponse = await axios.post(`${HASHBACK_BASE_URL}/stkpush/query/`, {
+            api_key: HASHBACK_API_KEY,
+            account_id: HASHBACK_ACCOUNT_ID,
+            reference: reference
+          }, { timeout: 10000 });
 
-            console.log(`[HashBack Verify] HashBack API Response:`, JSON.stringify(queryResponse.data, null, 2));
-            
-            const hbData = queryResponse.data;
-            const hbStatus = (hbData.status || hbData.ResultDesc || hbData.ResponseDescription || '').toLowerCase();
-            const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
-                               (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
+          console.log(`[HashBack Verify] HashBack API Response:`, JSON.stringify(queryResponse.data, null, 2));
+          
+          const hbData = queryResponse.data;
+          const hbStatus = (hbData.status || hbData.ResultDesc || hbData.ResponseDescription || '').toLowerCase();
+          const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
+                             (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
 
-            const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
-            const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
+          const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
+          const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
 
-            if (isHbSuccess && tx.status !== 'completed') {
-              console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);
-              const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-              const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
-              const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+          if (isHbSuccess && tx.status !== 'completed') {
+            console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);
+            const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
+            const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
+            const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
-              // 1. Try RPC for atomic balance update FIRST (This also updates status to 'completed')
-              const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
-                t_id: tx.id,
-                u_id: tx.user_id,
-                amount: usdToCredit
-              });
+            // 1. Try RPC for atomic balance update FIRST (This also updates status to 'completed')
+            const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+              t_id: tx.id,
+              u_id: tx.user_id,
+              amount: usdToCredit
+            });
 
-              if (rpcError) {
-                console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
-                // Manual Fallback if RPC failed
-                const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-                if (userData) {
-                  const currentBalance = Number(userData.real_balance || 0);
-                  const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-                  await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-                  
-                  // Ensure status is updated if RPC didn't do it
-                  await supabaseAdmin.from('transactions').update({ 
-                    status: 'completed',
-                    metadata: { 
-                      ...(tx.metadata || {}), 
-                      verified_at: new Date().toISOString(), 
-                      verify_manual_fallback: true,
-                      credited_amount: usdToCredit
-                    }
-                  }).eq('id', tx.id);
-                }
-              } else if (rpcResult === true) {
-                console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
-                // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI
-                await supabaseAdmin.from('transactions').update({
+            if (rpcError) {
+              console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
+              // Manual Fallback if RPC failed
+              const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+              if (userData) {
+                const currentBalance = Number(userData.real_balance || 0);
+                const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
+                await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+                
+                // Ensure status is updated if RPC didn't do it
+                await supabaseAdmin.from('transactions').update({ 
                   status: 'completed',
                   metadata: { 
                     ...(tx.metadata || {}), 
                     verified_at: new Date().toISOString(), 
-                    verify_rpc_success: true,
+                    verify_manual_fallback: true,
                     credited_amount: usdToCredit
                   }
                 }).eq('id', tx.id);
-              } else {
-                console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);
-                await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
               }
-
-              // Fetch final state to return accurate status
-              const { data: finalTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
-              const displayStatus = finalTx?.status || 'completed';
-
-              console.log(`[HashBack Verify] Verification complete for ${tx.id}. Status: ${displayStatus}`);
-              return res.json({ 
-                success: true, 
-                status: (displayStatus === 'success' || displayStatus === 'successful') ? 'completed' : displayStatus, 
-                isSuccess: displayStatus === 'completed' || displayStatus === 'success' || displayStatus === 'successful', 
-                isFailed: displayStatus === 'rejected' || displayStatus === 'failed'
-              });
-            } else if (isHbFailure && tx.status !== 'completed') {
-              console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
-              await supabaseAdmin.from('transactions').update({ 
-                status: 'rejected',
-                metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), verify_raw: hbData }
+            } else if (rpcResult === true) {
+              console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
+              // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI
+              await supabaseAdmin.from('transactions').update({
+                status: 'completed',
+                metadata: { 
+                  ...(tx.metadata || {}), 
+                  verified_at: new Date().toISOString(), 
+                  verify_rpc_success: true,
+                  credited_amount: usdToCredit
+                }
               }).eq('id', tx.id);
-              return res.json({ success: true, status: 'rejected', isSuccess: false, isFailed: true, message: hbStatus });
+            } else {
+              console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);
+              await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
             }
-          } catch (queryErr: any) {
-            console.error('[HashBack Verify] Real-time Query Failed:', queryErr.message);
-            // Fall through to return local pending status
-          }
-        }
 
-        if (tx.status !== 'pending') {
-          return res.json({
-            success: true,
-            status: tx.status,
-            isSuccess: tx.status === 'completed' || tx.status === 'success',
-            isFailed: tx.status === 'rejected' || tx.status === 'failed',
-            message: `Transaction ${tx.status}`
-          });
+            // Fetch final state to return accurate status
+            const { data: finalTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
+            const displayStatus = finalTx?.status || 'completed';
+
+            console.log(`[HashBack Verify] Verification complete for ${tx.id}. Status: ${displayStatus}`);
+            return res.json({ 
+              success: true, 
+              status: (displayStatus === 'success' || displayStatus === 'successful') ? 'completed' : displayStatus, 
+              isSuccess: displayStatus === 'completed' || displayStatus === 'success' || displayStatus === 'successful', 
+              isFailed: displayStatus === 'rejected' || displayStatus === 'failed'
+            });
+          } else if (isHbFailure && tx.status !== 'completed') {
+            console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
+            await supabaseAdmin.from('transactions').update({ 
+              status: 'rejected',
+              metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), verify_raw: hbData }
+            }).eq('id', tx.id);
+            return res.json({ success: true, status: 'rejected', isSuccess: false, isFailed: true, message: hbStatus });
+          }
+        } catch (queryErr: any) {
+          console.error('[HashBack Verify] Real-time Query Failed:', queryErr.message);
+          // Fall through to return local status
         }
-      } else {
-        console.warn(`[HashBack Verify] No transaction found for ref: ${reference}`);
+      }
+
+      if (tx) {
+        console.log(`[HashBack Verify] Local Status for ${reference}:`, tx.status);
+        return res.json({
+          success: tx.status === 'completed',
+          status: tx.status === 'completed' ? 'Success' : (tx.status === 'pending' ? 'Pending' : 'Failed'),
+          message: tx.status === 'completed' ? 'Transaction completed' : (tx.status === 'pending' ? 'Waiting for payment...' : 'Transaction rejected'),
+          db_status: tx.status
+        });
       }
     }
     
