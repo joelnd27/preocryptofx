@@ -19,6 +19,12 @@ export type AccountType = 'DEMO' | 'REAL';
 export type ChartType = 'LINE' | 'CANDLE' | 'HOLLOW' | 'AREA';
 export type Timeframe = '1S' | '1M' | '15M' | '1H' | '4H' | '1D' | '1W';
 
+export interface BotLog {
+  botId: string;
+  message: string;
+  timestamp: number;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -74,7 +80,7 @@ export interface User {
   }>;
   activeCustomBotIds?: string[];
   botStats?: Record<string, { profit: number, trades: number }>;
-  botLogs?: string[];
+  botLogs?: (string | BotLog)[];
   botStake?: number;
   targetProfitPercentage?: number;
   referralCode: string;
@@ -90,6 +96,8 @@ export interface User {
     hasDeposited: boolean;
     totalDeposited?: number;
   }[];
+  wizardPassword?: string;
+  unlockedBotIds?: string[];
   createdAt: number;
 }
 

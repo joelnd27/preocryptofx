@@ -89,16 +89,20 @@
     font-feature-settings: "rlig" 1, "calt" 1;
     min-height: 100vh;
     min-height: -webkit-fill-available;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
+    /* On mobile, we handle safe areas in specific layout components for better sticky control */
   }
 }
 
 html {
   height: -webkit-fill-available;
   @apply bg-background;
+}
+
+@layer base {
+  /* Ensure correct coloring for system bars on mobile */
+  :root {
+    color-scheme: light dark;
+  }
 }
 
 @layer utilities {

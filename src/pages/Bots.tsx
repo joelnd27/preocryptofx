@@ -23,7 +23,10 @@ import {
   Target,
   X,
   Info,
-  Save
+  Save,
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
@@ -134,7 +137,7 @@ const BOTS: BotConfig[] = [
 ];
 
 export default function Bots() {
-  const { user, toggleBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
+  const { user, toggleBot, unlockBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }>>(() => {
@@ -218,7 +221,17 @@ export default function Bots() {
     }))
   ];
 
-  const logs = user?.botLogs || [];
+  const isSelectedBotActive = selectedBot.id in (user?.bots || {}) 
+    ? user?.bots[selectedBot.id as keyof typeof user.bots] 
+    : (user?.activeCustomBotIds || []).includes(selectedBot.id);
+
+  const logs = (user?.botLogs || []).filter(log => {
+    if (typeof log === 'string') {
+      return log.includes(selectedBot.name);
+    }
+    return log.botId === selectedBot.id;
+  }).slice(0, 20);
+
   const stats = (() => {
     const s: Record<string, { profit: number, trades: number }> = {};
     allBots.forEach(bot => {
@@ -228,8 +241,13 @@ export default function Bots() {
   })();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [botPassword, setBotPassword] = useState('');
+  const [pendingBotId, setPendingBotId] = useState<string | null>(null);
   const [importJson, setImportJson] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [alertConfig, setAlertConfig] = useState<{
@@ -267,7 +285,42 @@ export default function Bots() {
 
   const activeBotsKey = JSON.stringify(Object.entries(user?.bots || {}).filter(([_, active]) => active).map(([id]) => id).sort());
 
-  const handleToggle = (botId: string) => {
+  const handleClosePasswordModal = () => {
+    setIsPasswordModalOpen(false);
+    setBotPassword('');
+    setShowPassword(false);
+    setPendingBotId(null);
+  };
+
+  const handleUnlock = async (botId: string, password?: string) => {
+    const bot = BOTS.find(b => b.id === botId) || (user?.customBots || []).find(b => b.id === botId);
+    if (!bot) return;
+
+    try {
+      await unlockBot(botId, password);
+      setAlertConfig({
+        isOpen: true,
+        title: 'Bot Unlocked',
+        message: `${bot.name} is now available for configuration. Click "Run" to start trading.`,
+        type: 'success'
+      });
+      handleClosePasswordModal();
+    } catch (err: any) {
+      if (err.message === 'PASSWORD_REQUIRED') {
+        setPendingBotId(botId);
+        setIsPasswordModalOpen(true);
+      } else {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Unlock Failed',
+          message: err.message,
+          type: 'error'
+        });
+      }
+    }
+  };
+
+  const handleToggle = async (botId: string) => {
     const bot = BOTS.find(b => b.id === botId) || (user?.customBots || []).find(b => b.id === botId);
       
     if (!bot) return;
@@ -276,6 +329,19 @@ export default function Bots() {
     const isBotActive = botId in (user?.bots || {}) 
       ? user?.bots[botId as keyof typeof user.bots] 
       : (user?.activeCustomBotIds || []).includes(botId);
+
+    const isWizard = botId === 'wizard1' || botId === 'wizard2';
+    
+    // Block Demo for Wizard Bots
+    if (!isBotActive && isWizard && user?.activeAccount === 'DEMO') {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Real Account Required',
+        message: 'Wizard bots are premium high-yield algorithms and can only be operated on REAL accounts.',
+        type: 'error'
+      });
+      return;
+    }
 
     const currentStake = botSettings[botId]?.stake || 10;
 
@@ -299,17 +365,27 @@ export default function Bots() {
       return;
     }
     
-    const isActivating = !isBotActive;
-    toggleBot(botId as any);
-
-    setAlertConfig({
-      isOpen: true,
-      title: isActivating ? 'Bot Activated' : 'Bot Stopped',
-      message: isActivating 
-        ? `${bot.name} is now online and processing market data.` 
-        : `${bot.name} has been safely shut down.`,
-      type: isActivating ? 'success' : 'info'
-    });
+    try {
+      await toggleBot(botId as any);
+      
+      const isActivating = !isBotActive;
+      setAlertConfig({
+        isOpen: true,
+        title: isActivating ? 'Bot Activated' : 'Bot Stopped',
+        message: isActivating 
+          ? `${bot.name} is now online and processing market data.` 
+          : `${bot.name} has been safely shut down.`,
+        type: isActivating ? 'success' : 'info'
+      });
+      handleClosePasswordModal();
+    } catch (err: any) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Activation Failed',
+        message: err.message,
+        type: 'error'
+      });
+    }
   };
 
   const [importConfig, setImportConfig] = useState({
@@ -383,6 +459,13 @@ export default function Bots() {
     return `${hours}h ${minutes}m remaining`;
   };
 
+  const currentSettings = botSettings[selectedBot.id] || {
+    coin: 'BTC',
+    timeframe: '1H',
+    stake: 10,
+    targetProfit: 0
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -415,16 +498,17 @@ export default function Bots() {
         )}>
           {allBots.map((bot) => {
             const isActive = user?.bots[bot.id as keyof typeof user.bots];
-            const isCustom = bot.id === 'custom';
+            const isCustom = bot.id.startsWith('custom-');
+            const isWizard = bot.id === 'wizard1' || bot.id === 'wizard2';
+            const isUnlocked = (user?.unlockedBotIds || []).includes(bot.id) || user?.role === 'marketer' || user?.role === 'admin';
+            const isLocked = isWizard && !isUnlocked;
 
             return (
-              <button
+              <div
                 key={bot.id}
-                onClick={() => {
-                  setSelectedBot(bot);
-                }}
+                onClick={() => setSelectedBot(bot)}
                 className={cn(
-                  "relative p-3.5 sm:p-4 rounded-xl border transition-all text-left group overflow-hidden",
+                  "relative p-3.5 sm:p-4 rounded-xl border transition-all text-left group overflow-hidden cursor-pointer",
                   selectedBot.id === bot.id 
                     ? "bg-slate-900 border-blue-500 shadow-xl shadow-blue-500/10" 
                     : "bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
@@ -438,25 +522,28 @@ export default function Bots() {
                 <div className="flex items-center justify-between mb-2">
                   <div className={cn(
                     "w-7 h-7 rounded-lg flex items-center justify-center shadow-sm",
-                    isActive ? (isCustom ? "bg-blue-500 text-white shadow-blue-500/20 shadow-lg" : "bg-green-500 text-white shadow-green-500/20 shadow-lg") : "bg-slate-800 text-slate-400"
+                    isActive ? "bg-green-500 text-white shadow-green-500/20 shadow-lg" : "bg-slate-800 text-slate-400"
                   )}>
-                    {isCustom ? <Zap size={14} /> : <Cpu size={14} />}
+                    {isLocked ? <Lock size={14} className="text-yellow-500" /> : (isCustom ? <Zap size={14} /> : <Cpu size={14} />)}
                   </div>
                   <div className={cn(
                     "px-1.5 py-0.5 rounded-full text-[6px] sm:text-[7px] font-bold uppercase tracking-widest border",
-                    isActive ? "bg-green-500/10 border-green-500/20 text-green-500" : "bg-slate-500/5 border-slate-500/20 text-slate-500"
+                    isActive ? "bg-green-500/10 border-green-500/20 text-green-500" : (isLocked ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-500" : "bg-slate-500/5 border-slate-500/20 text-slate-500")
                   )}>
-                    {isActive ? 'Online' : 'Standby'}
+                    {isActive ? 'Online' : (isLocked ? 'Locked' : 'Standby')}
                   </div>
                 </div>
                 
-                <h3 className={cn(
-                  "text-[11px] sm:text-xs font-bold mb-0.5",
-                  selectedBot.id === bot.id ? "text-white" : "text-slate-900 dark:text-slate-200"
-                )}>{bot.name}</h3>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <h3 className={cn(
+                    "text-[11px] sm:text-xs font-bold",
+                    selectedBot.id === bot.id ? "text-white" : "text-slate-900 dark:text-white"
+                  )}>{bot.name}</h3>
+                  {isLocked && <Lock size={10} className="text-yellow-500" />}
+                </div>
                 <p className="text-[8px] sm:text-[9px] text-slate-500 dark:text-slate-400 mb-2 line-clamp-1 font-mono tracking-tight">{bot.description}</p>
                 
-                <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 mb-3">
                   <div>
                     <p className="text-[7px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1">{isCustom ? 'Currency' : 'Win Rate'}</p>
                     <p className={cn(
@@ -474,12 +561,66 @@ export default function Bots() {
                     )}>{bot.risk}</p>
                   </div>
                 </div>
-              </button>
+
+                {isLocked ? (
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUnlock(bot.id);
+                      }}
+                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-lg shadow-blue-600/20 transition-all"
+                    >
+                      <Lock size={10} /> Unlock
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBot(bot);
+                        setIsHistoryModalOpen(true);
+                      }}
+                      className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                    >
+                      View
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBot(bot);
+                        const detailSection = document.getElementById('bot-detail-view');
+                        if (detailSection) {
+                          detailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                      }}
+                      className={cn(
+                        "flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all",
+                        isActive ? "bg-red-500 text-white" : "bg-green-500 text-white"
+                      )}
+                    >
+                      {isActive ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                      {isActive ? 'Stop' : 'Run'}
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBot(bot);
+                        setIsHistoryModalOpen(true);
+                      }}
+                      className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                    >
+                      Details
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
 
-        <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none">
+        <div id="bot-detail-view" className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
               <div className={cn(
@@ -496,28 +637,62 @@ export default function Bots() {
                 </p>
               </div>
             </div>
-            
-            <button
-              onClick={() => handleToggle(selectedBot.id)}
-              className={cn(
-                "w-full sm:w-auto px-5 py-2 rounded-xl font-bold text-white transition-all shadow-sm flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider",
-                user?.bots[selectedBot.id as keyof typeof user.bots]
-                  ? "bg-red-500/90 hover:bg-red-600"
-                  : "bg-green-500 hover:bg-green-600"
-              )}
-            >
+
+            <div className="flex items-center gap-2">
               {(() => {
-                const isBotActive = selectedBot.id in (user?.bots || {}) 
+                const isWizard = selectedBot.id === 'wizard1' || selectedBot.id === 'wizard2';
+                const isUnlocked = (user?.unlockedBotIds || []).includes(selectedBot.id) || user?.role === 'marketer' || user?.role === 'admin';
+                const isLocked = isWizard && !isUnlocked;
+                const isActive = selectedBot.id in (user?.bots || {}) 
                   ? user?.bots[selectedBot.id as keyof typeof user.bots] 
                   : (user?.activeCustomBotIds || []).includes(selectedBot.id);
-                
-                return isBotActive ? (
-                  <><Square size={12} fill="currentColor" /> Deactivate</>
-                ) : (
-                  <><Play size={12} fill="currentColor" /> Run {selectedBot.id.startsWith('custom-') ? 'Bot' : 'Pro'}</>
+
+                if (isLocked) {
+                  return (
+                    <button
+                      onClick={() => handleUnlock(selectedBot.id)}
+                      className="w-full sm:w-auto px-5 py-2 rounded-xl font-bold text-white transition-all shadow-sm flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider bg-blue-600 hover:bg-blue-700 shadow-blue-600/20"
+                    >
+                      <Lock size={12} /> Unlock {selectedBot.id.startsWith('custom-') ? 'Bot' : 'Pro'}
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={() => handleToggle(selectedBot.id)}
+                    className={cn(
+                      "w-full sm:w-auto px-5 py-2 rounded-xl font-bold text-white transition-all shadow-sm flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider",
+                      isActive
+                        ? "bg-red-500/90 hover:bg-red-600"
+                        : "bg-green-500 hover:bg-green-600"
+                    )}
+                  >
+                    {isActive ? (
+                      <><Square size={12} fill="currentColor" /> Deactivate</>
+                    ) : (
+                      <><Play size={12} fill="currentColor" /> Run {selectedBot.id.startsWith('custom-') ? 'Bot' : 'Pro'}</>
+                    )}
+                  </button>
                 );
               })()}
-            </button>
+              
+              <button
+                onClick={() => {
+                  const botList = document.querySelector('.grid.gap-2\\.5');
+                  if (botList) {
+                    botList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                  // Optionally clear selectedBot if we want to "close" it completely
+                  // setSelectedBot(null); // but Bots requires it to be non-null in some places
+                }}
+                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5"
+                title="Exit to bot list"
+              >
+                <X size={16} />
+                <span className="text-[10px] font-black uppercase tracking-widest pr-1">Exit</span>
+              </button>
+            </div>
           </div>
 
 
@@ -533,14 +708,14 @@ export default function Bots() {
                     <Coins size={10} className="text-blue-500" /> Asset Selection
                   </label>
                     <select 
-                      value={botSettings[selectedBot.id].coin}
+                      value={currentSettings.coin}
                       onChange={(e) => {
                         const newCoin = e.target.value;
                         setBotSettings(prev => ({
                           ...prev,
                           [selectedBot.id]: { ...prev[selectedBot.id], coin: newCoin }
                         }));
-                        updateBotConfig(selectedBot.id, newCoin, botSettings[selectedBot.id].timeframe, botSettings[selectedBot.id].stake, botSettings[selectedBot.id].targetProfit);
+                        updateBotConfig(selectedBot.id, newCoin, currentSettings.timeframe, currentSettings.stake, currentSettings.targetProfit);
                       }}
                       className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
                     >
@@ -566,11 +741,11 @@ export default function Bots() {
                             ...prev,
                             [selectedBot.id]: { ...prev[selectedBot.id], timeframe: newTf }
                           }));
-                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, newTf, botSettings[selectedBot.id].stake, botSettings[selectedBot.id].targetProfit);
+                          updateBotConfig(selectedBot.id, currentSettings.coin, newTf, currentSettings.stake, currentSettings.targetProfit);
                         }}
                         className={cn(
                           "flex-1 py-0.5 rounded-md text-[8px] font-bold transition-all",
-                          botSettings[selectedBot.id].timeframe === t 
+                          currentSettings.timeframe === t 
                             ? "bg-white dark:bg-slate-700 shadow-sm text-blue-500" 
                             : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                         )}
@@ -592,7 +767,7 @@ export default function Bots() {
                         type="number"
                         min="10"
                         max="50000"
-                        value={botSettings[selectedBot.id].stake}
+                        value={currentSettings.stake}
                         onChange={(e) => {
                           let val = Number(e.target.value);
                           if (val > 50000) val = 50000;
@@ -601,7 +776,7 @@ export default function Bots() {
                             ...prev,
                             [selectedBot.id]: { ...prev[selectedBot.id], stake: val }
                           }));
-                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, botSettings[selectedBot.id].timeframe, val, botSettings[selectedBot.id].targetProfit);
+                          updateBotConfig(selectedBot.id, currentSettings.coin, currentSettings.timeframe, val, currentSettings.targetProfit);
                         }}
                         className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 pl-4 pr-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
                       />
@@ -616,22 +791,22 @@ export default function Bots() {
                       <input 
                         type="number"
                         min="0"
-                        value={botSettings[selectedBot.id].targetProfit}
+                        value={currentSettings.targetProfit}
                         onChange={(e) => {
                           const val = Number(e.target.value);
                           setBotSettings(prev => ({
                             ...prev,
                             [selectedBot.id]: { ...prev[selectedBot.id], targetProfit: val }
                           }));
-                          updateBotConfig(selectedBot.id, botSettings[selectedBot.id].coin, botSettings[selectedBot.id].timeframe, botSettings[selectedBot.id].stake, val);
+                          updateBotConfig(selectedBot.id, currentSettings.coin, currentSettings.timeframe, currentSettings.stake, val);
                         }}
                         className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2 text-[9px] focus:outline-none focus:border-blue-500 transition-colors text-slate-900 dark:text-white font-bold"
                       />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">%</span>
                     </div>
-                    {botSettings[selectedBot.id].targetProfit > 0 && (
+                    {currentSettings.targetProfit > 0 && (
                       <p className="text-[8px] text-blue-500 font-bold mt-1">
-                        Goal: ${((botSettings[selectedBot.id].stake * botSettings[selectedBot.id].targetProfit) / 100).toFixed(2)}
+                        Goal: ${((currentSettings.stake * currentSettings.targetProfit) / 100).toFixed(2)}
                       </p>
                     )}
                   </div>
@@ -642,6 +817,17 @@ export default function Bots() {
                 <AlertCircle size={10} className="text-blue-500 shrink-0" />
                 <p className="text-[9px] text-slate-500 leading-tight font-black">
                   Threshold: <span className="text-slate-900 dark:text-white">${selectedBot.minDeposit}</span>. Priority signals.
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <h4 className="text-[9px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500 mb-2">
+                  <Zap size={12} className="text-blue-500" /> Strategy & Logic
+                </h4>
+                <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed italic">
+                  {selectedBot.id === 'wizard1' ? 'Wizard 1 utilizes a multi-layered neural network to detect institutional buy-side liquidity. It executes trades during high-volatility sessions with advanced trailing-stop protection.' : 
+                   selectedBot.id === 'wizard2' ? 'Wizard 2 is an aggressive scalper optimized for low-timeframe market cycles. It uses proprietary momentum oscillators to capture rapid price expansions with 92% historical accuracy.' :
+                   selectedBot.description}
                 </p>
               </div>
             </div>
@@ -687,11 +873,21 @@ export default function Bots() {
         <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-sm font-black flex items-center gap-2 uppercase tracking-widest text-slate-900 dark:text-white">
-              <History size={16} className="text-blue-500" /> Activity Log
+              <History size={16} className="text-blue-500" /> {isSelectedBotActive ? 'Activity Log' : 'Bot Logs'}
             </h3>
-            <div className="flex items-center gap-2 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
-              <span className="text-[9px] font-black text-green-600 dark:text-green-400 uppercase tracking-widest">Live</span>
+            <div className={cn(
+              "flex items-center gap-2 px-2 py-1 rounded-full border",
+              isSelectedBotActive 
+                ? "bg-green-500/10 border-green-500/20" 
+                : "bg-blue-500/10 border-blue-500/20"
+            )}>
+              {isSelectedBotActive && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>}
+              <span className={cn(
+                "text-[9px] font-black uppercase tracking-widest",
+                isSelectedBotActive ? "text-green-600 dark:text-green-400" : "text-blue-600 dark:text-blue-400"
+              )}>
+                {isSelectedBotActive ? 'Live' : `${logs.length} entries`}
+              </span>
             </div>
           </div>
           
@@ -705,31 +901,36 @@ export default function Bots() {
                   <p className="text-xs font-bold uppercase tracking-widest">Awaiting execution signals...</p>
                 </div>
               ) : (
-                logs.map((log, i) => (
-                  <motion.div
-                    key={log + i}
-                    initial={{ opacity: 0, scale: 0.95, x: -10 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    className={cn(
-                      "p-3 rounded-xl border font-mono leading-relaxed transition-all shadow-sm",
-                      log.includes("+") 
-                        ? "bg-green-500/5 border-green-500/20 text-green-600 dark:text-green-400" 
-                        : log.includes("-") 
-                          ? "bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400" 
-                          : "bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400"
-                    )}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className={cn(
-                        "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
-                        log.includes("+") ? "bg-green-500" : log.includes("-") ? "bg-red-500" : "bg-blue-500"
-                      )} />
-                      <p className="text-[11px] font-bold tracking-tight">
-                        {log}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))
+                logs.map((log, i) => {
+                  const logMessage = typeof log === 'string' ? log : log.message;
+                  const logKey = typeof log === 'string' ? log + i : (log.timestamp || Date.now()) + i;
+                  
+                  return (
+                    <motion.div
+                      key={logKey}
+                      initial={{ opacity: 0, scale: 0.95, x: -10 }}
+                      animate={{ opacity: 1, scale: 1, x: 0 }}
+                      className={cn(
+                        "p-3 rounded-xl border font-mono leading-relaxed transition-all shadow-sm",
+                        logMessage.includes("+") 
+                          ? "bg-green-500/5 border-green-500/20 text-green-600 dark:text-green-400" 
+                          : logMessage.includes("-") 
+                            ? "bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400" 
+                            : "bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400"
+                      )}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div className={cn(
+                          "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
+                          logMessage.includes("+") ? "bg-green-500" : logMessage.includes("-") ? "bg-red-500" : "bg-blue-500"
+                        )} />
+                        <p className="text-[11px] font-bold tracking-tight">
+                          {logMessage}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })
               )}
             </AnimatePresence>
           </div>
@@ -987,6 +1188,75 @@ export default function Bots() {
         )}
       </AnimatePresence>
       {/* Alert Modal */}
+      <AnimatePresence>
+        {isPasswordModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handleClosePasswordModal}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mx-auto mb-6">
+                  <Lock size={32} />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Bot Unlock Required</h3>
+                <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                  Wizard bots are institutional-grade assets. Please enter your unique bot password to authorize trading.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter bot password"
+                      className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-11 pr-12 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      value={botPassword}
+                      onChange={(e) => setBotPassword(e.target.value)}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && pendingBotId) {
+                          handleUnlock(pendingBotId, botPassword);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => pendingBotId && handleUnlock(pendingBotId, botPassword)}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                  >
+                    Unlock Bot
+                  </button>
+                  <button
+                    onClick={handleClosePasswordModal}
+                    className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <AlertModal
         isOpen={alertConfig.isOpen}
         onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
@@ -994,6 +1264,119 @@ export default function Bots() {
         message={alertConfig.message}
         type={alertConfig.type}
       />
+      {/* Bot History Modal */}
+      <AnimatePresence>
+        {isHistoryModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsHistoryModalOpen(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-[24px] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              {/* Header - Fixed at top */}
+              <div className="p-5 pb-0">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 shrink-0">
+                      <History size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight leading-none mb-1">{selectedBot.name}</h3>
+                      <p className="text-[8px] text-slate-500 dark:text-slate-400 font-black uppercase tracking-widest">Performance & Logs</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsHistoryModalOpen(false)}
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors shrink-0"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-5 pt-0 custom-scrollbar">
+                <div className="space-y-5">
+                  {/* Strategy Info */}
+                  <div className="p-3.5 bg-blue-500/5 dark:bg-blue-500/10 rounded-xl border border-blue-500/10">
+                    <h4 className="text-[8px] font-black flex items-center gap-2 uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-1.5">
+                      <Zap size={10} className="text-blue-500" /> Strategy & Logic
+                    </h4>
+                    <p className="text-[10.5px] text-slate-600 dark:text-slate-400 leading-relaxed italic">
+                      {selectedBot.id === 'wizard1' ? 'Wizard 1 utilizes a multi-layered neural network to detect institutional buy-side liquidity. It executes trades during high-volatility sessions with advanced trailing-stop protection.' : 
+                       selectedBot.id === 'wizard2' ? 'Wizard 2 is an aggressive scalper optimized for low-timeframe market cycles. It uses proprietary momentum oscillators to capture rapid price expansions with 92% historical accuracy.' :
+                       selectedBot.description}
+                    </p>
+                  </div>
+
+                  {/* Logs */}
+                  <div>
+                    <h4 className="text-[8px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500 mb-2.5">
+                      <History size={10} className="text-blue-500" /> Bot History ({logs.length} entries)
+                    </h4>
+                    <div className="space-y-2">
+                      {logs.length === 0 ? (
+                        <div className="py-8 flex flex-col items-center justify-center text-slate-500 opacity-40">
+                          <Activity size={32} className="mb-2.5" />
+                          <p className="text-[9px] font-black uppercase tracking-widest">No previous runs recorded</p>
+                        </div>
+                      ) : (
+                        logs.map((log, i) => {
+                          const logMessage = typeof log === 'string' ? log : log.message;
+                          return (
+                            <div key={i} className={cn(
+                              "p-2.5 rounded-lg border font-mono text-[9px] leading-relaxed transition-all shadow-sm",
+                              logMessage.includes("+") 
+                                ? "bg-green-500/5 border-green-500/10 text-green-600 dark:text-green-400" 
+                                : logMessage.includes("-") 
+                                  ? "bg-red-500/5 border-red-500/10 text-red-600 dark:text-red-400" 
+                                  : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
+                            )}>
+                              {logMessage}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer - Fixed at bottom */}
+              <div className="p-5 pt-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => {
+                      setIsHistoryModalOpen(false);
+                      const detailSection = document.getElementById('bot-detail-view');
+                      if (detailSection) {
+                        detailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }}
+                    className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest text-[10px] hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                  >
+                    Configure & Run
+                  </button>
+                  <button
+                    onClick={() => setIsHistoryModalOpen(false)}
+                    className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold uppercase tracking-widest text-[10px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

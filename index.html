@@ -63,37 +63,20 @@
     <script>
       (function() {
         try {
-          var theme = localStorage.getItem('preocrypto_theme');
-          var supportDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var isDark = theme === 'dark' || (!theme && supportDarkMode) || (!theme && theme === null);
-          if (theme === 'light') {
-            isDark = false;
-          }
-          if (isDark) {
+          var theme = localStorage.getItem('preocrypto_theme') || 'dark';
+          if (theme === 'dark') {
             document.documentElement.classList.add('dark');
           } else {
             document.documentElement.classList.remove('dark');
           }
-          
-          var themeColor = isDark ? '#0f172a' : '#ffffff';
-          var statusBarStyle = isDark ? 'black-translucent' : 'default';
-          
-          var metaTheme = document.getElementById('meta-theme-color');
-          if (metaTheme) metaTheme.setAttribute('content', themeColor);
-          
-          var metaStatus = document.getElementById('meta-status-bar-style');
-          if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
-          
-          var metaTile = document.getElementById('meta-tile-color');
-          if (metaTile) metaTile.setAttribute('content', themeColor);
         } catch (e) {}
       })();
     </script>
-    <script src="https://pay.hashback.co.ke/hashpay.js"></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script src="https://pay.hashback.co.ke/hashpay.js"></script>
   </body>
 </html>
 

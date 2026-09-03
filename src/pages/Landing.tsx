@@ -50,7 +50,13 @@ export default function Landing() {
       "min-h-screen overflow-x-hidden transition-colors duration-300",
       isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
     )}>
-      <div className="sticky top-0 z-[100] w-full">
+      <div 
+        className={cn(
+          "sticky top-0 z-[100] w-full",
+          isDarkMode ? "bg-slate-950" : "bg-white"
+        )}
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
         {/* Navbar */}
         <nav className={cn(
           "w-full border-b shadow-sm",

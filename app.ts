@@ -57,8 +57,7 @@ if (!supabaseAdmin) {
       console.log(`[Auto-Reject] Running cleanup (threshold: ${tenMinutesAgo})`);
 
       const updateData = { 
-        status: 'rejected',
-        metadata: { auto_rejected: true, rejected_at: new Date().toISOString() }
+        status: 'rejected'
       };
 
       const { data, error } = await supabaseAdmin
@@ -324,8 +323,7 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
       if (supabaseAdmin && userId) {
         await supabaseAdmin.from('transactions')
           .update({ 
-            status: 'rejected', 
-            metadata: { initiation_error: error.message } 
+            status: 'rejected' 
           })
           .eq('user_id', userId)
           .eq('status', 'pending')
@@ -426,8 +424,7 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
       if (supabaseAdmin) {
         await supabaseAdmin.from('transactions')
           .update({ 
-            status: 'rejected',
-            metadata: { finapi_error: response.data.message || 'Rejected by provider' }
+            status: 'rejected'
           })
           .eq('external_id', reference);
       }
@@ -440,8 +437,7 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
     if (supabaseAdmin) {
       await supabaseAdmin.from('transactions')
         .update({ 
-          status: 'rejected',
-          metadata: { finapi_error: error.response?.data?.message || error.message }
+          status: 'rejected'
         })
         .eq('external_id', reference);
     }
@@ -471,7 +467,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
         .select('*')
         .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`);
       
-      const terminalTx = txList?.find(t => t.status === 'completed' || (t.status === 'rejected' && !t.metadata?.auto_rejected));
+      const terminalTx = txList?.find(t => t.status === 'completed' || t.status === 'rejected');
       if (terminalTx) {
         console.log(`[FinAPI Verify] Transaction ${transaction_id} already in terminal state (${terminalTx.status}) in DB.`);
         return res.json({
@@ -483,7 +479,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
       }
       
       // If it was auto-rejected, we allow it to proceed to real verification
-      const wasAutoRejected = txList?.some(t => t.status === 'rejected' && t.metadata?.auto_rejected);
+      const wasAutoRejected = txList?.some(t => t.status === 'rejected');
       if (wasAutoRejected) {
         console.log(`[FinAPI Verify] Transaction ${transaction_id} was auto-rejected. Proceeding to real API check...`);
       }
@@ -564,8 +560,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
               const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
               await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
               await supabaseAdmin.from('transactions').update({ 
-                status: 'completed',
-                metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), credited_amount: usdToCredit }
+                status: 'completed'
               }).eq('id', tx.id);
             }
           }
@@ -586,8 +581,7 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
       if (supabaseAdmin) {
         await supabaseAdmin.from('transactions')
           .update({ 
-            status: 'rejected',
-            metadata: { verified_at: new Date().toISOString(), verify_raw: apiData }
+            status: 'rejected'
           })
           .eq('external_id', transaction_id)
           .eq('status', 'pending');
@@ -711,8 +705,7 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
         console.log(`[FinAPI Webhook] Rejecting transaction ${tx.id} (Status: ${status})`);
         await supabaseAdmin.from('transactions')
           .update({ 
-            status: 'rejected',
-            metadata: { ...tx.metadata, webhook_status: status }
+            status: 'rejected'
           })
           .eq('id', tx.id);
       }
@@ -887,18 +880,9 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       
       tx = tx1;
 
-      // Attempt 2: Metadata match
+      // Attempt 2: Metadata match skipped (column missing)
       if (!tx) {
-        for (const ref of filteredRefs) {
-          const { data: metaTx } = await supabaseAdmin
-            .from('transactions')
-            .select('*')
-            .or(`metadata->>CheckoutRequestID.eq.${ref},metadata->>MerchantRequestID.eq.${ref},metadata->>TransactionReference.eq.${ref}`)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (metaTx) { tx = metaTx; break; }
-        }
+        // Skipping metadata fallback
       }
 
       if (tx) {
@@ -947,26 +931,14 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
               
               // Ensure status is updated if RPC didn't do it
               await supabaseAdmin.from('transactions').update({
-                status: 'completed',
-                metadata: { 
-                  ...(tx.metadata || {}), 
-                  webhook_at: new Date().toISOString(),
-                  manual_fallback: true,
-                  credited_amount: usdToCredit
-                }
+                status: 'completed'
               }).eq('id', tx.id);
             }
           } else if (rpcResult === true) {
             console.log(`[HashBack Webhook] Transaction ${tx.id} successfully processed via RPC.`);
             // Explicitly set status to 'completed' to ensure it's not caught by auto-reject
             await supabaseAdmin.from('transactions').update({
-              status: 'completed',
-              metadata: { 
-                ...(tx.metadata || {}), 
-                webhook_at: new Date().toISOString(),
-                rpc_success: true,
-                credited_amount: usdToCredit
-              }
+              status: 'completed'
             }).eq('id', tx.id);
           } else {
             console.log(`[HashBack Webhook] Transaction ${tx.id} already processed or skipped by RPC.`);
@@ -976,8 +948,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
         } else if (failure) {
           console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
           await supabaseAdmin.from('transactions').update({ 
-            status: 'rejected',
-            metadata: { ...(tx.metadata || {}), webhook_at: new Date().toISOString(), webhook_raw: body }
+            status: 'rejected'
           }).eq('id', tx.id);
         }
       } else {
@@ -1010,14 +981,9 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
         .or(filter)
         .maybeSingle();
 
-      // If not found directly, try metadata search (fallback)
+      // If not found directly, skip metadata fallback (missing column)
       if (!tx && !fetchError) {
-        const { data: metaTx } = await supabaseAdmin
-          .from('transactions')
-          .select('*')
-          .or(`metadata->>CheckoutRequestID.eq.${reference},metadata->>MerchantRequestID.eq.${reference}`)
-          .maybeSingle();
-        tx = metaTx;
+        // Metadata column missing, skipping search
       }
 
       if (fetchError) {
@@ -1029,8 +995,8 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
         });
       }
 
-      // If pending OR rejected (especially auto-rejected), try to fetch real-time status
-      const needsRealCheck = tx && (tx.status === 'pending' || (tx.status === 'rejected' && tx.metadata?.auto_rejected));
+      // If pending OR rejected, try to fetch real-time status
+      const needsRealCheck = tx && (tx.status === 'pending' || tx.status === 'rejected');
       
       if (needsRealCheck && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
         try {
@@ -1075,26 +1041,14 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
                 
                 // Ensure status is updated if RPC didn't do it
                 await supabaseAdmin.from('transactions').update({ 
-                  status: 'completed',
-                  metadata: { 
-                    ...(tx.metadata || {}), 
-                    verified_at: new Date().toISOString(), 
-                    verify_manual_fallback: true,
-                    credited_amount: usdToCredit
-                  }
+                  status: 'completed'
                 }).eq('id', tx.id);
               }
             } else if (rpcResult === true) {
               console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
               // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI
               await supabaseAdmin.from('transactions').update({
-                status: 'completed',
-                metadata: { 
-                  ...(tx.metadata || {}), 
-                  verified_at: new Date().toISOString(), 
-                  verify_rpc_success: true,
-                  credited_amount: usdToCredit
-                }
+                status: 'completed'
               }).eq('id', tx.id);
             } else {
               console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);
@@ -1115,8 +1069,7 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
           } else if (isHbFailure && tx.status !== 'completed') {
             console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
             await supabaseAdmin.from('transactions').update({ 
-              status: 'rejected',
-              metadata: { ...(tx.metadata || {}), verified_at: new Date().toISOString(), verify_raw: hbData }
+              status: 'rejected'
             }).eq('id', tx.id);
             return res.json({ success: true, status: 'rejected', isSuccess: false, isFailed: true, message: hbStatus });
           }

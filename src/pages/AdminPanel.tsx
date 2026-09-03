@@ -16,7 +16,8 @@ import {
   MoreVertical,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  ArrowLeft
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
@@ -28,7 +29,7 @@ const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 type AdminTab = 'users' | 'deposits' | 'copy-traders';
 
 export default function AdminPanel() {
-  const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus, checkPaymentStatus, copyTraders, updateCopyTrader, deleteCopyTrader } = useStore();
+  const { user, getAllUsers, getGlobalStats, updateUserBalance, updateUserRole, updateUserVerificationStatus, getAllTransactions, updateTransactionStatus, checkPaymentStatus, copyTraders, updateCopyTrader, deleteCopyTrader, globalWizardPassword, globalWizard2Password, updateGlobalWizardPasswords } = useStore();
   const [users, setUsers] = useState<any[]>([]);
   const [referralCounts, setReferralCounts] = useState<Record<string, number>>({});
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -37,6 +38,7 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editValue2, setEditValue2] = useState('');
   const [editType, setEditType] = useState<'REAL' | 'DEMO'>('REAL');
   const [loading, setLoading] = useState(true);
 
@@ -144,6 +146,13 @@ export default function AdminPanel() {
     }
   };
 
+  const handleUpdateGlobalPasswords = async () => {
+    const success = await updateGlobalWizardPasswords(editValue, editValue2);
+    if (success) {
+      setEditingId(null);
+    }
+  };
+
   const handleUpdateTransaction = async (id: string, status: 'completed' | 'rejected') => {
     if (status === 'rejected') {
       const confirm = window.confirm("Are you sure you want to reject this transaction?");
@@ -218,13 +227,21 @@ export default function AdminPanel() {
           <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Admin Dashboard</h1>
           <p className="text-[10px] text-slate-500 font-medium">Manage users and platform deposits</p>
         </div>
-        <button 
-          onClick={loadData}
-          disabled={loading}
-          className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
-        >
-          <RefreshCw size={18} className={cn(loading && "animate-spin")} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => window.location.href = '/dashboard'}
+            className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center gap-2"
+          >
+            <ArrowLeft size={16} /> Exit to Dashboard
+          </button>
+          <button 
+            onClick={loadData}
+            disabled={loading}
+            className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={cn(loading && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -269,6 +286,74 @@ export default function AdminPanel() {
           </h3>
         </motion.div>
       </div>
+
+      {/* Global Bot Settings */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
+              <Lock size={20} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Wizard Bot Global Passwords</h3>
+              <p className="text-[10px] text-slate-500">Shared passwords required for all users to unlock Wizard bots</p>
+            </div>
+          </div>
+          {editingId !== 'GLOBAL_PASS' ? (
+            <button 
+              onClick={() => {
+                setEditingId('GLOBAL_PASS');
+                setEditValue(globalWizardPassword);
+                setEditValue2(globalWizard2Password);
+              }}
+              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-primary text-xs font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+            >
+              Update Passwords
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button onClick={handleUpdateGlobalPasswords} className="p-2 bg-green-500 text-white rounded-lg"><Check size={16} /></button>
+              <button onClick={() => setEditingId(null)} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-lg"><X size={16} /></button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Wizard Bot 1 Password</p>
+            {editingId === 'GLOBAL_PASS' ? (
+              <input 
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold"
+                placeholder="Password for Wizard 1"
+              />
+            ) : (
+              <p className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-wider">{globalWizardPassword}</p>
+            )}
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Wizard Bot 2 Password</p>
+            {editingId === 'GLOBAL_PASS' ? (
+              <input 
+                type="text"
+                value={editValue2}
+                onChange={(e) => setEditValue2(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold"
+                placeholder="Password for Wizard 2"
+              />
+            ) : (
+              <p className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-wider">{globalWizard2Password}</p>
+            )}
+          </div>
+        </div>
+      </motion.div>
 
       {/* Content Area */}
       <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">

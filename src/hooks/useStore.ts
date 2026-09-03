@@ -20,7 +20,7 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { getMarketerDeposit } from '../lib/utils.ts';
 
-const ADMIN_EMAILS = ['wren20688@gmail.com'];
+const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
 const DEFAULT_TRADERS: CopyTrader[] = [
@@ -50,6 +50,54 @@ export function useStore() {
       return null;
     }
   });
+  const [globalWizardPassword, setGlobalWizardPassword] = useState('8899');
+  const [globalWizard2Password, setGlobalWizard2Password] = useState('8899');
+
+  const fetchGlobalSettings = async () => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const { data } = await supabase
+        .from('platform_settings')
+        .select('config')
+        .eq('id', 'global')
+        .maybeSingle();
+      
+      if (data?.config) {
+        const config = data.config;
+        if (config.wizard1_password) setGlobalWizardPassword(config.wizard1_password);
+        if (config.wizard2_password) setGlobalWizard2Password(config.wizard2_password);
+      }
+    } catch (err) {
+      console.error('Error fetching global settings:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchGlobalSettings();
+  }, [user?.id]);
+
+  const updateGlobalWizardPasswords = async (pass1: string, pass2: string) => {
+    if (!isSupabaseConfigured() || user?.role !== 'admin') return false;
+    try {
+      await supabase
+        .from('platform_settings')
+        .upsert({
+          id: 'global',
+          config: {
+            wizard1_password: pass1,
+            wizard2_password: pass2
+          },
+          updated_at: new Date().toISOString()
+        });
+
+      setGlobalWizardPassword(pass1);
+      setGlobalWizard2Password(pass2);
+      return true;
+    } catch (err) {
+      console.error('Error updating global wizard passwords:', err);
+      return false;
+    }
+  };
 
   const userRef = useRef<User | null>(user);
   const isInternalUpdate = useRef(false);
@@ -457,7 +505,7 @@ export function useStore() {
         const finalTrades = mergedTrades.sort((a, b) => b.timestamp - a.timestamp);
 
         const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
-        const isHardcodedAdmin = (userData.email || '').toLowerCase() === 'wren20688@gmail.com' && userData.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+        const isHardcodedAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((userData.email || '').toLowerCase());
 
         const botStats = {
           ...(botSettingsData?.bot_stats || {}),
@@ -529,8 +577,7 @@ export function useStore() {
             timestamp: new Date(t.timestamp || t.created_at).getTime(),
             accountType: t.account_type,
             method: t.method,
-            externalId: t.external_id,
-            metadata: t.metadata
+            externalId: t.external_id
           })),
           bots: botSettingsData ? {
             scalping: botSettingsData.scalping_active || false,
@@ -561,12 +608,14 @@ export function useStore() {
           botStats: botStats,
           customBots: botStats.custom_bots || [],
           activeCustomBotIds: botStats.active_states?.active_custom_ids || [],
+          unlockedBotIds: botStats.unlocked_bot_ids || [],
           botLogs: botSettingsData?.bot_logs || [],
           botStake: Number(botSettingsData?.bot_stake || 10),
           targetProfitPercentage: Number(botSettingsData?.target_profit_percentage || 0),
           referrals: fetchedReferrals,
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           copyingTraderId: userData.copying_trader_id,
+          wizardPassword: userData.wizard_password,
           createdAt: new Date(userData.created_at).getTime(),
           trades: finalTrades
         };
@@ -1779,8 +1828,63 @@ export function useStore() {
 
   const botSessionStartProfits = useRef<Record<string, number>>({});
 
+  const unlockBot = async (botId: string, password?: string) => {
+    if (!user) return;
+    
+    const isWizard = botId === 'wizard1' || botId === 'wizard2';
+    if (!isWizard) return;
+
+    if (user.role !== 'marketer' && user.role !== 'admin') {
+      const isUnlocked = (user.unlockedBotIds || []).includes(botId);
+      if (isUnlocked) return; // Already unlocked
+
+      if (!password) {
+        throw new Error('PASSWORD_REQUIRED');
+      }
+      
+      const targetPassword = botId === 'wizard1' ? globalWizardPassword : globalWizard2Password;
+      if (password !== targetPassword) {
+        throw new Error('Incorrect bot password.');
+      }
+
+      // Successfully verified password, mark as unlocked
+      const newUnlocked = Array.from(new Set([...(user.unlockedBotIds || []), botId]));
+      
+      if (isSupabaseConfigured()) {
+        await supabase.from('bot_settings').upsert({
+          user_id: user.id,
+          bot_stats: {
+            ...(user.botStats || {}),
+            unlocked_bot_ids: newUnlocked
+          },
+          updated_at: new Date().toISOString()
+        });
+      }
+      
+      // Update local state
+      const unlockedUser = { ...user, unlockedBotIds: newUnlocked };
+      setUser(unlockedUser);
+      setUsers(prev => prev.map(u => u.id === user.id ? unlockedUser : u));
+    }
+  };
+
   const toggleBot = async (botId: string) => {
     if (!user) return;
+    
+    const isWizard = botId === 'wizard1' || botId === 'wizard2';
+    
+    // 1. Block Demo Trading for Wizard Bots
+    if (isWizard && user.activeAccount === 'DEMO') {
+      throw new Error('Wizard bots cannot be used with Demo accounts. Please switch to a REAL account.');
+    }
+
+    // 2. Check Unlock Status for Normal Users on Wizard Bots
+    if (isWizard && user.role !== 'marketer' && user.role !== 'admin') {
+      const isUnlocked = (user.unlockedBotIds || []).includes(botId);
+      if (!isUnlocked) {
+        throw new Error('LOCKED');
+      }
+    }
     
     let updatedBots = { ...user.bots };
     let updatedActiveCustomBotIds = [...(user.activeCustomBotIds || [])];
@@ -1959,6 +2063,12 @@ export function useStore() {
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     const currentBalance = currentUser[balanceKey];
 
+    const newLogObj = log && botId ? {
+      botId,
+      message: log,
+      timestamp: Date.now()
+    } : log;
+
     // Safety: Auto-stop bot if balance is below stake
     const botStake = botId ? (currentUser.botConfigs?.[botId]?.stake || 10) : 10;
     if (currentBalance < botStake) {
@@ -2007,7 +2117,8 @@ export function useStore() {
     const newBalanceDB = Math.max(MIN_BALANCE_AFTER_LOSS, Number((currentBalance + finalAmount).toFixed(2)));
     const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
     const entryPrice = randomCoin.basePrice * (0.95 + Math.random() * 0.1);
-    const updatedLogsDB = log ? [log, ...(currentUser.botLogs || [])].slice(0, 50) : (currentUser.botLogs || []);
+
+    const updatedLogsDB = newLogObj ? [newLogObj, ...(currentUser.botLogs || [])].slice(0, 50) : (currentUser.botLogs || []);
     
     // Set internal update flag for a short window during profit update
     isInternalUpdate.current = true;
@@ -2122,7 +2233,7 @@ export function useStore() {
         dailyTradesReal: isRealAccount ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
         dailyTradesDemo: !isRealAccount ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo,
         botStats: newStats,
-        botLogs: log ? [log, ...(prev.botLogs || [])].slice(0, 50) : (prev.botLogs || []),
+        botLogs: newLogObj ? [newLogObj, ...(prev.botLogs || [])].slice(0, 50) : (prev.botLogs || []),
         trades: [newTradeEntry, ...(prev.trades || [])]
       };
     });
@@ -2162,7 +2273,7 @@ export function useStore() {
         dailyProfitReal: isRealAccount ? Number(((u.dailyProfitReal || 0) + finalAmount).toFixed(2)) : u.dailyProfitReal,
         dailyProfitDemo: !isRealAccount ? Number(((u.dailyProfitDemo || 0) + finalAmount).toFixed(2)) : u.dailyProfitDemo,
         botStats: newStats,
-        botLogs: log ? [log, ...(u.botLogs || [])].slice(0, 50) : (u.botLogs || []),
+        botLogs: newLogObj ? [newLogObj, ...(u.botLogs || [])].slice(0, 50) : (u.botLogs || []),
         trades: [{
           id: Math.random().toString(36).substr(2, 9),
           coin: 'BOT',
@@ -2297,27 +2408,33 @@ export function useStore() {
     if (trans.status === status) return true; // Already processed
     
     // 2. Perform atomic update to prevent race conditions
-    // Only update if current status is NOT completed
+    // Only update if current status is NOT completed or rejected (final states)
     const { data: updatedTxs, error: updateError } = await supabase
       .from('transactions')
       .update({ status })
       .eq('id', transactionId)
-      .neq('status', 'completed') // INVARIANT: Never process a completed transaction twice
+      .not('status', 'in', '("completed","rejected","success","successful")')
       .select();
 
     if (updateError || !updatedTxs || updatedTxs.length === 0) {
-      console.warn('Transaction already completed or update failed.');
+      console.warn('Transaction already finalized or update failed.');
       return false;
     }
 
     // 3. Handle balance consequences atomically using RPCs
     if (status === 'completed' && trans.type === 'DEPOSIT') {
       // Use the atomic RPC v2 to increment balance and mark transaction completed
-      await supabase.rpc('increment_balance_v2', {
+      const { error: rpcError } = await supabase.rpc('increment_balance_v2', {
         t_id: transactionId,
         u_id: trans.user_id,
         amount: Number(trans.amount)
       });
+      
+      if (rpcError) {
+        console.error('Error in balance increment RPC:', rpcError);
+        // Attempt fallback if RPC fails (though RPC should handle it)
+        return false;
+      }
     } else if (status === 'rejected' && trans.type === 'WITHDRAW') {
       // Return funds for rejected withdrawal
       await supabase.rpc('increment_balance', {
@@ -2404,6 +2521,23 @@ export function useStore() {
     }
     
     return true;
+  };
+
+  const updateWizardPassword = async (userId: string, password: string) => {
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('users').update({ wizard_password: password }).eq('id', userId);
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, wizard_password: password, wizardPassword: password } : u));
+        if (user?.id === userId) {
+          setUser(prev => prev ? { ...prev, wizardPassword: password } : null);
+        }
+        return true;
+      } catch (err) {
+        console.error('Error updating wizard password:', err);
+        return false;
+      }
+    }
+    return false;
   };
 
   const updateUserRole = async (userId: string, role: 'user' | 'marketer' | 'admin') => {
@@ -2961,30 +3095,30 @@ export function useStore() {
   });
 
   useEffect(() => {
-    localStorage.setItem('preocrypto_theme', isDarkMode ? 'dark' : 'light');
+    const theme = isDarkMode ? 'dark' : 'light';
+    localStorage.setItem('preocrypto_theme', theme);
+    
+    const themeColor = isDarkMode ? '#0f172a' : '#ffffff';
+    const statusBarStyle = isDarkMode ? 'black-translucent' : 'default';
+    
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
-      const metaTheme = document.getElementById('meta-theme-color');
-      if (metaTheme) metaTheme.setAttribute('content', '#0f172a');
-      const metaStatus = document.getElementById('meta-status-bar-style');
-      if (metaStatus) metaStatus.setAttribute('content', 'black-translucent');
-      const metaTile = document.getElementById('meta-tile-color');
-      if (metaTile) metaTile.setAttribute('content', '#0f172a');
-      
-      // Also update background directly to prevent flickering
-      document.body.style.backgroundColor = '#0f172a';
     } else {
       document.documentElement.classList.remove('dark');
-      const metaTheme = document.getElementById('meta-theme-color');
-      if (metaTheme) metaTheme.setAttribute('content', '#ffffff');
-      const metaStatus = document.getElementById('meta-status-bar-style');
-      if (metaStatus) metaStatus.setAttribute('content', 'default');
-      const metaTile = document.getElementById('meta-tile-color');
-      if (metaTile) metaTile.setAttribute('content', '#ffffff');
-      
-      // Also update background directly to prevent flickering
-      document.body.style.backgroundColor = '#ffffff';
     }
+
+    // Force body background update
+    document.body.style.backgroundColor = themeColor;
+
+    // Update meta tags
+    const metaTheme = document.getElementById('meta-theme-color');
+    if (metaTheme) metaTheme.setAttribute('content', themeColor);
+    
+    const metaStatus = document.getElementById('meta-status-bar-style');
+    if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
+    
+    const metaTile = document.getElementById('meta-tile-color');
+    if (metaTile) metaTile.setAttribute('content', themeColor);
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {
@@ -3132,6 +3266,7 @@ export function useStore() {
     switchAccount,
     resetDemoBalance,
     updateBotConfig,
+    unlockBot,
     updateBotGlobalSettings,
     addTrade,
     closeTrade,
@@ -3159,6 +3294,9 @@ export function useStore() {
     startCopying,
     stopCopying,
     getTraderFollowers,
+    globalWizardPassword,
+    globalWizard2Password,
+    updateGlobalWizardPasswords,
     adminCreditUser: async (userId: string, amount: number, transactionId?: string) => {
       try {
         const session = await getSafeSession();
