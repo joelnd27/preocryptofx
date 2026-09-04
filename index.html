@@ -64,11 +64,25 @@
       (function() {
         try {
           var theme = localStorage.getItem('preocrypto_theme') || 'dark';
-          if (theme === 'dark') {
+          var isDark = theme === 'dark';
+          if (isDark) {
             document.documentElement.classList.add('dark');
           } else {
             document.documentElement.classList.remove('dark');
           }
+          
+          // Update meta tags immediately to avoid status bar color mismatch
+          var themeColor = isDark ? '#0f172a' : '#ffffff';
+          var statusBarStyle = isDark ? 'black-translucent' : 'default';
+          
+          var metaTheme = document.getElementById('meta-theme-color');
+          if (metaTheme) metaTheme.setAttribute('content', themeColor);
+          
+          var metaStatus = document.getElementById('meta-status-bar-style');
+          if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
+          
+          var metaTile = document.getElementById('meta-tile-color');
+          if (metaTile) metaTile.setAttribute('content', themeColor);
         } catch (e) {}
       })();
     </script>

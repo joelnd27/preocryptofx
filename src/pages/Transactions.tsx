@@ -377,7 +377,7 @@ export default function Transactions() {
               onClick={() => { setModalType('DEPOSIT'); setIsModalOpen(true); }}
               disabled={user?.activeAccount === 'DEMO'}
               className={cn(
-                "w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-bold transition-all shadow-sm",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold transition-all shadow-sm",
                 (user?.activeAccount === 'DEMO')
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed" 
                   : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10"
@@ -396,7 +396,7 @@ export default function Transactions() {
               onClick={() => { setModalType('WITHDRAW'); setIsModalOpen(true); }}
               disabled={user?.activeAccount === 'DEMO'}
               className={cn(
-                "w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-bold transition-all",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold transition-all",
                 user?.activeAccount === 'DEMO'
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                   : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm"
@@ -709,32 +709,32 @@ export default function Transactions() {
         </div>
 
         <div className="space-y-4">
-          <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-5 sm:p-6 rounded-2xl text-white shadow-lg shadow-blue-600/10 relative overflow-hidden group">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 sm:p-3 rounded-2xl text-white shadow-lg shadow-blue-600/10 relative overflow-hidden group">
             <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:scale-110 transition-transform duration-500"></div>
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-4">
-                <Wallet size={20} />
-                <div className="px-2 py-0.5 bg-white/20 rounded-full text-[8px] font-bold uppercase tracking-wider">
+              <div className="flex items-center justify-between mb-1.5">
+                <Wallet size={16} />
+                <div className="px-1.5 py-0 bg-white/20 rounded-full text-[7px] font-bold uppercase tracking-wider">
                   {user?.activeAccount} Account
                 </div>
               </div>
-              <p className="text-blue-100 text-[10px] mb-0.5 font-mono uppercase tracking-wider opacity-80">Total Balance</p>
-              <h3 className="text-2xl sm:text-3xl font-bold mb-4 font-mono tracking-tight tabular-nums">
+              <p className="text-blue-100 text-[8px] mb-0 font-mono uppercase tracking-wider opacity-80">Total Balance</p>
+              <h3 className="text-xl font-bold mb-1.5 font-mono tracking-tight tabular-nums">
                 {formatCurrency(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)}
               </h3>
               <div className="grid grid-cols-2 gap-2">
-                <div className="p-2 sm:p-3 bg-white/10 rounded-xl">
-                  <p className="text-[8px] text-blue-100 uppercase font-mono font-bold mb-0.5 opacity-60">Inflow</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-ellipsis overflow-hidden">
+                <div className="p-1.5 sm:px-2.5 sm:py-1.5 bg-white/10 rounded-xl">
+                  <p className="text-[7px] text-blue-100 uppercase font-mono font-bold mb-0 opacity-60">Inflow</p>
+                  <p className="text-xs font-bold font-mono tabular-nums text-ellipsis overflow-hidden">
                     {formatCurrency(
                       (user?.transactions?.filter(t => t.type === 'DEPOSIT' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0) || 0) +
                       (user?.role === 'marketer' ? getMarketerDeposit(user.id) : 0)
                     )}
                   </p>
                 </div>
-                <div className="p-2 sm:p-3 bg-white/10 rounded-xl">
-                  <p className="text-[8px] text-blue-100 uppercase font-mono font-bold mb-0.5 opacity-60">Outflow</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-ellipsis overflow-hidden">
+                <div className="p-1.5 sm:px-2.5 sm:py-1.5 bg-white/10 rounded-xl">
+                  <p className="text-[7px] text-blue-100 uppercase font-mono font-bold mb-0 opacity-60">Outflow</p>
+                  <p className="text-xs font-bold font-mono tabular-nums text-ellipsis overflow-hidden">
                     {formatCurrency(user?.transactions?.filter(t => t.type === 'WITHDRAW').reduce((acc, t) => acc + t.amount, 0) || 0)}
                   </p>
                 </div>
@@ -1111,7 +1111,7 @@ export default function Transactions() {
                         type="submit"
                         disabled={isProcessing}
                         className={cn(
-                          "w-full py-3.5 rounded-xl font-bold text-white transition-all shadow-md flex items-center justify-center gap-2 mt-4",
+                          "w-full py-2.5 rounded-xl font-bold text-white transition-all shadow-md flex items-center justify-center gap-2 mt-4",
                           isProcessing ? "bg-slate-700 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/10"
                         )}
                       >
@@ -1208,7 +1208,7 @@ export default function Transactions() {
                               setIsChecking(false);
                             }}
                             disabled={isChecking}
-                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
                           >
                             {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                             Check Status Again
@@ -1237,7 +1237,7 @@ export default function Transactions() {
                         </div>
                         <button 
                           onClick={() => { setIsModalOpen(false); setPaymentStatus('IDLE'); }}
-                          className="w-full py-3 bg-blue-600 text-white text-sm font-bold rounded-xl"
+                          className="w-full py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl"
                         >
                           Done
                         </button>
@@ -1261,7 +1261,7 @@ export default function Transactions() {
                         <div className="flex flex-col gap-3 w-full">
                           <button 
                             onClick={() => setPaymentStatus('IDLE')}
-                            className="w-full py-3 bg-slate-800 text-white text-sm font-bold rounded-xl"
+                            className="w-full py-2.5 bg-slate-800 text-white text-sm font-bold rounded-xl"
                           >
                             Try Again
                           </button>

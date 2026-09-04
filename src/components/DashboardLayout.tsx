@@ -128,10 +128,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 isDarkMode ? "bg-slate-900" : "bg-white"
               )}
             >
-              <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
+              <div 
+                className="flex items-center justify-between px-6 border-b border-transparent shrink-0"
+                style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(4rem + env(safe-area-inset-top))' }}
+              >
                 <div className="flex items-center gap-3">
                   <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg" />
-                  <span className="text-xl font-bold tracking-tight">PreoCryptoFX</span>
+                  <span className="text-xl font-bold tracking-tight whitespace-nowrap">PreoCryptoFX</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-2">
                   <X size={20} />
@@ -236,9 +239,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
 
             {/* Balance */}
-            <div className="hidden sm:block text-right shrink-0">
-              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Balance</p>
-              <p className="text-sm font-bold text-primary tabular-nums">
+            <div className="text-right shrink-0">
+              <p className="text-[8px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Balance</p>
+              <p className="text-xs sm:text-sm font-bold text-primary tabular-nums">
                 ${(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             </div>
