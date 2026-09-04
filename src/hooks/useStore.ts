@@ -3110,13 +3110,21 @@ export function useStore() {
     // Force body background update
     document.body.style.backgroundColor = themeColor;
 
-    // Update meta tags using more robust selector
+    // Update meta tags using robust name selector
     const updateMeta = (name: string, value: string) => {
       const metas = document.getElementsByTagName('meta');
+      let found = false;
       for (let i = 0; i < metas.length; i++) {
-        if (metas[i].getAttribute('name') === name || metas[i].getAttribute('id') === `meta-${name}`) {
+        if (metas[i].getAttribute('name') === name) {
           metas[i].setAttribute('content', value);
+          found = true;
         }
+      }
+      if (!found) {
+        const meta = document.createElement('meta');
+        meta.name = name;
+        meta.content = value;
+        document.head.appendChild(meta);
       }
     };
 

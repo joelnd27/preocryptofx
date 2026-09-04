@@ -6,12 +6,13 @@
     <title>PreoCryptoFX | AI Trading Platform</title>
     <meta name="description" content="PreoCryptoFX offers a secure, professional cryptocurrency trading experience with advanced AI-powered tools, real-time analytics, and 24/7 support for every level of trader." />
     <meta name="keywords" content="crypto trading, AI trading, bitcoin, ethereum, professional trading platform, PreoCryptoFX" />
-    <meta id="meta-theme-color" name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta id="meta-status-bar-style" name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="msapplication-navbutton-color" content="#ffffff" />
+    <meta name="apple-touch-fullscreen" content="yes" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -28,7 +29,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="mask-icon" href="/favicon.svg" color="#2563eb" />
-    <meta id="meta-tile-color" name="msapplication-TileColor" content="#0f172a" />
+    <meta name="msapplication-TileColor" content="#0f172a" />
     
     <!-- Structured Data for Search Results -->
     <script type="application/ld+json">
@@ -78,7 +79,7 @@
           // Force update body and html background early to avoid white/dark flash
           var style = document.createElement('style');
           style.id = 'theme-init-style';
-          style.innerHTML = 'html, body { background-color: ' + themeColor + ' !important; }';
+          style.innerHTML = 'html, body, #root { background-color: ' + themeColor + ' !important; margin: 0 !important; padding: 0 !important; height: 100% !important; width: 100% !important; position: fixed !important; inset: 0 !important; overflow: hidden !important; }';
           document.head.appendChild(style);
 
           var updateMeta = function(name, value) {
@@ -86,8 +87,7 @@
             var found = false;
             for (var i = 0; i < metas.length; i++) {
               var n = metas[i].getAttribute('name');
-              var id = metas[i].getAttribute('id');
-              if (n === name || id === 'meta-' + name || (n === 'apple-mobile-web-app-status-bar-style' && name === 'apple-mobile-web-app-status-bar-style')) {
+              if (n === name) {
                 metas[i].setAttribute('content', value);
                 found = true;
               }
