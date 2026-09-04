@@ -85,8 +85,6 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    position: fixed;
-    inset: 0;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
   }

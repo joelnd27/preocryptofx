@@ -3091,7 +3091,7 @@ export function useStore() {
   // Dark mode persistence
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('preocrypto_theme');
-    return saved ? saved === 'dark' : true;
+    return saved ? saved === 'dark' : false;
   });
 
   useEffect(() => {
@@ -3099,7 +3099,7 @@ export function useStore() {
     localStorage.setItem('preocrypto_theme', theme);
     
     const themeColor = isDarkMode ? '#0f172a' : '#ffffff';
-    const statusBarStyle = isDarkMode ? 'black-translucent' : 'default';
+    const statusBarStyle = isDarkMode ? 'black' : 'default';
     
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -3132,6 +3132,9 @@ export function useStore() {
     updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
     updateMeta('msapplication-navbutton-color', themeColor);
     updateMeta('msapplication-TileColor', themeColor);
+    
+    // For iOS PWA specifically, changing apple-mobile-web-app-status-bar-style dynamically
+    // can be finicky. Sometimes we need to trigger a small change in theme-color to force a repaint.
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {
