@@ -3099,7 +3099,7 @@ export function useStore() {
     localStorage.setItem('preocrypto_theme', theme);
     
     const themeColor = isDarkMode ? '#0f172a' : '#ffffff';
-    const statusBarStyle = isDarkMode ? 'black' : 'default';
+    const statusBarStyle = isDarkMode ? 'black-translucent' : 'default';
     
     if (isDarkMode) {
       document.documentElement.classList.add('dark');

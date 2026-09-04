@@ -47,7 +47,7 @@ export default function Landing() {
 
   return (
     <div className={cn(
-      "min-h-screen overflow-x-hidden transition-colors duration-300",
+      "h-full overflow-x-hidden transition-colors duration-300",
       isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
     )}>
       <div 

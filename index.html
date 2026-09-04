@@ -74,12 +74,12 @@
           }
           
           var themeColor = isDark ? '#0f172a' : '#ffffff';
-          var statusBarStyle = isDark ? 'black' : 'default';
+          var statusBarStyle = isDark ? 'black-translucent' : 'default';
           
           // Force update body and html background early to avoid white/dark flash
           var style = document.createElement('style');
           style.id = 'theme-init-style';
-          style.innerHTML = 'html, body, #root { background-color: ' + themeColor + ' !important; margin: 0 !important; padding: 0 !important; height: 100% !important; width: 100% !important; overflow: hidden !important; }';
+          style.innerHTML = 'html, body, #root { background-color: ' + themeColor + ' !important; margin: 0 !important; padding: 0 !important; height: 100% !important; width: 100% !important; }';
           document.head.appendChild(style);
 
           var updateMeta = function(name, value) {
