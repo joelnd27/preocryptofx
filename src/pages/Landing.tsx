@@ -55,7 +55,7 @@ export default function Landing() {
           "sticky top-0 z-[100] w-full",
           isDarkMode ? "bg-slate-950" : "bg-white"
         )}
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'env(safe-area-inset-top)' }}
       >
         {/* Navbar */}
         <nav className={cn(

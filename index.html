@@ -7,10 +7,13 @@
     <meta name="description" content="PreoCryptoFX offers a secure, professional cryptocurrency trading experience with advanced AI-powered tools, real-time analytics, and 24/7 support for every level of trader." />
     <meta name="keywords" content="crypto trading, AI trading, bitcoin, ethereum, professional trading platform, PreoCryptoFX" />
     <meta id="meta-theme-color" name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta id="meta-status-bar-style" name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-navbutton-color" content="#ffffff" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -71,18 +74,37 @@
             document.documentElement.classList.remove('dark');
           }
           
-          // Update meta tags immediately to avoid status bar color mismatch
           var themeColor = isDark ? '#0f172a' : '#ffffff';
           var statusBarStyle = isDark ? 'black-translucent' : 'default';
           
-          var metaTheme = document.getElementById('meta-theme-color');
-          if (metaTheme) metaTheme.setAttribute('content', themeColor);
-          
-          var metaStatus = document.getElementById('meta-status-bar-style');
-          if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
-          
-          var metaTile = document.getElementById('meta-tile-color');
-          if (metaTile) metaTile.setAttribute('content', themeColor);
+          // Force update body and html background early
+          var style = document.createElement('style');
+          style.innerHTML = 'html, body { background-color: ' + themeColor + ' !important; }';
+          document.head.appendChild(style);
+
+          var updateMeta = function(name, value) {
+            var metas = document.getElementsByTagName('meta');
+            var found = false;
+            for (var i = 0; i < metas.length; i++) {
+              var n = metas[i].getAttribute('name');
+              var id = metas[i].getAttribute('id');
+              if (n === name || id === 'meta-' + name) {
+                metas[i].setAttribute('content', value);
+                found = true;
+              }
+            }
+            if (!found) {
+              var meta = document.createElement('meta');
+              meta.name = name;
+              meta.content = value;
+              document.head.appendChild(meta);
+            }
+          };
+
+          updateMeta('theme-color', themeColor);
+          updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
+          updateMeta('msapplication-navbutton-color', themeColor);
+          updateMeta('msapplication-TileColor', themeColor);
         } catch (e) {}
       })();
     </script>

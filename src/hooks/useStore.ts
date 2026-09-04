@@ -3110,15 +3110,20 @@ export function useStore() {
     // Force body background update
     document.body.style.backgroundColor = themeColor;
 
-    // Update meta tags
-    const metaTheme = document.getElementById('meta-theme-color');
-    if (metaTheme) metaTheme.setAttribute('content', themeColor);
-    
-    const metaStatus = document.getElementById('meta-status-bar-style');
-    if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
-    
-    const metaTile = document.getElementById('meta-tile-color');
-    if (metaTile) metaTile.setAttribute('content', themeColor);
+    // Update meta tags using more robust selector
+    const updateMeta = (name: string, value: string) => {
+      const metas = document.getElementsByTagName('meta');
+      for (let i = 0; i < metas.length; i++) {
+        if (metas[i].getAttribute('name') === name || metas[i].getAttribute('id') === `meta-${name}`) {
+          metas[i].setAttribute('content', value);
+        }
+      }
+    };
+
+    updateMeta('theme-color', themeColor);
+    updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
+    updateMeta('msapplication-navbutton-color', themeColor);
+    updateMeta('msapplication-TileColor', themeColor);
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {
