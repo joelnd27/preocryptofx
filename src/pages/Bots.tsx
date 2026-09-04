@@ -140,8 +140,8 @@ export default function Bots() {
   const { user, toggleBot, unlockBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
-  const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }>>(() => {
-    const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number }> = {};
+  const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }>>(() => {
+    const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }> = {};
     
     // Built-in bots
     BOTS.forEach(bot => {
@@ -152,7 +152,8 @@ export default function Bots() {
         coin: persisted?.coin || (bot.type === 'trend' ? 'ETH' : bot.type === 'ai' ? 'SOL' : 'BTC'), 
         timeframe: persisted?.timeframe || (bot.type === 'scalping' ? '1M' : '1H'),
         stake: persisted?.stake || 10,
-        targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
+        targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0,
+        isConfigured: !!persisted
       };
     });
 
@@ -164,7 +165,8 @@ export default function Bots() {
         coin: persisted?.coin || 'BTC',
         timeframe: persisted?.timeframe || '1H',
         stake: persisted?.stake || 10,
-        targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0
+        targetProfit: persisted?.targetProfit || user?.targetProfitPercentage || 0,
+        isConfigured: !!persisted
       };
     });
 
@@ -184,7 +186,8 @@ export default function Bots() {
               coin: config.coin || next[id]?.coin || 'BTC',
               timeframe: config.timeframe || next[id]?.timeframe || '1M',
               stake: config.stake || next[id]?.stake || 10,
-              targetProfit: config.targetProfit || next[id]?.targetProfit || 0
+              targetProfit: config.targetProfit || next[id]?.targetProfit || 0,
+              isConfigured: true
             };
           }
         });
@@ -344,6 +347,17 @@ export default function Bots() {
     }
 
     const currentStake = botSettings[botId]?.stake || 10;
+    const isConfigured = botSettings[botId]?.isConfigured;
+
+    if (!isBotActive && !isConfigured) {
+      setAlertConfig({
+        isOpen: true,
+        title: 'Configuration Required',
+        message: `Please edit the Stake and Profit Goal for ${bot.name} before starting the bot.`,
+        type: 'warning'
+      });
+      return;
+    }
 
     if (!isBotActive && currentStake > 50000) {
       setAlertConfig({
@@ -713,7 +727,7 @@ export default function Bots() {
                         const newCoin = e.target.value;
                         setBotSettings(prev => ({
                           ...prev,
-                          [selectedBot.id]: { ...prev[selectedBot.id], coin: newCoin }
+                          [selectedBot.id]: { ...prev[selectedBot.id], coin: newCoin, isConfigured: true }
                         }));
                         updateBotConfig(selectedBot.id, newCoin, currentSettings.timeframe, currentSettings.stake, currentSettings.targetProfit);
                       }}
@@ -739,7 +753,7 @@ export default function Bots() {
                           const newTf = t;
                           setBotSettings(prev => ({
                             ...prev,
-                            [selectedBot.id]: { ...prev[selectedBot.id], timeframe: newTf }
+                            [selectedBot.id]: { ...prev[selectedBot.id], timeframe: newTf, isConfigured: true }
                           }));
                           updateBotConfig(selectedBot.id, currentSettings.coin, newTf, currentSettings.stake, currentSettings.targetProfit);
                         }}
@@ -774,7 +788,7 @@ export default function Bots() {
                           
                           setBotSettings(prev => ({
                             ...prev,
-                            [selectedBot.id]: { ...prev[selectedBot.id], stake: val }
+                            [selectedBot.id]: { ...prev[selectedBot.id], stake: val, isConfigured: true }
                           }));
                           updateBotConfig(selectedBot.id, currentSettings.coin, currentSettings.timeframe, val, currentSettings.targetProfit);
                         }}
@@ -796,7 +810,7 @@ export default function Bots() {
                           const val = Number(e.target.value);
                           setBotSettings(prev => ({
                             ...prev,
-                            [selectedBot.id]: { ...prev[selectedBot.id], targetProfit: val }
+                            [selectedBot.id]: { ...prev[selectedBot.id], targetProfit: val, isConfigured: true }
                           }));
                           updateBotConfig(selectedBot.id, currentSettings.coin, currentSettings.timeframe, currentSettings.stake, val);
                         }}

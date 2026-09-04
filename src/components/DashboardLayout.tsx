@@ -236,10 +236,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <button className="p-1.5 sm:p-2 hover:bg-header-hover text-header-foreground rounded-full transition-colors relative shrink-0">
-                <Bell size={18} className="text-header-foreground/70" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border border-header"></span>
-              </button>
               <Link to="/profile" className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0">
                 <UserIcon size={18} className="text-primary" />
               </Link>

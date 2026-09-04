@@ -3203,9 +3203,15 @@ export function useStore() {
     };
 
     const handleAppInstalled = () => {
-      alert('PreoCryptoFX has been registered! Your phone is now finishing the setup. The app icon will appear in your app drawer/home screen within a few moments.');
-      setIsInstalling(false);
+      console.log('[PWA] App installed successfully');
       setDeferredPrompt(null);
+      setIsInstalling(false);
+      // Brief success message that doesn't block the UI
+      const notification = document.createElement('div');
+      notification.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] bg-green-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce';
+      notification.innerText = 'PreoCryptoFX Installed! Check your home screen.';
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 5000);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -3218,39 +3224,39 @@ export function useStore() {
   }, []);
 
   const installApp = async () => {
-    console.log('installApp called, deferredPrompt:', !!deferredPrompt);
+    console.log('[PWA] installApp called, deferredPrompt state:', !!deferredPrompt);
     
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      alert('PreoCryptoFX is already installed and running as an app.');
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      alert('PreoCryptoFX is already installed and running.');
       return;
     }
 
     if (deferredPrompt) {
       try {
         setIsInstalling(true);
-        deferredPrompt.prompt();
+        console.log('[PWA] Triggering install prompt...');
+        await deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
-        console.log('Install prompt outcome:', outcome);
+        console.log('[PWA] Install prompt outcome:', outcome);
         
         if (outcome === 'accepted') {
-          console.log('User accepted the install prompt');
-          // isInstalling will be reset by the appinstalled event listener
+          // Keep isInstalling true until appinstalled fires or a timeout occurs
+          setTimeout(() => setIsInstalling(false), 10000); 
         } else {
-          console.log('User dismissed the install prompt');
           setIsInstalling(false);
+          setDeferredPrompt(null); // Clear it as it might be stale now
         }
-        setDeferredPrompt(null);
       } catch (err) {
-        console.error('Error during install prompt:', err);
+        console.error('[PWA] Error during install prompt:', err);
         setIsInstalling(false);
       }
     } else {
       // Very brief fallback for iOS/other browsers where the automated prompt isn't available
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       if (isIOS) {
-        alert('To install PreoCryptoFX: Tap the "Share" icon and select "Add to Home Screen".');
+        alert('To Install: Tap the "Share" icon in Safari and select "Add to Home Screen".');
       } else {
-        alert('Ready to Install: Please check your browser menu (typically the three dots ⋮ or share icon) and select "Install App" or "Add to Home Screen".');
+        alert('Installation Ready: Please check your browser menu (⋮) and select "Install App" or "Add to Home Screen".');
       }
     }
   };
