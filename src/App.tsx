@@ -93,7 +93,7 @@ export default function App() {
 
   return (
     <Router>
-      <div className="flex flex-col h-[100dvh]">
+      <div className="flex flex-col h-full">
         <PWAInstallBanner />
         <div className="flex-1 overflow-x-hidden">
           <AdminRedirector>

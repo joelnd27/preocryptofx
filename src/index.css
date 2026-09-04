@@ -87,15 +87,23 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    min-height: 100vh;
+    min-height: 100%;
     min-height: -webkit-fill-available;
-    /* On mobile, we handle safe areas in specific layout components for better sticky control */
+    width: 100%;
+    margin: 0;
+    padding: 0;
   }
 }
 
 html {
+  height: 100%;
   height: -webkit-fill-available;
   @apply bg-background;
+}
+
+#root {
+  height: 100%;
+  min-height: -webkit-fill-available;
 }
 
 @layer base {

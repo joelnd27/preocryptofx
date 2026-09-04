@@ -7,8 +7,6 @@
     <meta name="description" content="PreoCryptoFX offers a secure, professional cryptocurrency trading experience with advanced AI-powered tools, real-time analytics, and 24/7 support for every level of trader." />
     <meta name="keywords" content="crypto trading, AI trading, bitcoin, ethereum, professional trading platform, PreoCryptoFX" />
     <meta id="meta-theme-color" name="theme-color" content="#ffffff" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta id="meta-status-bar-style" name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -77,8 +75,9 @@
           var themeColor = isDark ? '#0f172a' : '#ffffff';
           var statusBarStyle = isDark ? 'black-translucent' : 'default';
           
-          // Force update body and html background early
+          // Force update body and html background early to avoid white/dark flash
           var style = document.createElement('style');
+          style.id = 'theme-init-style';
           style.innerHTML = 'html, body { background-color: ' + themeColor + ' !important; }';
           document.head.appendChild(style);
 
@@ -88,7 +87,7 @@
             for (var i = 0; i < metas.length; i++) {
               var n = metas[i].getAttribute('name');
               var id = metas[i].getAttribute('id');
-              if (n === name || id === 'meta-' + name) {
+              if (n === name || id === 'meta-' + name || (n === 'apple-mobile-web-app-status-bar-style' && name === 'apple-mobile-web-app-status-bar-style')) {
                 metas[i].setAttribute('content', value);
                 found = true;
               }
