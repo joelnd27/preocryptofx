@@ -65,7 +65,7 @@
     <script>
       (function() {
         try {
-          var theme = localStorage.getItem('preocrypto_theme') || 'light';
+          var theme = localStorage.getItem('preocrypto_theme') || 'dark';
           var isDark = theme === 'dark';
           if (isDark) {
             document.documentElement.classList.add('dark');
@@ -104,6 +104,7 @@
           updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
           updateMeta('msapplication-navbutton-color', themeColor);
           updateMeta('msapplication-TileColor', themeColor);
+          updateMeta('color-scheme', isDark ? 'dark' : 'light');
         } catch (e) {}
       })();
     </script>
