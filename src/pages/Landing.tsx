@@ -47,23 +47,14 @@ export default function Landing() {
 
   return (
     <div className={cn(
-      "min-h-screen overflow-x-hidden transition-colors duration-300",
-      isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
+      "h-full overflow-x-hidden transition-colors duration-300 bg-background text-foreground"
     )}>
       <div 
-        className={cn(
-          "sticky top-0 z-[100] w-full",
-          isDarkMode ? "bg-slate-950" : "bg-white"
-        )}
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        className="sticky top-0 z-[100] w-full bg-header/90 backdrop-blur-md border-b border-header-border transition-colors duration-300"
+        style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'env(safe-area-inset-top)' }}
       >
         {/* Navbar */}
-        <nav className={cn(
-          "w-full border-b shadow-sm",
-        isDarkMode 
-          ? "bg-slate-950/80 backdrop-blur-md border-slate-800" 
-          : "bg-white/80 backdrop-blur-md border-slate-200"
-      )}>
+        <nav className="w-full text-header-foreground">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-8 h-8 sm:w-10 sm:h-10" />
@@ -76,28 +67,20 @@ export default function Landing() {
           </div>
           
           {/* Desktop Nav */}
-          <div className={cn(
-            "hidden md:flex items-center gap-8",
-            isDarkMode ? "text-slate-300" : "text-slate-500"
-          )}>
-            <a href="#features" className="hover:text-blue-500 transition-colors text-sm font-medium">Features</a>
-            <a href="#how-it-works" className="hover:text-blue-500 transition-colors text-sm font-medium">How it Works</a>
+          <div className="hidden md:flex items-center gap-8 text-header-foreground">
+            <a href="#features" className="hover:text-primary transition-colors text-sm font-medium">Features</a>
+            <a href="#how-it-works" className="hover:text-primary transition-colors text-sm font-medium">How it Works</a>
             
             <button 
               onClick={toggleDarkMode}
-              className={cn(
-                "p-2 rounded-xl transition-all",
-                isDarkMode ? "bg-slate-800 text-yellow-400 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              )}
+              className="p-2 rounded-xl transition-all bg-header-hover text-header-foreground hover:bg-header-active"
+              aria-label="Toggle Theme"
             >
-              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+              {isDarkMode ? <Sun size={18} className="text-yellow-400" /> : <Moon size={18} />}
             </button>
 
-            <Link to="/login" className={cn(
-              "px-6 py-2 rounded-full transition-colors text-sm font-medium",
-              isDarkMode ? "hover:bg-slate-800" : "hover:bg-slate-100"
-            )}>Login</Link>
-            <Link to="/register" className="px-6 py-3 bg-blue-600 rounded-full font-semibold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 text-white text-sm">
+            <Link to="/login" className="px-6 py-2 rounded-full transition-colors text-sm font-medium hover:bg-header-hover">Login</Link>
+            <Link to="/register" className="px-6 py-3 bg-primary rounded-full font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 text-primary-foreground text-sm">
               Get Started
             </Link>
           </div>
@@ -106,19 +89,15 @@ export default function Landing() {
           <div className="flex items-center gap-2 md:hidden">
             <button 
               onClick={toggleDarkMode}
-              className={cn(
-                "p-2 rounded-xl transition-all",
-                isDarkMode ? "bg-slate-800 text-yellow-400" : "bg-slate-100 text-slate-600"
-              )}
+              className="p-2 rounded-xl transition-all bg-header-hover text-header-foreground"
+              aria-label="Toggle Theme"
             >
-              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+              {isDarkMode ? <Sun size={18} className="text-yellow-400" /> : <Moon size={18} />}
             </button>
             <button 
-              className={cn(
-                "p-2",
-                isDarkMode ? "text-slate-300" : "text-slate-500"
-              )}
+              className="p-2 text-header-foreground"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Toggle Menu"
             >
               {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -132,26 +111,14 @@ export default function Landing() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className={cn(
-                "md:hidden border-b overflow-hidden shadow-xl",
-                isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-              )}
+              className="md:hidden border-b overflow-hidden shadow-xl bg-card border-border"
             >
               <div className="px-4 py-6 space-y-4">
-                <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className={cn(
-                  "block text-lg font-medium",
-                  isDarkMode ? "text-slate-300 hover:text-white" : "text-slate-600 hover:text-blue-600"
-                )}>Features</a>
-                <a href="#how-it-works" onClick={() => setIsMobileMenuOpen(false)} className={cn(
-                  "block text-lg font-medium",
-                  isDarkMode ? "text-slate-300 hover:text-white" : "text-slate-600 hover:text-blue-600"
-                )}>How it Works</a>
+                <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-medium text-foreground hover:text-primary transition-colors">Features</a>
+                <a href="#how-it-works" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-medium text-foreground hover:text-primary transition-colors">How it Works</a>
                 <div className="pt-4 flex flex-col gap-3">
-                  <Link to="/login" className={cn(
-                    "w-full py-3 text-center rounded-xl font-medium",
-                    isDarkMode ? "bg-slate-800" : "bg-slate-100"
-                  )}>Login</Link>
-                  <Link to="/register" className="w-full py-3 text-center rounded-xl bg-blue-600 text-white font-bold">Get Started</Link>
+                  <Link to="/login" className="w-full py-3 text-center rounded-xl font-medium bg-header-hover text-foreground hover:bg-header-active">Login</Link>
+                  <Link to="/register" className="w-full py-3 text-center rounded-xl bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20">Get Started</Link>
                 </div>
               </div>
             </motion.div>

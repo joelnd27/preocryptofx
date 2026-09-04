@@ -28,6 +28,14 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  /* Header Theme Tokens */
+  --color-header: hsl(var(--header-background));
+  --color-header-foreground: hsl(var(--header-foreground));
+  --color-header-border: hsl(var(--header-border));
+  --color-header-muted: hsl(var(--header-muted));
+  --color-header-hover: hsl(var(--header-hover));
+  --color-header-active: hsl(var(--header-active));
 }
 
 @layer base {
@@ -38,7 +46,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%; /* Professional Blue */
+    --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -52,6 +60,14 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 1rem;
+
+    /* Header Specific Tokens - Light */
+    --header-background: 0 0% 100%;
+    --header-foreground: 222.2 84% 4.9%;
+    --header-border: 214.3 31.8% 91.4%;
+    --header-muted: 215.4 16.3% 46.9%;
+    --header-hover: 210 40% 96.1%;
+    --header-active: 210 40% 94.1%;
   }
 
   .dark {
@@ -74,34 +90,33 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
+
+    /* Header Specific Tokens - Dark */
+    --header-background: 222.2 84% 4.9%;
+    --header-foreground: 210 40% 98%;
+    --header-border: 217.2 32.6% 17.5%;
+    --header-muted: 215 20.2% 65.1%;
+    --header-hover: 217.2 32.6% 25%;
+    --header-active: 217.2 32.6% 30%;
   }
 }
 
 @layer base {
-  html {
-    font-size: 107.5%; /* Gentle global scale-up of root font size for enhanced readability */
+  html, body, #root {
+    @apply text-foreground;
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    background-color: hsl(var(--background));
   }
-  * {
-    @apply border-border;
-  }
+
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply font-sans antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    min-height: 100vh;
-    min-height: -webkit-fill-available;
-    /* On mobile, we handle safe areas in specific layout components for better sticky control */
-  }
-}
-
-html {
-  height: -webkit-fill-available;
-  @apply bg-background;
-}
-
-@layer base {
-  /* Ensure correct coloring for system bars on mobile */
-  :root {
-    color-scheme: light dark;
+    background-color: hsl(var(--background));
   }
 }
 

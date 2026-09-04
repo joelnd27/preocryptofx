@@ -58,20 +58,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   ];
 
   return (
-    <div className={cn(
-      "min-h-screen transition-colors duration-300 font-sans flex overflow-hidden",
-      isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
-    )}>
+    <div className="h-full transition-colors duration-300 font-sans flex bg-background text-foreground">
       {/* Sidebar - Desktop */}
       <aside className={cn(
         "hidden lg:flex flex-col border-r transition-all duration-300 ease-in-out shrink-0",
         isSidebarOpen ? "w-64" : "w-20",
-        isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+        "bg-card border-border"
       )}>
         <div className="h-16 flex items-center px-6 border-b border-transparent shrink-0">
           <div className="flex items-center gap-3">
             <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg shrink-0" />
-            {isSidebarOpen && <span className="text-xl font-bold tracking-tight whitespace-nowrap">PreoCryptoFX</span>}
+            {isSidebarOpen && <span className="text-xl font-bold tracking-tight whitespace-nowrap text-foreground">PreoCryptoFX</span>}
           </div>
         </div>
 
@@ -84,23 +81,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group",
                 location.pathname === item.path
                   ? "bg-primary/10 text-primary font-bold"
-                  : "text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               )}
             >
-              <item.icon size={20} className={cn("shrink-0", location.pathname === item.path ? "text-primary" : "text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-100")} />
+              <item.icon size={20} className={cn("shrink-0", location.pathname === item.path ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
               {isSidebarOpen && <span className="whitespace-nowrap">{item.label}</span>}
             </Link>
           ))}
         </nav>
 
-        <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-1 shrink-0">
+        <div className="p-3 border-t border-border space-y-1 shrink-0">
           {bottomItems.map((item, i) => (
             <button
               key={i}
               onClick={item.onClick || (() => item.path && navigate(item.path))}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all group"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all group"
             >
-              <item.icon size={20} className="shrink-0 text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-100" />
+              <item.icon size={20} className="shrink-0 text-muted-foreground group-hover:text-foreground" />
               {isSidebarOpen && <span className="text-sm font-medium whitespace-nowrap">{item.label}</span>}
             </button>
           ))}
@@ -123,17 +120,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className={cn(
-                "fixed inset-y-0 left-0 w-64 z-[210] flex flex-col lg:hidden shadow-2xl",
-                isDarkMode ? "bg-slate-900" : "bg-white"
-              )}
+              className="fixed inset-y-0 left-0 w-64 z-[210] flex flex-col lg:hidden shadow-2xl bg-card border-r border-border"
             >
-              <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
+              <div 
+                className="flex items-center justify-between px-6 border-b border-transparent shrink-0"
+                style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(4rem + env(safe-area-inset-top))' }}
+              >
                 <div className="flex items-center gap-3">
                   <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg" />
-                  <span className="text-xl font-bold tracking-tight">PreoCryptoFX</span>
+                  <span className="text-xl font-bold tracking-tight whitespace-nowrap text-foreground">PreoCryptoFX</span>
                 </div>
-                <button onClick={() => setIsMobileMenuOpen(false)} className="p-2">
+                <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-foreground">
                   <X size={20} />
                 </button>
               </div>
@@ -147,7 +144,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                       "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all",
                       location.pathname === item.path
                         ? "bg-primary/10 text-primary font-bold"
-                        : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     )}
                   >
                     <item.icon size={20} />
@@ -155,7 +152,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </Link>
                 ))}
               </nav>
-              <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
+              <div className="p-3 border-t border-border space-y-1">
                 {bottomItems.map((item, i) => (
                   <button
                     key={i}
@@ -164,7 +161,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                       else if (item.path) navigate(item.path);
                       setIsMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all"
                   >
                     <item.icon size={20} />
                     <span className="text-sm font-medium">{item.label}</span>
@@ -177,20 +174,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative", isDarkMode ? "bg-slate-950" : "bg-white")}>
+      <div className="flex-1 flex flex-col min-w-0 h-full relative bg-background">
         <div 
-          className={cn(
-            "sticky top-0 z-50 w-full shrink-0",
-            isDarkMode ? "bg-slate-950" : "bg-white"
-          )}
-          style={{ paddingTop: 'env(safe-area-inset-top)' }}
+          className="sticky top-0 z-50 w-full shrink-0 bg-header/90 backdrop-blur-md border-b border-header-border transition-colors duration-300"
+          style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'env(safe-area-inset-top)' }}
         >
           
           {/* Top Header */}
           <header className={cn(
-            "h-16 border-b flex items-center justify-between px-2.5 sm:px-4 lg:px-8 shrink-0 relative z-10",
-            isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white border-slate-200",
-            "backdrop-blur-md text-slate-900 dark:text-white"
+            "h-16 flex items-center justify-between px-2.5 sm:px-4 lg:px-8 shrink-0 relative z-10 text-header-foreground"
           )}>
           <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <button 
@@ -198,26 +190,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 if (window.innerWidth >= 1024) setIsSidebarOpen(!isSidebarOpen);
                 else setIsMobileMenuOpen(true);
               }}
-              className="p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+              className="p-1.5 sm:p-2 hover:bg-header-hover text-header-foreground rounded-lg transition-colors shrink-0"
             >
               <Menu size={20} />
             </button>
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <img src="/favicon.svg" alt="Logo" className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg shrink-0" />
-              <span className="text-xs sm:text-sm font-bold tracking-tight text-slate-900 dark:text-white hidden min-[380px]:inline lg:hidden shrink-0">PreoCryptoFX</span>
+              <span className="text-xs sm:text-sm font-bold tracking-tight text-header-foreground hidden min-[380px]:inline lg:hidden shrink-0">PreoCryptoFX</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 shrink-0">
             {/* Account Switcher */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 sm:p-1 shrink-0">
+            <div className="flex items-center bg-header-hover rounded-xl p-0.5 sm:p-1 shrink-0">
               <button 
                 onClick={() => switchAccount('REAL')}
                 className={cn(
                   "px-2 sm:px-3 py-1 rounded-lg text-[10px] font-black transition-all shrink-0",
                   user?.activeAccount === 'REAL' 
-                    ? "bg-white dark:bg-slate-700 text-primary shadow-sm" 
-                    : "text-slate-500"
+                    ? "bg-header text-primary shadow-sm" 
+                    : "text-header-muted hover:text-header-foreground"
                 )}
               >
                 REAL
@@ -227,8 +219,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 className={cn(
                   "px-2 sm:px-3 py-1 rounded-lg text-[10px] font-black transition-all shrink-0",
                   user?.activeAccount === 'DEMO' 
-                    ? "bg-white dark:bg-slate-700 text-primary shadow-sm" 
-                    : "text-slate-500"
+                    ? "bg-header text-primary shadow-sm" 
+                    : "text-header-muted hover:text-header-foreground"
                 )}
               >
                 DEMO
@@ -237,16 +229,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
             {/* Balance */}
             <div className="text-right shrink-0">
-              <p className="text-[8px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Balance</p>
+              <p className="text-[8px] sm:text-[10px] font-bold text-header-muted uppercase tracking-widest">Balance</p>
               <p className="text-xs sm:text-sm font-bold text-primary tabular-nums">
                 ${(user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <button className="p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors relative shrink-0">
-                <Bell size={18} className="text-slate-500 dark:text-slate-400" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-800"></span>
+              <button className="p-1.5 sm:p-2 hover:bg-header-hover text-header-foreground rounded-full transition-colors relative shrink-0">
+                <Bell size={18} className="text-header-foreground/70" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border border-header"></span>
               </button>
               <Link to="/profile" className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0">
                 <UserIcon size={18} className="text-primary" />
@@ -257,7 +249,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Page Content */}
-        <main className={cn("flex-1 overflow-y-auto custom-scrollbar p-2.5 sm:p-4 lg:p-8", isDarkMode ? "bg-slate-950" : "bg-white")}>
+        <main className="flex-1 overflow-y-auto custom-scrollbar p-2.5 sm:p-4 lg:p-8 bg-background">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

@@ -175,10 +175,10 @@ export default function Chatbot() {
             initial={{ opacity: 0, y: 100, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 100, scale: 0.9 }}
-            className="fixed bottom-6 right-6 w-[calc(100vw-3rem)] sm:w-96 h-[500px] max-h-[calc(100vh-6rem)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
+            className="fixed bottom-6 right-6 w-[calc(100vw-3rem)] sm:w-96 h-[500px] max-h-[calc(100vh-6rem)] bg-card border border-border rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="p-4 bg-blue-600 text-white flex items-center justify-between">
+            <div className="p-4 bg-primary text-primary-foreground flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
                   {isEscalated ? <Headset size={20} /> : <Bot size={20} />}
@@ -194,7 +194,7 @@ export default function Chatbot() {
             </div>
 
             {/* Messages */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-50 dark:bg-slate-950/50">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-muted/30">
               {messages.map((msg) => (
                 <div
                   key={msg.id}
@@ -205,15 +205,15 @@ export default function Chatbot() {
                 >
                   <div className={cn(
                     "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                    msg.sender === 'user' ? "bg-slate-200 dark:bg-slate-800" : "bg-blue-600 text-white"
+                    msg.sender === 'user' ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
                   )}>
                     {msg.sender === 'user' ? <User size={14} /> : msg.sender === 'agent' ? <Headset size={14} /> : <Bot size={14} />}
                   </div>
                   <div className={cn(
                     "p-3 rounded-2xl text-xs leading-relaxed shadow-sm",
                     msg.sender === 'user' 
-                      ? "bg-blue-600 text-white rounded-tr-none" 
-                      : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-tl-none border border-slate-100 dark:border-slate-700"
+                      ? "bg-primary text-primary-foreground rounded-tr-none" 
+                      : "bg-card text-card-foreground rounded-tl-none border border-border"
                   )}>
                     {msg.text}
                   </div>
@@ -221,14 +221,14 @@ export default function Chatbot() {
               ))}
               {isLoading && (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
                     <Bot size={14} />
                   </div>
-                  <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700">
+                  <div className="bg-card p-3 rounded-2xl rounded-tl-none border border-border">
                     <div className="flex gap-1">
-                      <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                     </div>
                   </div>
                 </div>
@@ -236,19 +236,19 @@ export default function Chatbot() {
             </div>
 
             {/* Input */}
-            <form onSubmit={handleSend} className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-2">
+            <form onSubmit={handleSend} className="p-4 bg-card border-t border-border flex gap-2">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isEscalated ? "Waiting for agent..." : "Type your message..."}
                 disabled={isLoading}
-                className="flex-1 bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-xs focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white disabled:opacity-50"
+                className="flex-1 bg-muted border-none rounded-xl px-4 py-2 text-xs focus:ring-2 focus:ring-primary transition-all text-foreground disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
-                className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:hover:bg-blue-600"
+                className="p-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 <Send size={18} />
               </button>

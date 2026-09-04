@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
@@ -80,7 +80,9 @@ export default function AdminPanel() {
         getAllUsers(searchQuery),
         getGlobalStats(),
         getAllTransactions(searchQuery),
-        supabase.from('users').select('id, referral_code, referred_by')
+        isSupabaseConfigured() 
+          ? supabase.from('users').select('id, referral_code, referred_by')
+          : Promise.resolve({ data: [] })
       ]);
 
       // Calculate true referral counts across the entire database

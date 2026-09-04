@@ -2366,32 +2366,44 @@ export function useStore() {
     const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
     if (!isSupabaseConfigured() || (!isMasterAdmin && user?.role !== 'admin')) return [];
 
-    let query = supabase
-      .from('transactions')
-      .select(`
-        *,
-        users (
-          username,
-          email
-        )
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      let query = supabase
+        .from('transactions')
+        .select(`
+          *,
+          users (
+            username,
+            email
+          )
+        `)
+        .order('created_at', { ascending: false });
 
-    if (searchQuery && searchQuery.trim().length > 0) {
-      const s = `%${searchQuery.trim()}%`;
-      // Correct syntax for filtering on joined tables in Supabase
-      query = query.or(`username.ilike.${s},email.ilike.${s}`, { foreignTable: 'users' });
-    } else {
-      query = query.limit(3000);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-      console.error('Error fetching all transactions:', error);
+      if (searchQuery && searchQuery.trim().length > 0) {
+        const s = `%${searchQuery.trim()}%`;
+        // Use a more robust OR query that handles missing relations gracefully if possible
+        query = query.or(`username.ilike.${s},email.ilike.${s}`, { foreignTable: 'users' });
+      } else {
+        query = query.limit(3000);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        const msg = (error.message || '').toLowerCase();
+        const isNetworkError = msg.includes('fetch') || msg.includes('network') || msg.includes('typeerror');
+        
+        if (isNetworkError) {
+          console.warn('[Admin] Network issue while fetching transactions. Please check your Supabase configuration and connection.');
+        } else {
+          console.error('Error fetching all transactions:', error);
+        }
+        return [];
+      }
+      return data;
+    } catch (err: any) {
+      console.warn('[Admin] Unexpected error in getAllTransactions:', err.message || err);
       return [];
     }
-    return data;
   };
 
   const updateTransactionStatus = async (transactionId: string, status: 'completed' | 'rejected') => {
@@ -3098,8 +3110,8 @@ export function useStore() {
     const theme = isDarkMode ? 'dark' : 'light';
     localStorage.setItem('preocrypto_theme', theme);
     
-    const themeColor = isDarkMode ? '#0f172a' : '#ffffff';
-    const statusBarStyle = isDarkMode ? 'black-translucent' : 'default';
+    const themeColor = isDarkMode ? '#020617' : '#ffffff';
+    const statusBarStyle = isDarkMode ? 'black' : 'default';
     
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -3110,15 +3122,20 @@ export function useStore() {
     // Force body background update
     document.body.style.backgroundColor = themeColor;
 
-    // Update meta tags
-    const metaTheme = document.getElementById('meta-theme-color');
-    if (metaTheme) metaTheme.setAttribute('content', themeColor);
-    
-    const metaStatus = document.getElementById('meta-status-bar-style');
-    if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
-    
-    const metaTile = document.getElementById('meta-tile-color');
-    if (metaTile) metaTile.setAttribute('content', themeColor);
+    // Update meta tags using robust selector
+    const updateMeta = (name: string, value: string) => {
+      let meta = document.querySelector(`meta[name="${name}"]`);
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', name);
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', value);
+    };
+
+    updateMeta('theme-color', themeColor);
+    updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
+    updateMeta('color-scheme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {
