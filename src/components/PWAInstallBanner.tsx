@@ -37,10 +37,7 @@ export default function PWAInstallBanner({ className }: PWAInstallBannerProps) {
         animate={{ height: 'auto', opacity: 1 }}
         exit={{ height: 0, opacity: 0 }}
         className={cn(
-          "w-full z-[100] relative",
-          isDarkMode 
-            ? "bg-slate-900 text-white border-b border-slate-800" 
-            : "bg-white text-blue-600 border-b border-blue-50 shadow-sm",
+          "w-full z-[100] relative bg-background border-b border-border",
           className
         )}
         style={{ paddingTop: 'env(safe-area-inset-top)' }}

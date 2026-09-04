@@ -3098,8 +3098,8 @@ export function useStore() {
     const theme = isDarkMode ? 'dark' : 'light';
     localStorage.setItem('preocrypto_theme', theme);
     
-    const themeColor = isDarkMode ? '#0f172a' : '#ffffff';
-    const statusBarStyle = isDarkMode ? 'black-translucent' : 'default';
+    const themeColor = isDarkMode ? '#020617' : '#ffffff';
+    const statusBarStyle = isDarkMode ? 'black' : 'default';
     
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -3110,32 +3110,20 @@ export function useStore() {
     // Force body background update
     document.body.style.backgroundColor = themeColor;
 
-    // Update meta tags using robust name selector
+    // Update meta tags using robust selector
     const updateMeta = (name: string, value: string) => {
-      const metas = document.getElementsByTagName('meta');
-      let found = false;
-      for (let i = 0; i < metas.length; i++) {
-        if (metas[i].getAttribute('name') === name) {
-          metas[i].setAttribute('content', value);
-          found = true;
-        }
-      }
-      if (!found) {
-        const meta = document.createElement('meta');
-        meta.name = name;
-        meta.content = value;
+      let meta = document.querySelector(`meta[name="${name}"]`);
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', name);
         document.head.appendChild(meta);
       }
+      meta.setAttribute('content', value);
     };
 
     updateMeta('theme-color', themeColor);
     updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
-    updateMeta('msapplication-navbutton-color', themeColor);
-    updateMeta('msapplication-TileColor', themeColor);
     updateMeta('color-scheme', isDarkMode ? 'dark' : 'light');
-    
-    // For iOS PWA specifically, changing apple-mobile-web-app-status-bar-style dynamically
-    // can be finicky. Sometimes we need to trigger a small change in theme-color to force a repaint.
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {
