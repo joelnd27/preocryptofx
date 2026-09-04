@@ -59,7 +59,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className={cn(
-      "h-full transition-colors duration-300 font-sans flex",
+      "min-h-screen transition-colors duration-300 font-sans flex overflow-hidden",
       isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
     )}>
       {/* Sidebar - Desktop */}
@@ -128,13 +128,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 isDarkMode ? "bg-slate-900" : "bg-white"
               )}
             >
-              <div 
-                className="flex items-center justify-between px-6 border-b border-transparent shrink-0"
-                style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(4rem + env(safe-area-inset-top))' }}
-              >
+              <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
                 <div className="flex items-center gap-3">
                   <img src="/favicon.svg" alt="Logo" className="w-8 h-8 rounded-lg" />
-                  <span className="text-xl font-bold tracking-tight whitespace-nowrap">PreoCryptoFX</span>
+                  <span className="text-xl font-bold tracking-tight">PreoCryptoFX</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-2">
                   <X size={20} />
@@ -180,18 +177,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className={cn("flex-1 flex flex-col min-w-0 h-full relative bg-background")}>
+      <div className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative", isDarkMode ? "bg-slate-950" : "bg-white")}>
         <div 
           className={cn(
-            "sticky top-0 z-50 w-full shrink-0 bg-background"
+            "sticky top-0 z-50 w-full shrink-0",
+            isDarkMode ? "bg-slate-950" : "bg-white"
           )}
-          style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'env(safe-area-inset-top)' }}
+          style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
           
           {/* Top Header */}
           <header className={cn(
             "h-16 border-b flex items-center justify-between px-2.5 sm:px-4 lg:px-8 shrink-0 relative z-10",
-            "bg-background/80 border-border backdrop-blur-md"
+            isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white border-slate-200",
+            "backdrop-blur-md text-slate-900 dark:text-white"
           )}>
           <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <button 

@@ -3098,8 +3098,8 @@ export function useStore() {
     const theme = isDarkMode ? 'dark' : 'light';
     localStorage.setItem('preocrypto_theme', theme);
     
-    const themeColor = isDarkMode ? '#020617' : '#ffffff';
-    const statusBarStyle = isDarkMode ? 'black' : 'default';
+    const themeColor = isDarkMode ? '#0f172a' : '#ffffff';
+    const statusBarStyle = isDarkMode ? 'black-translucent' : 'default';
     
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -3110,20 +3110,15 @@ export function useStore() {
     // Force body background update
     document.body.style.backgroundColor = themeColor;
 
-    // Update meta tags using robust selector
-    const updateMeta = (name: string, value: string) => {
-      let meta = document.querySelector(`meta[name="${name}"]`);
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', name);
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', value);
-    };
-
-    updateMeta('theme-color', themeColor);
-    updateMeta('apple-mobile-web-app-status-bar-style', statusBarStyle);
-    updateMeta('color-scheme', isDarkMode ? 'dark' : 'light');
+    // Update meta tags
+    const metaTheme = document.getElementById('meta-theme-color');
+    if (metaTheme) metaTheme.setAttribute('content', themeColor);
+    
+    const metaStatus = document.getElementById('meta-status-bar-style');
+    if (metaStatus) metaStatus.setAttribute('content', statusBarStyle);
+    
+    const metaTile = document.getElementById('meta-tile-color');
+    if (metaTile) metaTile.setAttribute('content', themeColor);
   }, [isDarkMode]);
 
   const [indicators, setIndicators] = useState(() => {

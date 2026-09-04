@@ -47,19 +47,23 @@ export default function Landing() {
 
   return (
     <div className={cn(
-      "h-full overflow-x-hidden transition-colors duration-300",
+      "min-h-screen overflow-x-hidden transition-colors duration-300",
       isDarkMode ? "bg-background text-foreground" : "bg-white text-slate-900"
     )}>
       <div 
         className={cn(
-          "sticky top-0 z-[100] w-full bg-background"
+          "sticky top-0 z-[100] w-full",
+          isDarkMode ? "bg-slate-950" : "bg-white"
         )}
-        style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'env(safe-area-inset-top)' }}
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         {/* Navbar */}
         <nav className={cn(
-          "w-full border-b shadow-sm bg-background/80 backdrop-blur-md border-border"
-        )}>
+          "w-full border-b shadow-sm",
+        isDarkMode 
+          ? "bg-slate-950/80 backdrop-blur-md border-slate-800" 
+          : "bg-white/80 backdrop-blur-md border-slate-200"
+      )}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-8 h-8 sm:w-10 sm:h-10" />

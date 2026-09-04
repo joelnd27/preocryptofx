@@ -78,31 +78,30 @@
 }
 
 @layer base {
-  html, body, #root {
-    @apply text-foreground;
-    height: 100%;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
-    background-color: var(--background);
+  html {
+    font-size: 107.5%; /* Gentle global scale-up of root font size for enhanced readability */
   }
-
-  :root {
-    --background: #ffffff;
-    --foreground: #020617;
+  * {
+    @apply border-border;
   }
-
-  .dark {
-    --background: #020617;
-    --foreground: #f8fafc;
-  }
-
   body {
-    @apply font-sans antialiased;
+    @apply bg-background text-foreground font-sans antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    background-color: var(--background);
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    /* On mobile, we handle safe areas in specific layout components for better sticky control */
+  }
+}
+
+html {
+  height: -webkit-fill-available;
+  @apply bg-background;
+}
+
+@layer base {
+  /* Ensure correct coloring for system bars on mobile */
+  :root {
+    color-scheme: light dark;
   }
 }
 

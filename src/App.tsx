@@ -93,9 +93,9 @@ export default function App() {
 
   return (
     <Router>
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col min-h-screen">
         <PWAInstallBanner />
-        <div className="flex-1 overflow-x-hidden overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-x-hidden">
           <AdminRedirector>
             <Routes>
               <Route path="/" element={<Landing />} />
