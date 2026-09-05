@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
+  // Note: Vite [websocket] connection errors in the console are expected and benign in this environment.
   plugins: [
     react(),
     tailwindcss(),
