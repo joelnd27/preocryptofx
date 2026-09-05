@@ -44,7 +44,19 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="debug-marker" style="position: fixed; top: 10px; right: 10px; font-size: 10px; color: #ccc; z-index: 9999;">V1.1</div>
+      <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; color: #666;">
+        <div style="text-align: center;">
+          <h2 style="margin-bottom: 10px;">PreoCryptoFX</h2>
+          <p>Initializing secure trading environment...</p>
+          <div style="margin-top: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin-left: auto; margin-right: auto;"></div>
+          <style>
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+          </style>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
     <script src="https://pay.hashback.co.ke/hashpay.js"></script>
   </body>

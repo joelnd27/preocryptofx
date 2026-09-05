@@ -22,6 +22,10 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'Server is alive', time: new Date().toISOString() });
+});
+
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';

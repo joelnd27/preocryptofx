@@ -14,11 +14,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      injectRegister: 'auto',
+      manifestFilename: 'manifest.json',
+      includeAssets: ['favicon.svg', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
         name: 'PreoCryptoFX AI Trading',
         short_name: 'PreoCryptoFX',
-        description: 'AI-Powered Crypto Trading Platform',
+        description: 'Professional AI-Powered Crypto Trading Platform',
         id: '/',
         start_url: '/',
         scope: '/',
@@ -29,27 +31,43 @@ export default defineConfig({
         categories: ['finance', 'business'],
         icons: [
           {
-            src: 'favicon.svg',
+            src: '/favicon.svg',
             sizes: '192x192',
             type: 'image/svg+xml',
             purpose: 'any'
           },
           {
-            src: 'favicon.svg',
+            src: '/favicon.svg',
             sizes: '512x512',
             type: 'image/svg+xml',
             purpose: 'any'
           },
           {
-            src: 'favicon.svg',
+            src: '/favicon.svg',
             sizes: '512x512',
             type: 'image/svg+xml',
             purpose: 'maskable'
           }
+        ],
+        screenshots: [
+          {
+            src: '/favicon.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+            form_factor: 'wide',
+            label: 'Trading Dashboard'
+          },
+          {
+            src: '/favicon.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+            form_factor: 'narrow',
+            label: 'Mobile Trading'
+          }
         ]
       },
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: 'module',
         navigateFallback: 'index.html'
       },
@@ -59,6 +77,7 @@ export default defineConfig({
         clientsClaim: true,
         skipWaiting: true,
         navigateFallback: 'index.html',
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // Increase to 5MiB
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -67,7 +86,7 @@ export default defineConfig({
               cacheName: 'google-fonts-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // <== 365 days
+                maxAgeSeconds: 60 * 60 * 24 * 365
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -80,11 +99,20 @@ export default defineConfig({
   ],
   base: '/',
   define: {
-    'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY),
+    'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || ''),
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-charts': ['recharts', 'lightweight-charts'],
+          'vendor-utils': ['axios', 'motion', 'lucide-react', 'clsx', 'tailwind-merge'],
+        }
+      }
+    }
   },
   resolve: {
     alias: {
