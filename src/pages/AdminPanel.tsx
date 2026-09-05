@@ -302,8 +302,8 @@ export default function AdminPanel() {
               <Lock size={20} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Wizard Bot Global Passwords</h3>
-              <p className="text-[10px] text-slate-500">Shared passwords required for all users to unlock Wizard bots</p>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Vertex Bot Global Passwords</h3>
+              <p className="text-[10px] text-slate-500">Shared passwords required for all users to unlock Vertex bots</p>
             </div>
           </div>
           {editingId !== 'GLOBAL_PASS' ? (
@@ -327,28 +327,28 @@ export default function AdminPanel() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Wizard Bot 1 Password</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vertex Bot 1 Password</p>
             {editingId === 'GLOBAL_PASS' ? (
               <input 
                 type="text"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold"
-                placeholder="Password for Wizard 1"
+                placeholder="Password for Vertex 1"
               />
             ) : (
               <p className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-wider">{globalWizardPassword}</p>
             )}
           </div>
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Wizard Bot 2 Password</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vertex Bot 2 Password</p>
             {editingId === 'GLOBAL_PASS' ? (
               <input 
                 type="text"
                 value={editValue2}
                 onChange={(e) => setEditValue2(e.target.value)}
                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold"
-                placeholder="Password for Wizard 2"
+                placeholder="Password for Vertex 2"
               />
             ) : (
               <p className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-wider">{globalWizard2Password}</p>

@@ -118,7 +118,7 @@ const BOTS: BotConfig[] = [
   },
   {
     id: 'wizard1',
-    name: 'Wizard bot 1',
+    name: 'Vertex Bot 1',
     description: 'Elite algorithmic trader using complex mathematical patterns for consistent gains.',
     type: 'ai',
     winRate: '95.8%',
@@ -127,7 +127,7 @@ const BOTS: BotConfig[] = [
   },
   {
     id: 'wizard2',
-    name: 'Wizard bot 2',
+    name: 'Vertex Bot 2',
     description: 'Advanced liquidity harvester that executes high-frequency trades with minimal slippage.',
     type: 'ai',
     winRate: '96.2%',
@@ -340,7 +340,7 @@ export default function Bots() {
       setAlertConfig({
         isOpen: true,
         title: 'Real Account Required',
-        message: 'Wizard bots are premium high-yield algorithms and can only be operated on REAL accounts.',
+        message: 'Vertex bots are premium high-yield algorithms and can only be operated on REAL accounts.',
         type: 'error'
       });
       return;
@@ -839,8 +839,8 @@ export default function Bots() {
                   <Zap size={12} className="text-blue-500" /> Strategy & Logic
                 </h4>
                 <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed italic">
-                  {selectedBot.id === 'wizard1' ? 'Wizard 1 utilizes a multi-layered neural network to detect institutional buy-side liquidity. It executes trades during high-volatility sessions with advanced trailing-stop protection.' : 
-                   selectedBot.id === 'wizard2' ? 'Wizard 2 is an aggressive scalper optimized for low-timeframe market cycles. It uses proprietary momentum oscillators to capture rapid price expansions with 92% historical accuracy.' :
+                  {selectedBot.id === 'wizard1' ? 'Vertex Bot 1 utilizes a multi-layered neural network to detect institutional buy-side liquidity. It executes trades during high-volatility sessions with advanced trailing-stop protection.' : 
+                   selectedBot.id === 'wizard2' ? 'Vertex Bot 2 is an aggressive scalper optimized for low-timeframe market cycles. It uses proprietary momentum oscillators to capture rapid price expansions with 92% historical accuracy.' :
                    selectedBot.description}
                 </p>
               </div>
@@ -1224,7 +1224,7 @@ export default function Bots() {
                 </div>
                 <h3 className="text-xl font-bold mb-2">Bot Unlock Required</h3>
                 <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-                  Wizard bots are institutional-grade assets. Please enter your unique bot password to authorize trading.
+                  Vertex bots are institutional-grade assets. Please enter your unique bot password to authorize trading.
                 </p>
 
                 <div className="space-y-4">
@@ -1325,8 +1325,8 @@ export default function Bots() {
                       <Zap size={10} className="text-blue-500" /> Strategy & Logic
                     </h4>
                     <p className="text-[10.5px] text-slate-600 dark:text-slate-400 leading-relaxed italic">
-                      {selectedBot.id === 'wizard1' ? 'Wizard 1 utilizes a multi-layered neural network to detect institutional buy-side liquidity. It executes trades during high-volatility sessions with advanced trailing-stop protection.' : 
-                       selectedBot.id === 'wizard2' ? 'Wizard 2 is an aggressive scalper optimized for low-timeframe market cycles. It uses proprietary momentum oscillators to capture rapid price expansions with 92% historical accuracy.' :
+                      {selectedBot.id === 'wizard1' ? 'Vertex Bot 1 utilizes a multi-layered neural network to detect institutional buy-side liquidity. It executes trades during high-volatility sessions with advanced trailing-stop protection.' : 
+                       selectedBot.id === 'wizard2' ? 'Vertex Bot 2 is an aggressive scalper optimized for low-timeframe market cycles. It uses proprietary momentum oscillators to capture rapid price expansions with 92% historical accuracy.' :
                        selectedBot.description}
                     </p>
                   </div>

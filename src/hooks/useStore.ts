@@ -94,7 +94,7 @@ export function useStore() {
       setGlobalWizard2Password(pass2);
       return true;
     } catch (err) {
-      console.error('Error updating global wizard passwords:', err);
+      console.error('Error updating global vertex passwords:', err);
       return false;
     }
   };
@@ -1873,12 +1873,12 @@ export function useStore() {
     
     const isWizard = botId === 'wizard1' || botId === 'wizard2';
     
-    // 1. Block Demo Trading for Wizard Bots
+    // 1. Block Demo Trading for Vertex Bots
     if (isWizard && user.activeAccount === 'DEMO') {
-      throw new Error('Wizard bots cannot be used with Demo accounts. Please switch to a REAL account.');
+      throw new Error('Vertex bots cannot be used with Demo accounts. Please switch to a REAL account.');
     }
 
-    // 2. Check Unlock Status for Normal Users on Wizard Bots
+    // 2. Check Unlock Status for Normal Users on Vertex Bots
     if (isWizard && user.role !== 'marketer' && user.role !== 'admin') {
       const isUnlocked = (user.unlockedBotIds || []).includes(botId);
       if (!isUnlocked) {
@@ -2848,8 +2848,8 @@ export function useStore() {
           starlight: 'Starlight AI',
           galaxy: 'Galaxy Arbi-Bot',
           nova: 'Nova Alpha v2',
-          wizard1: 'Wizard bot 1',
-          wizard2: 'Wizard bot 2'
+          wizard1: 'Vertex Bot 1',
+          wizard2: 'Vertex Bot 2'
         };
         botName = commonBots[botId] || 'Trading Bot';
       }
