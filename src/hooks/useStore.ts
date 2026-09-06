@@ -1352,12 +1352,12 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 2% to 30% profit on win (Realistic range)
-      const profitMultiplier = 0.02 + Math.random() * 0.28;
+      // 5% to 15% profit on win (Capped per user request)
+      const profitMultiplier = 0.05 + Math.random() * 0.10;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Loss: 2% to 30% loss
-      const lossMultiplier = 0.02 + Math.random() * 0.28;
+      // Loss: 5% to 15% loss
+      const lossMultiplier = 0.05 + Math.random() * 0.10;
       targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
     }
 

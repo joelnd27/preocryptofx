@@ -545,40 +545,41 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
     const apiSuccess = apiData.success === true || apiData.success === 'true' || apiData.success === 1 || apiData.success === '1';
     
     // More robust success check: either explicit success flag OR a successful status
-    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower)) || 
-                     ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) ||
-                     apiData.ResultCode === 0 || apiData.result_code === 0;
+    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'settled', 'done', 'approved', 'paid', 'confirmed'].includes(statusLower)) || 
+                     ['success', 'completed', 'successful', 'paid', 'settled', 'done', 'approved', 'confirmed'].includes(statusLower) ||
+                     apiData.ResultCode === 0 || apiData.result_code === 0 || apiData.ResponseCode === '0' || apiData.ResponseCode === '00';
                      
     const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
                     statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
                     (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
                     (apiData.ResultCode !== undefined && apiData.ResultCode !== 0) || 
+                    (apiData.ResponseCode !== undefined && apiData.ResponseCode !== '0' && apiData.ResponseCode !== '00') ||
                     (apiData.message || '').toLowerCase().includes('cancelled') ||
                     (apiData.message || '').toLowerCase().includes('failed') ||
                     (apiData.message || '').toLowerCase().includes('rejected');
 
-    // Clean up unhelpful messages
-    if (apiData.message && apiData.message.toLowerCase().includes('status retrieved')) {
-      // Do not force a failure message here, let the status logic decide
-    }
-
     if (isSuccess) {
       if (supabaseAdmin) {
         console.log(`[FinAPI Verify] Success confirmed for ${transaction_id}. Status: ${apiData.status}`);
-        // More robust lookup: try pending first, then rejected
         const { data: txList } = await supabaseAdmin
           .from('transactions')
           .select('*')
           .or(`external_id.eq.${transaction_id},id.eq.${transaction_id}`);
 
-        // Prioritize pending, then rejected
         let tx = txList?.find(t => t.status === 'pending') || txList?.find(t => t.status === 'rejected');
         
         if (tx) {
           console.log(`[FinAPI Verify] Updating transaction ${tx.id} to completed...`);
           const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
           const kesReceived = Number(apiData.Amount || apiData.amount || 0);
-          const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+          
+          // Ensure 1:1 crediting based on KES received if available, otherwise fallback to recorded amount
+          let usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+          
+          // Round to 2 decimal places for consistency
+          usdToCredit = Math.round(usdToCredit * 100) / 100;
+
+          console.log(`[FinAPI Verify] Crediting user ${tx.user_id} with $${usdToCredit} (Rate: ${usdKesRate})`);
 
           const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
             t_id: tx.id,
@@ -588,6 +589,8 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
 
           if (rpcError) {
             console.warn(`[FinAPI Verify] RPC failed for ${tx.id}:`, rpcError.message);
+          } else {
+            console.log(`[FinAPI Verify] RPC execution successful. Result:`, rpcResult);
           }
         }
       }
@@ -693,13 +696,18 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
       }
 
       if (isSuccess) {
-        console.log(`[FinAPI Webhook] Crediting user ${tx.user_id} for transaction ${tx.id}. Amount: $${tx.amount}`);
-        
+        const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
         const usdAmount = Number(tx.amount);
+        
+        // Ensure 1:1 crediting
+        let usdToCredit = usdAmount;
+        
+        console.log(`[FinAPI Webhook] Success confirmed for ${tx.id}. Crediting $${usdToCredit.toFixed(2)} (Rate: ${usdKesRate})...`);
+        
         const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
           t_id: tx.id,
           u_id: tx.user_id,
-          amount: usdAmount
+          amount: usdToCredit
         });
 
         if (rpcError) {
@@ -858,7 +866,7 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   const reference = possibleReferences[0];
   
   // 3. Success Check
-  const isSuccessEvent = ['payment.success', 'transaction.success', 'completed', 'success'].some(s => event.includes(s));
+  const isSuccessEvent = ['payment.success', 'transaction.success', 'completed', 'success', 'confirmed'].some(s => event.includes(s));
   const isResultSuccess = resultCode === 0;
   
   // Success if ResultCode is 0 OR it's a success event with no error code
@@ -916,7 +924,10 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
             0
           );
           
-          const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+          let usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+          
+          // Round to 2 decimal places
+          usdToCredit = Math.round(usdToCredit * 100) / 100;
           
           console.log(`[HashBack Webhook] Success confirmed for ${tx.id}. Crediting $${usdToCredit.toFixed(2)}...`);
 
@@ -929,16 +940,12 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
           if (rpcError) {
             console.error('[HashBack Webhook] RPC Failed:', rpcError.message);
-          } else if (rpcResult === true) {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} successfully processed via RPC.`);
+          } else {
+            console.log(`[HashBack Webhook] RPC execution successful. Result:`, rpcResult);
             // Explicitly set status to 'completed' to ensure it's not caught by auto-reject
             await supabaseAdmin.from('transactions').update({
               status: 'completed'
             }).eq('id', tx.id);
-          } else {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} already processed or skipped by RPC.`);
-            // Ensure status is at least completed
-            await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
           }
         } else if (failure) {
           console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
@@ -1009,14 +1016,20 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
           const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
                              (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
 
-          const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
-          const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
+          const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00', 'settled', 'confirmed'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
+          const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void', 'declined'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
 
           if (isHbSuccess && tx.status !== 'completed') {
             console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);
             const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-            const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
-            const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+            const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || hbData.amount_kes || 0);
+            
+            let usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+            
+            // Round to 2 decimal places for consistency
+            usdToCredit = Math.round(usdToCredit * 100) / 100;
+
+            console.log(`[HashBack Verify] Crediting user ${tx.user_id} for transaction ${tx.id}. Amount: $${usdToCredit} (Rate: ${usdKesRate})`);
 
             // 1. Try RPC for atomic balance update FIRST (This also updates status to 'completed')
             const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
@@ -1027,15 +1040,12 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
             if (rpcError) {
               console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
-            } else if (rpcResult === true) {
-              console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
+            } else {
+              console.log(`[HashBack Verify] RPC execution successful. Result:`, rpcResult);
               // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI
               await supabaseAdmin.from('transactions').update({
                 status: 'completed'
               }).eq('id', tx.id);
-            } else {
-              console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);
-              await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
             }
 
             // Fetch final state to return accurate status
@@ -1143,7 +1153,8 @@ router.post('/trades/open', async (req, res) => {
     
     const isWin = Math.random() < winChance;
     let targetProfit = 0;
-    const profitMultiplier = 0.02 + Math.random() * 0.28;
+    // Cap profit at 15% as per user request ($30 for $200 stake)
+    const profitMultiplier = 0.05 + Math.random() * 0.10; 
     if (isWin) targetProfit = Number((amount * profitMultiplier).toFixed(2));
     else targetProfit = Number((-amount * profitMultiplier).toFixed(2));
 
