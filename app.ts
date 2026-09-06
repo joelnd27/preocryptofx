@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -106,6 +107,36 @@ if (!PREOCRYPTOFX_WEBHOOK_SECRET) {
 
 // API Routes
 const router = express.Router();
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const genAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+router.post('/chat', async (req, res) => {
+  if (!genAI) {
+    return res.status(503).json({ 
+      error: 'Maintenance Mode',
+      text: "I'm currently in maintenance mode. Please try again later or contact support if you have an urgent request." 
+    });
+  }
+
+  try {
+    const { messages, systemInstruction } = req.body;
+    
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: messages,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.7,
+      }
+    });
+
+    res.json({ text: response.text });
+  } catch (error: any) {
+    console.error('[Chat API] Error:', error.message);
+    res.status(500).json({ error: 'Chat failed', details: error.message });
+  }
+});
 
 // HashBack Health Check (Safe)
 router.get(['/hashback/health', '/api/hashback/health'], (req, res) => {
@@ -557,16 +588,6 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
 
           if (rpcError) {
             console.warn(`[FinAPI Verify] RPC failed for ${tx.id}:`, rpcError.message);
-            // Fallback manual update
-            const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-            if (userData) {
-              const currentBalance = Number(userData.real_balance || 0);
-              const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-              await supabaseAdmin.from('transactions').update({ 
-                status: 'completed'
-              }).eq('id', tx.id);
-            }
           }
         }
       }
@@ -682,20 +703,7 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
         });
 
         if (rpcError) {
-          console.error('[FinAPI Webhook] RPC Balance update failed, falling back to manual update:', rpcError);
-          await supabaseAdmin.from('transactions')
-            .update({ 
-              status: 'completed', 
-              method: `FinAPI Webhook manual (${transaction_id || reference})` 
-            })
-            .eq('id', tx.id);
-            
-          const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-          if (userData) {
-            const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
-            await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-            console.log(`[FinAPI Webhook] Manual balance update successful for user ${tx.user_id}. New balance: $${newBalance}`);
-          }
+          console.error('[FinAPI Webhook] RPC Balance update failed:', rpcError);
         } else {
           console.log(`[FinAPI Webhook] Balance successfully incremented via RPC for transaction ${tx.id}`);
           await supabaseAdmin.from('transactions')
@@ -921,23 +929,6 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
 
           if (rpcError) {
             console.error('[HashBack Webhook] RPC Failed:', rpcError.message);
-            
-            // 2. Fallback: Manual update ONLY if RPC literally failed to execute
-            console.log(`[HashBack Webhook] Falling back to manual balance update for tx ${tx.id}...`);
-            
-            const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-            if (userData) {
-              const currentBalance = Number(userData.real_balance || 0);
-              const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-              
-              console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
-              
-              // Ensure status is updated if RPC didn't do it
-              await supabaseAdmin.from('transactions').update({
-                status: 'completed'
-              }).eq('id', tx.id);
-            }
           } else if (rpcResult === true) {
             console.log(`[HashBack Webhook] Transaction ${tx.id} successfully processed via RPC.`);
             // Explicitly set status to 'completed' to ensure it's not caught by auto-reject
@@ -1036,18 +1027,6 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
             if (rpcError) {
               console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
-              // Manual Fallback if RPC failed
-              const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-              if (userData) {
-                const currentBalance = Number(userData.real_balance || 0);
-                const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-                await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-                
-                // Ensure status is updated if RPC didn't do it
-                await supabaseAdmin.from('transactions').update({ 
-                  status: 'completed'
-                }).eq('id', tx.id);
-              }
             } else if (rpcResult === true) {
               console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
               // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI

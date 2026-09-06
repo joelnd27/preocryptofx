@@ -2,22 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, User, Bot, Headset } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { GoogleGenAI } from "@google/genai";
-
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'bot' | 'agent';
   timestamp: number;
 }
-
-// Initialize Gemini AI directly on the frontend as per skill guidelines
-// We use a getter to ensure we check the environment variable at runtime
-const getAI = () => {
-  const key = (process.env as any).GEMINI_API_KEY;
-  if (!key) return null;
-  return new GoogleGenAI({ apiKey: key });
-};
 
 const SYSTEM_INSTRUCTION = `You are the PreoCryptoFX AI assistant. You are a real human-like expert in crypto trading, blockchain technology, and the PreoCryptoFX platform. 
 
@@ -72,36 +62,30 @@ export default function Chatbot() {
     setInput('');
     setIsLoading(true);
 
-    const ai = getAI();
-    if (!ai) {
-      const botMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "I'm currently in maintenance mode. Please try again later or contact support if you have an urgent request.",
-        sender: 'bot',
-        timestamp: Date.now()
-      };
-      setMessages(prev => [...prev, botMsg]);
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      // Use direct Gemini API call from frontend
       const history = messages.map(m => ({
         role: m.sender === 'user' ? 'user' : 'model',
         parts: [{ text: m.text }]
       }));
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [...history.slice(-6), { role: 'user', parts: [{ text: userText }] }],
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.7,
-        }
+      const chatResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messages: [...history.slice(-6), { role: 'user', parts: [{ text: userText }] }],
+          systemInstruction: SYSTEM_INSTRUCTION
+        })
       });
 
-      const botText = response.text || "I'm here to help! What would you like to know about trading today?";
+      if (!chatResponse.ok) {
+        const errorData = await chatResponse.json();
+        throw new Error(errorData.text || 'Chat request failed');
+      }
+
+      const data = await chatResponse.json();
+      const botText = data.text || "I'm here to help! What would you like to know about trading today?";
 
       if (botText.includes('Connecting to an agent, please wait...')) {
         setIsEscalated(true);
@@ -114,33 +98,17 @@ export default function Chatbot() {
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, botMsg]);
-      setIsLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chatbot error:', error);
       
-      // Fallback for simple questions if complex one fails
-      try {
-        const fallbackResponse = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: `The user asked: "${userText}". Answer them as a helpful crypto trading assistant.`
-        });
-        
-        const botMsg: Message = {
-          id: Date.now().toString(),
-          text: fallbackResponse.text || "I'm here and listening! Could you tell me a bit more about what you're looking for?",
-          sender: 'bot',
-          timestamp: Date.now()
-        };
-        setMessages(prev => [...prev, botMsg]);
-      } catch (fallbackError) {
-        const errorMsg: Message = {
-          id: Date.now().toString(),
-          text: "I'm having a bit of trouble connecting to my brain right now. Please try again in a moment!",
-          sender: 'bot',
-          timestamp: Date.now()
-        };
-        setMessages(prev => [...prev, errorMsg]);
-      }
+      const errorMsg: Message = {
+        id: Date.now().toString(),
+        text: error.message || "I'm having a bit of trouble connecting to my brain right now. Please try again in a moment!",
+        sender: 'bot',
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
       setIsLoading(false);
     }
   };
