@@ -497,17 +497,17 @@ export default function Transactions() {
                         <div className="flex items-center gap-1.5">
                           <span className={cn(
                             "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 w-fit",
-                            (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? "bg-green-500/10 text-green-500" :
+                            (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? "bg-green-500/10 text-green-500" :
                             (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
                             "bg-yellow-500/10 text-yellow-500"
                           )}>
-                            {(tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? <CheckCircle2 size={10} /> : 
+                            {(tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? <CheckCircle2 size={10} /> : 
                              (tx.status === 'failed' || tx.status === 'rejected') ? 
                              <div className="w-1 h-1 rounded-full bg-current" /> :
                              <Clock size={10} />}
                             {tx.status === 'pending' ? 'pending' : 
-                             (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED' : 
-                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'CONFIRMED' :
+                             (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED/CANCELLED' : 
+                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? 'CONFIRMED' :
                              tx.status.toUpperCase()}
                           </span>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
@@ -519,7 +519,7 @@ export default function Transactions() {
                                     const result = await checkPaymentStatus(tx.externalId || tx.id);
                                     
                                     const statusLower = (result?.status || '').toLowerCase();
-                                    const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || result?.ResultCode === 0;
+                                    const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done', 'confirmed', 'approved'].includes(statusLower) || result?.ResultCode === 0;
                                     
                                     if (isSuccess) {
                                       setAlertConfig({
@@ -634,18 +634,18 @@ export default function Transactions() {
                       <div className="flex items-center gap-1">
                         <span className={cn(
                           "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest flex items-center gap-1 w-fit",
-                          (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? "bg-green-500/10 text-green-500" :
+                          (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? "bg-green-500/10 text-green-500" :
                           (tx.status === 'failed' || tx.status === 'rejected') ? "bg-red-500/10 text-red-500" :
                           "bg-yellow-500/10 text-yellow-500"
                         )}>
-                          {(tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? <CheckCircle2 size={10} /> : 
+                          {(tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? <CheckCircle2 size={10} /> : 
                            (tx.status === 'failed' || tx.status === 'rejected') ? 
                            <div className="w-1 h-1 rounded-full bg-current" /> :
                            <Clock size={10} />}
                           {tx.status === 'pending' ? 'pending' : 
-                           (tx.status === 'failed' ? 'REJECTED' : 
-                           (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'SUCCESSFUL' :
-                           tx.status.toUpperCase())}
+                           (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED/CANCELLED' : 
+                           (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? 'CONFIRMED' :
+                           tx.status.toUpperCase()}
                         </span>
                         
                         {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
