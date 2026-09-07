@@ -100,7 +100,7 @@ export default defineConfig({
   ],
   base: '/',
   define: {
-    // Note: No longer exposing secrets to the client
+    'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || ''),
   },
   build: {
     outDir: 'dist',

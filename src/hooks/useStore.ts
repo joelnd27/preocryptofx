@@ -1352,12 +1352,12 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 5% to 15% profit on win (Capped per user request)
-      const profitMultiplier = 0.05 + Math.random() * 0.10;
+      // 2% to 30% profit on win (Realistic range)
+      const profitMultiplier = 0.02 + Math.random() * 0.28;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Loss: 5% to 15% loss
-      const lossMultiplier = 0.05 + Math.random() * 0.10;
+      // Loss: 2% to 30% loss
+      const lossMultiplier = 0.02 + Math.random() * 0.28;
       targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
     }
 
@@ -2743,22 +2743,9 @@ export function useStore() {
   const importBot = async (config: { name: string, strategy: string, risk: string, currency: string }) => {
     if (!user) return null;
     
-    // Handle duplicate names
-    let finalName = config.name;
-    const existingNames = (user.customBots || []).map(b => b.name);
-    
-    if (existingNames.includes(finalName)) {
-      let counter = 1;
-      while (existingNames.includes(`${config.name} ${counter}`)) {
-        counter++;
-      }
-      finalName = `${config.name} ${counter}`;
-    }
-
     const newBot = {
       id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       ...config,
-      name: finalName,
       createdAt: Date.now()
     };
     
@@ -2812,9 +2799,7 @@ export function useStore() {
     }
     
     const activeBots = Object.entries(user.bots || {}).filter(([_, active]) => active);
-    const activeCustomBots = user.activeCustomBotIds || [];
-    
-    if (activeBots.length === 0 && activeCustomBots.length === 0) {
+    if (activeBots.length === 0) {
       simulationActiveRef.current = false;
       return;
     }
@@ -2988,13 +2973,13 @@ export function useStore() {
           coin = customBot.currency || 'BTC';
           const risk = customBot.risk || 'Medium';
           const riskMultiplier = 
-            risk === 'Low' ? 0.8 :
-            risk === 'High' ? 1.2 :
-            risk === 'Aggressive' ? 1.4 : 1.0;
+            risk === 'Low' ? 0.7 :
+            risk === 'High' ? 2.5 :
+            risk === 'Aggressive' ? 6.0 : 1.3;
           
-          baseAmount = (stake * (0.05 + Math.random() * 0.08)) * riskMultiplier;
+          baseAmount = (stake * (0.10 + Math.random() * 0.25)) * riskMultiplier;
         } else {
-          baseAmount = (stake * (0.05 + Math.random() * 0.10));
+          baseAmount = (stake * (0.08 + Math.random() * 0.22));
         }
       } else {
         if (botConfig?.coin) {
@@ -3005,7 +2990,7 @@ export function useStore() {
           else coin = 'BTC';
         }
         
-        baseAmount = (stake * (0.05 + Math.random() * 0.10));
+        baseAmount = (stake * (0.10 + Math.random() * 0.20));
       }
 
       const isDemo = currentUser.activeAccount === 'DEMO';
@@ -3113,7 +3098,7 @@ export function useStore() {
       simulationActiveRef.current = false;
       clearTimeout(timeoutId);
     };
-  }, [user?.id, user?.bots, user?.activeCustomBotIds]);
+  }, [user?.id, user?.bots]);
 
   // Dark mode persistence
   const [isDarkMode, setIsDarkMode] = useState(() => {
