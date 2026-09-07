@@ -545,18 +545,11 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
     const apiSuccess = apiData.success === true || apiData.success === 'true' || apiData.success === 1 || apiData.success === '1';
     
     // More robust success check: either explicit success flag OR a successful status
-    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'settled', 'done', 'approved', 'paid', 'confirmed'].includes(statusLower)) || 
-                     ['success', 'completed', 'successful', 'paid', 'settled', 'done', 'approved', 'confirmed'].includes(statusLower) ||
-                     apiData.ResultCode === 0 || apiData.result_code === 0 || apiData.ResponseCode === '0' || apiData.ResponseCode === '00';
+    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'approved', 'confirmed'].includes(statusLower)) || 
+                     ['success', 'completed', 'successful', 'paid', 'approved', 'confirmed'].includes(statusLower) ||
+                     apiData.ResultCode === 0 || apiData.result_code === 0;
                      
-    const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
-                    statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
-                    (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
-                    (apiData.ResultCode !== undefined && apiData.ResultCode !== 0) || 
-                    (apiData.ResponseCode !== undefined && apiData.ResponseCode !== '0' && apiData.ResponseCode !== '00') ||
-                    (apiData.message || '').toLowerCase().includes('cancelled') ||
-                    (apiData.message || '').toLowerCase().includes('failed') ||
-                    (apiData.message || '').toLowerCase().includes('rejected');
+    const isFailed = ['failed', 'rejected', 'cancelled', 'declined', 'void', 'expired'].includes(statusLower);
 
     if (isSuccess) {
       if (supabaseAdmin) {
@@ -647,17 +640,11 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
     const statusLower = (status || '').toLowerCase();
     const apiSuccess = req.body.success === true || req.body.success === 'true' || req.body.success === 1 || req.body.success === '1';
     
-    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower)) || 
-                     ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) ||
+    const isSuccess = (apiSuccess && ['success', 'completed', 'successful', 'paid', 'approved', 'confirmed'].includes(statusLower)) || 
+                     ['success', 'completed', 'successful', 'paid', 'approved', 'confirmed'].includes(statusLower) ||
                      req.body.ResultCode === 0 || req.body.result_code === 0;
                      
-    const isFailed = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected' || 
-                    statusLower === 'declined' || statusLower === 'void' || statusLower === 'expired' ||
-                    (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
-                    (req.body.ResultCode !== undefined && req.body.ResultCode !== 0) ||
-                    (req.body.message || '').toLowerCase().includes('cancelled') ||
-                    (req.body.message || '').toLowerCase().includes('failed') ||
-                    (req.body.message || '').toLowerCase().includes('rejected');
+    const isFailed = ['failed', 'cancelled', 'rejected', 'declined', 'void', 'expired'].includes(statusLower);
 
     try {
       if (!supabaseAdmin) throw new Error('Supabase admin not configured');
@@ -866,14 +853,12 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
   const reference = possibleReferences[0];
   
   // 3. Success Check
-  const isSuccessEvent = ['payment.success', 'transaction.success', 'completed', 'success', 'confirmed'].some(s => event.includes(s));
+  const isSuccessEvent = ['payment.success', 'transaction.success', 'completed', 'success', 'confirmed', 'paid', 'approved'].some(s => event.includes(s));
   const isResultSuccess = resultCode === 0;
   
-  // Success if ResultCode is 0 OR it's a success event with no error code
-  const success = isResultSuccess || (isSuccessEvent && (resultCode === null || isResultSuccess));
-  
+  const success = isResultSuccess || isSuccessEvent;
   const failure = (resultCode !== null && resultCode !== 0) || 
-                  ['failed', 'cancelled', 'rejected', 'void'].some(f => event.includes(f));
+                  ['failed', 'rejected', 'void'].some(f => event.includes(f));
 
   console.log(`[HashBack Webhook] Final Decision: event="${event}", code=${resultCode}, success=${success}, fail=${failure}, ref=${reference}`);
 
@@ -1016,8 +1001,8 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
           const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
                              (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
 
-          const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00', 'settled', 'confirmed'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
-          const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void', 'declined'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
+          const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'confirmed'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
+          const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'declined'].some(f => hbStatus.includes(f));
 
           if (isHbSuccess && tx.status !== 'completed') {
             console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);

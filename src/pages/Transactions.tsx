@@ -506,8 +506,8 @@ export default function Transactions() {
                              <div className="w-1 h-1 rounded-full bg-current" /> :
                              <Clock size={10} />}
                             {tx.status === 'pending' ? 'pending' : 
-                             (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED/CANCELLED' : 
-                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? 'CONFIRMED' :
+                             (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED' : 
+                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'CONFIRMED' :
                              tx.status.toUpperCase()}
                           </span>
                           {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
@@ -519,7 +519,7 @@ export default function Transactions() {
                                     const result = await checkPaymentStatus(tx.externalId || tx.id);
                                     
                                     const statusLower = (result?.status || '').toLowerCase();
-                                    const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done', 'confirmed', 'approved'].includes(statusLower) || result?.ResultCode === 0;
+                                    const isSuccess = ['success', 'completed', 'successful', 'paid', 'confirmed'].includes(statusLower) || result?.ResultCode === 0;
                                     
                                     if (isSuccess) {
                                       setAlertConfig({
@@ -643,8 +643,8 @@ export default function Transactions() {
                            <div className="w-1 h-1 rounded-full bg-current" /> :
                            <Clock size={10} />}
                           {tx.status === 'pending' ? 'pending' : 
-                           (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED/CANCELLED' : 
-                           (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful' || tx.status === 'confirmed') ? 'CONFIRMED' :
+                           (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED' : 
+                           (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'CONFIRMED' :
                            tx.status.toUpperCase()}
                         </span>
                         
