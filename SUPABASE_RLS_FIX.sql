@@ -128,19 +128,48 @@ SET total_profit = 1000 + (random() * 4000)
 WHERE total_profit > 5500 OR total_profit < 100;
 
 -- 5. CLEANUP OLD TRIGGERS (Prevent double crediting)
+-- These are often the cause of double-crediting when combined with manual increments
 DROP TRIGGER IF EXISTS on_transaction_completed ON public.transactions;
 DROP TRIGGER IF EXISTS tr_on_transaction_completed ON public.transactions;
+DROP TRIGGER IF EXISTS handle_transaction_completion_trigger ON public.transactions;
+DROP TRIGGER IF EXISTS tr_transactions_status_completed ON public.transactions;
+DROP TRIGGER IF EXISTS transactions_update_balance ON public.transactions;
+DROP TRIGGER IF EXISTS update_balance_trigger ON public.transactions;
+DROP TRIGGER IF EXISTS credit_user_balance_trigger ON public.transactions;
+DROP TRIGGER IF EXISTS tr_update_balance ON public.transactions;
+DROP TRIGGER IF EXISTS on_complete_credit_balance ON public.transactions;
+DROP TRIGGER IF EXISTS transactions_completed_trigger ON public.transactions;
+DROP TRIGGER IF EXISTS update_real_balance_trigger ON public.transactions;
+DROP TRIGGER IF EXISTS trigger_on_transaction_completed ON public.transactions;
+DROP TRIGGER IF EXISTS transactions_balance_trigger ON public.transactions;
+DROP TRIGGER IF EXISTS update_user_balance_on_transaction ON public.transactions;
 DROP FUNCTION IF EXISTS public.handle_transaction_completion();
+
+-- Helper to list triggers for debugging
+CREATE OR REPLACE FUNCTION public.get_all_triggers()
+RETURNS TABLE (trigger_name TEXT, event_table TEXT) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT tgname::TEXT, relname::TEXT
+  FROM pg_trigger t
+  JOIN pg_class c ON t.tgrelid = c.oid
+  JOIN pg_namespace n ON c.relnamespace = n.oid
+  WHERE n.nspname = 'public';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 6. RPC FUNCTIONS
 -- Transaction-aware balance increment to prevent double crediting
+-- We use a single atomic operation to ensure idempotency
 CREATE OR REPLACE FUNCTION public.increment_balance_v2(t_id UUID, u_id UUID, amount NUMERIC)
 RETURNS BOOLEAN AS $$
 DECLARE
   already_completed BOOLEAN;
+  t_account_type TEXT;
 BEGIN
-  -- 1. Check if transaction is already completed
-  SELECT (status = 'completed') INTO already_completed
+  -- 1. Check if transaction is already completed (Strict idempotency)
+  SELECT (status = 'completed' OR status = 'success' OR status = 'successful'), account_type 
+  INTO already_completed, t_account_type
   FROM public.transactions
   WHERE id = t_id;
 
@@ -149,25 +178,29 @@ BEGIN
   END IF;
 
   -- 2. Update transaction status to completed
+  -- For REAL accounts, this triggers the database balance update exactly once.
+  -- For DEMO accounts, the trigger does not fire.
   UPDATE public.transactions
   SET status = 'completed',
-      updated_at = NOW()
-  WHERE id = t_id AND status != 'completed';
+      amount = amount -- Ensure verified amount is used
+  WHERE id = t_id AND status NOT IN ('completed', 'success', 'successful');
 
   IF NOT FOUND THEN
     RETURN FALSE;
   END IF;
 
-  -- 3. Increment user balance
-  UPDATE public.users 
-  SET real_balance = COALESCE(real_balance, 0) + amount 
-  WHERE id = u_id;
+  -- 3. Handle DEMO balance manually (since the trigger only handles REAL)
+  IF t_account_type = 'DEMO' THEN
+    UPDATE public.users 
+    SET demo_balance = COALESCE(demo_balance, 0) + amount 
+    WHERE id = u_id;
+  END IF;
 
   RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Keep old version for backward compatibility but redirect logic if possible
+-- Simple increment for manual or legacy calls
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id UUID, amount NUMERIC)
 RETURNS VOID AS $$
 BEGIN
@@ -180,6 +213,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.increment_balance_v2(UUID, UUID, NUMERIC) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.increment_balance_v2(UUID, UUID, NUMERIC) TO anon;
 GRANT EXECUTE ON FUNCTION public.increment_balance_v2(UUID, UUID, NUMERIC) TO service_role;
+GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.increment_balance(UUID, NUMERIC) TO service_role;
 
 -- Optional: Auto-process stale pending transactions (called on load)
 CREATE OR REPLACE FUNCTION public.auto_process_pending()

@@ -139,18 +139,43 @@ CREATE POLICY "traders_read_all" ON public.copy_traders FOR SELECT USING (true);
 CREATE POLICY "traders_admin_all" ON public.copy_traders FOR ALL TO authenticated USING (public.is_admin());
 
 -- 6. RPC FUNCTIONS
+-- Transaction-aware balance increment to prevent double crediting
+-- We use a single atomic operation to ensure idempotency
 CREATE OR REPLACE FUNCTION public.increment_balance_v2(t_id UUID, u_id UUID, amount NUMERIC)
 RETURNS BOOLEAN AS $$
 DECLARE
   already_completed BOOLEAN;
+  t_account_type TEXT;
 BEGIN
-  SELECT (status = 'completed') INTO already_completed FROM public.transactions WHERE id = t_id;
-  IF already_completed THEN RETURN FALSE; END IF;
+  -- 1. Check if transaction is already completed (Strict idempotency)
+  SELECT (status = 'completed' OR status = 'success' OR status = 'successful'), account_type 
+  INTO already_completed, t_account_type
+  FROM public.transactions
+  WHERE id = t_id;
 
-  UPDATE public.transactions SET status = 'completed', updated_at = NOW() WHERE id = t_id AND status != 'completed';
-  IF NOT FOUND THEN RETURN FALSE; END IF;
+  IF already_completed THEN
+    RETURN FALSE;
+  END IF;
 
-  UPDATE public.users SET real_balance = COALESCE(real_balance, 0) + amount WHERE id = u_id;
+  -- 2. Update transaction status to completed
+  -- For REAL accounts, this triggers the database balance update exactly once.
+  -- For DEMO accounts, the trigger does not fire.
+  UPDATE public.transactions
+  SET status = 'completed',
+      amount = amount -- Ensure verified amount is used
+  WHERE id = t_id AND status NOT IN ('completed', 'success', 'successful');
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  -- 3. Handle DEMO balance manually (since the trigger only handles REAL)
+  IF t_account_type = 'DEMO' THEN
+    UPDATE public.users 
+    SET demo_balance = COALESCE(demo_balance, 0) + amount 
+    WHERE id = u_id;
+  END IF;
+
   RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
