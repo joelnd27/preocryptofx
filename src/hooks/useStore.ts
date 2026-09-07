@@ -2420,7 +2420,22 @@ export function useStore() {
     if (trans.status === status) return true; // Already processed
     
     // 2. Perform atomic update to prevent race conditions
-    // Only update if current status is NOT completed or rejected (final states)
+    // For deposits being completed, we use the atomic RPC exclusively to handle both status and balance
+    if (status === 'completed' && trans.type === 'DEPOSIT') {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('increment_balance_v2', {
+        t_id: transactionId,
+        u_id: trans.user_id,
+        amount: Number(trans.amount)
+      });
+      
+      if (rpcError) {
+        console.error('Error in balance increment RPC:', rpcError);
+        return false;
+      }
+      return rpcResult;
+    }
+
+    // For other cases, use standard update with safety check
     const { data: updatedTxs, error: updateError } = await supabase
       .from('transactions')
       .update({ status })
@@ -2433,21 +2448,8 @@ export function useStore() {
       return false;
     }
 
-    // 3. Handle balance consequences atomically using RPCs
-    if (status === 'completed' && trans.type === 'DEPOSIT') {
-      // Use the atomic RPC v2 to increment balance and mark transaction completed
-      const { error: rpcError } = await supabase.rpc('increment_balance_v2', {
-        t_id: transactionId,
-        u_id: trans.user_id,
-        amount: Number(trans.amount)
-      });
-      
-      if (rpcError) {
-        console.error('Error in balance increment RPC:', rpcError);
-        // Attempt fallback if RPC fails (though RPC should handle it)
-        return false;
-      }
-    } else if (status === 'rejected' && trans.type === 'WITHDRAW') {
+    // 3. Handle rejected withdrawal balance return
+    if (status === 'rejected' && trans.type === 'WITHDRAW') {
       // Return funds for rejected withdrawal
       await supabase.rpc('increment_balance', {
         user_id: trans.user_id,

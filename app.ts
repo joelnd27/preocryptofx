@@ -557,15 +557,18 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
 
           if (rpcError) {
             console.warn(`[FinAPI Verify] RPC failed for ${tx.id}:`, rpcError.message);
-            // Fallback manual update
-            const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-            if (userData) {
-              const currentBalance = Number(userData.real_balance || 0);
-              const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-              await supabaseAdmin.from('transactions').update({ 
-                status: 'completed'
-              }).eq('id', tx.id);
+            // Fallback manual update - Check status again to prevent double credit if RPC actually succeeded
+            const { data: freshTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
+            if (freshTx && freshTx.status !== 'completed') {
+              const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+              if (userData) {
+                const currentBalance = Number(userData.real_balance || 0);
+                const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
+                await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+                await supabaseAdmin.from('transactions').update({ 
+                  status: 'completed'
+                }).eq('id', tx.id);
+              }
             }
           }
         }
@@ -683,24 +686,28 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
 
         if (rpcError) {
           console.error('[FinAPI Webhook] RPC Balance update failed, falling back to manual update:', rpcError);
-          await supabaseAdmin.from('transactions')
-            .update({ 
-              status: 'completed', 
-              method: `FinAPI Webhook manual (${transaction_id || reference})` 
-            })
-            .eq('id', tx.id);
-            
-          const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-          if (userData) {
-            const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
-            await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-            console.log(`[FinAPI Webhook] Manual balance update successful for user ${tx.user_id}. New balance: $${newBalance}`);
+          // Check status again to prevent double credit if RPC actually succeeded
+          const { data: freshTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
+          if (freshTx && freshTx.status !== 'completed') {
+            await supabaseAdmin.from('transactions')
+              .update({ 
+                status: 'completed', 
+                method: `FinAPI Webhook manual (${transaction_id || reference})` 
+              })
+              .eq('id', tx.id);
+              
+            const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+            if (userData) {
+              const newBalance = Number((Number(userData.real_balance || 0) + usdAmount).toFixed(2));
+              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+              console.log(`[FinAPI Webhook] Manual balance update successful for user ${tx.user_id}. New balance: $${newBalance}`);
+            }
           }
         } else {
           console.log(`[FinAPI Webhook] Balance successfully incremented via RPC for transaction ${tx.id}`);
+          // RPC already set status to completed, but we can update method for tracing
           await supabaseAdmin.from('transactions')
             .update({ 
-              status: 'completed',
               method: `FinAPI Webhook RPC (${transaction_id || reference})` 
             })
             .eq('id', tx.id);
@@ -922,32 +929,29 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
           if (rpcError) {
             console.error('[HashBack Webhook] RPC Failed:', rpcError.message);
             
-            // 2. Fallback: Manual update ONLY if RPC literally failed to execute
-            console.log(`[HashBack Webhook] Falling back to manual balance update for tx ${tx.id}...`);
+            // 2. Fallback: Manual update ONLY if RPC literally failed to execute and transaction is still not completed
+            console.log(`[HashBack Webhook] Checking if fallback is needed for tx ${tx.id}...`);
+            const { data: freshTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
             
-            const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-            if (userData) {
-              const currentBalance = Number(userData.real_balance || 0);
-              const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-              await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-              
-              console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
-              
-              // Ensure status is updated if RPC didn't do it
-              await supabaseAdmin.from('transactions').update({
-                status: 'completed'
-              }).eq('id', tx.id);
+            if (freshTx && freshTx.status !== 'completed') {
+              const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+              if (userData) {
+                const currentBalance = Number(userData.real_balance || 0);
+                const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
+                await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+                
+                console.log(`[HashBack Webhook] Manual balance update successful: ${currentBalance} -> ${newBalance}`);
+                
+                // Ensure status is updated if RPC didn't do it
+                await supabaseAdmin.from('transactions').update({
+                  status: 'completed'
+                }).eq('id', tx.id);
+              }
             }
           } else if (rpcResult === true) {
             console.log(`[HashBack Webhook] Transaction ${tx.id} successfully processed via RPC.`);
-            // Explicitly set status to 'completed' to ensure it's not caught by auto-reject
-            await supabaseAdmin.from('transactions').update({
-              status: 'completed'
-            }).eq('id', tx.id);
           } else {
             console.log(`[HashBack Webhook] Transaction ${tx.id} already processed or skipped by RPC.`);
-            // Ensure status is at least completed
-            await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
           }
         } else if (failure) {
           console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
@@ -1036,27 +1040,25 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
 
             if (rpcError) {
               console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
-              // Manual Fallback if RPC failed
-              const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
-              if (userData) {
-                const currentBalance = Number(userData.real_balance || 0);
-                const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
-                await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
-                
-                // Ensure status is updated if RPC didn't do it
-                await supabaseAdmin.from('transactions').update({ 
-                  status: 'completed'
-                }).eq('id', tx.id);
+              // Manual Fallback if RPC failed - Check status again
+              const { data: freshTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
+              if (freshTx && freshTx.status !== 'completed') {
+                const { data: userData } = await supabaseAdmin.from('users').select('real_balance').eq('id', tx.user_id).single();
+                if (userData) {
+                  const currentBalance = Number(userData.real_balance || 0);
+                  const newBalance = Number((currentBalance + usdToCredit).toFixed(2));
+                  await supabaseAdmin.from('users').update({ real_balance: newBalance }).eq('id', tx.user_id);
+                  
+                  // Ensure status is updated if RPC didn't do it
+                  await supabaseAdmin.from('transactions').update({ 
+                    status: 'completed'
+                  }).eq('id', tx.id);
+                }
               }
             } else if (rpcResult === true) {
               console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
-              // Explicitly update status to 'completed' to prevent it staying 'pending' in the UI
-              await supabaseAdmin.from('transactions').update({
-                status: 'completed'
-              }).eq('id', tx.id);
             } else {
               console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);
-              await supabaseAdmin.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
             }
 
             // Fetch final state to return accurate status
@@ -1316,34 +1318,48 @@ router.post('/admin/credit-user', async (req, res) => {
     const field = type === 'DEMO' ? 'demo_balance' : 'real_balance';
 
     if (transactionId) {
-      const { data: updatedTx, error: txError } = await supabaseAdmin
-        .from('transactions')
-        .update({ status: 'completed', method: 'Manual Credit (Admin)' })
-        .eq('id', transactionId)
-        .neq('status', 'completed')
-        .select();
-      
-      if (txError) throw txError;
-      if (!updatedTx || updatedTx.length === 0) {
-        return res.status(400).json({ error: 'Transaction already processed or not found' });
+      // Use the atomic RPC to credit the user and complete the transaction
+      const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+        t_id: transactionId,
+        u_id: userId,
+        amount: Number(amount)
+      });
+
+      if (rpcError) {
+        console.error('[Admin Credit] RPC failed:', rpcError);
+        // Fallback to manual update if RPC is missing or fails
+        await supabaseAdmin.from('transactions')
+          .update({ status: 'completed', method: 'Manual Credit (Admin Fallback)' })
+          .eq('id', transactionId)
+          .neq('status', 'completed');
+          
+        const { data: userData } = await supabaseAdmin.from('users').select('real_balance, demo_balance').eq('id', userId).single();
+        if (userData) {
+          const currentBalance = Number(userData[field] || 0);
+          const newBalance = Number((currentBalance + Number(amount)).toFixed(2));
+          await supabaseAdmin.from('users').update({ [field]: newBalance }).eq('id', userId);
+        }
       }
     } else {
-      await supabaseAdmin.from('transactions').insert({
+      // Create a completed transaction record
+      const { data: newTx, error: insertError } = await supabaseAdmin.from('transactions').insert({
         user_id: userId,
         type: 'DEPOSIT',
-        amount: amount,
-        status: 'completed',
+        amount: Number(amount),
+        status: 'pending', // Start as pending then use RPC to complete
         account_type: 'REAL',
         method: 'Manual Credit (Admin)',
         external_id: `manual-${Date.now()}`
-      });
+      }).select().single();
+
+      if (!insertError && newTx) {
+        await supabaseAdmin.rpc('increment_balance_v2', {
+          t_id: newTx.id,
+          u_id: userId,
+          amount: Number(amount)
+        });
+      }
     }
-
-    const { error: rpcError } = await client.from('users').update({
-      [field]: Number(amount)
-    }).eq('id', userId);
-
-    if (rpcError) throw rpcError;
 
     res.json({ success: true, message: 'User credited successfully' });
   } catch (error: any) {
