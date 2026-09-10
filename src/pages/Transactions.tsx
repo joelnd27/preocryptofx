@@ -508,38 +508,6 @@ export default function Transactions() {
                              (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'CONFIRMED' :
                              tx.status.toUpperCase()}
                           </span>
-                          {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={async () => {
-                                  setIsChecking(true);
-                                  try {
-                                    const result = await checkPaymentStatus(tx.externalId || tx.id);
-                                    
-                                    const statusLower = (result?.status || '').toLowerCase();
-                                    const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || result?.ResultCode === 0;
-                                    
-                                    if (isSuccess) {
-                                      setAlertConfig({
-                                        isOpen: true,
-                                        title: 'Payment Confirmed',
-                                        message: 'Your payment has been verified and your balance updated.',
-                                        type: 'success'
-                                      });
-                                    }
-                                    await refreshData();
-                                  } finally {
-                                    setIsChecking(false);
-                                  }
-                                }}
-                                disabled={isChecking}
-                                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-blue-500 transition-colors disabled:opacity-50"
-                                title="Check Status"
-                              >
-                                <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -613,35 +581,6 @@ export default function Transactions() {
                            (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'SUCCESSFUL' :
                            tx.status.toUpperCase())}
                         </span>
-                        
-                        {tx.status === 'pending' && tx.type === 'DEPOSIT' && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setIsChecking(true);
-                                try {
-                                  const result = await checkPaymentStatus(tx.externalId || tx.id);
-                                  if (result?.status === 'completed' || result?.credited) {
-                                    setAlertConfig({
-                                      isOpen: true,
-                                      title: 'Payment Confirmed',
-                                      message: 'Your payment has been verified successfully.',
-                                      type: 'success'
-                                    });
-                                  }
-                                  await refreshData();
-                                } finally {
-                                  setIsChecking(false);
-                                }
-                              }}
-                              disabled={isChecking}
-                              className="p-1.5 bg-slate-100 dark:bg-slate-700 rounded-md text-blue-500 transition-colors disabled:opacity-50"
-                            >
-                              <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1090,78 +1029,6 @@ export default function Transactions() {
                         </p>
                         
                         <div className="flex flex-col gap-3 w-full">
-                          <button 
-                            onClick={async () => {
-                              setIsChecking(true);
-                              
-                              // Check backend status
-                              const result = await checkPaymentStatus(currentTxRef || '');
-                              
-                              const statusLower = (result?.status || '').toLowerCase();
-                              const messageLower = (result?.message || '').toLowerCase();
-                              
-                              // Robust success check matching server
-                              const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || result?.isSuccess;
-                                               
-                              const isFailed = result?.isFailed || 
-                                              ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
-                                              (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
-                                              (result?.ResultCode !== undefined && result?.ResultCode !== 0) ||
-                                              messageLower.includes('cancelled') ||
-                                              messageLower.includes('failed') ||
-                                              messageLower.includes('rejected');
-
-                              if (isSuccess) {
-                                setPaymentStatus('SUCCESS');
-                                setAlertConfig({
-                                  isOpen: true,
-                                  title: 'Payment Confirmed',
-                                  message: 'Your payment has been verified and your account credited.',
-                                  type: 'success'
-                                });
-                                setCurrentTxRef(null);
-                                await refreshData();
-                              } else if (isFailed) {
-                                setPaymentStatus('FAILED');
-                                let msg = result?.message || result?.error || 'Transaction was rejected or failed.';
-                                setErrorMessage(msg);
-                                setAlertConfig({
-                                  isOpen: true,
-                                  title: 'Payment Rejected',
-                                  message: msg,
-                                  type: 'error'
-                                });
-                                setCurrentTxRef(null);
-                                await refreshData();
-                              } else {
-                                // Still processing - don't fail, keep verifying
-                                await refreshData();
-                                
-                                // Re-check if local state was updated by webhook in background
-                                const latestTx = user?.transactions?.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
-                                const isLatestSuccess = latestTx && (latestTx.status === 'completed' || latestTx.status === 'success' || latestTx.status === 'successful');
-                                
-                                if (isLatestSuccess) {
-                                  setPaymentStatus('SUCCESS');
-                                  setCurrentTxRef(null);
-                                } else {
-                                  setPaymentStatus('VERIFYING');
-                                  setAlertConfig({
-                                    isOpen: true,
-                                    title: 'Still Pending',
-                                    message: 'We are still waiting for confirmation from the provider. Please wait a moment or check your history later.',
-                                    type: 'info'
-                                  });
-                                }
-                              }
-                              setIsChecking(false);
-                            }}
-                            disabled={isChecking}
-                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
-                          >
-                            {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                            Check Status Again
-                          </button>
                           <button 
                             onClick={() => {
                               setPaymentStatus('IDLE');

@@ -45,7 +45,7 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
 
-  // Auto-reject stale transactions (older than 3 minutes)
+  // Auto-reject stale transactions (older than 10 minutes)
   console.log('[App] Environment Check:', {
     hasSyncUrl: !!process.env.ONEAPP_SYNC_URL,
     hasWebhookSecret: !!process.env.PREOCRYPTOFX_WEBHOOK_SECRET,

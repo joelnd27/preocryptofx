@@ -667,30 +667,6 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-6 py-5 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {t.status === 'pending' && (t.method?.toLowerCase().includes('finapi') || t.method?.toLowerCase().includes('hashback')) && (
-                            <button 
-                              onClick={async () => {
-                                const id = t.external_id || t.id;
-                                try {
-                                  const result = await checkPaymentStatus(id);
-                                  if (result) {
-                                    loadData();
-                                    const statusStr = result.status || result.message || 'Updated';
-                                    const label = t.method?.toLowerCase().includes('hashback') ? 'Hashback' : 'FinAPI';
-                                    alert(`${label} Status: ${statusStr}`);
-                                  } else {
-                                    alert("No update from the payment gateway yet. User might still be entering PIN.");
-                                  }
-                                } catch (err) {
-                                  alert("Error communicating with the verification service.");
-                                }
-                              }}
-                              className="p-1.5 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-all group relative"
-                              title="Sync with Payment Gateway"
-                            >
-                              <RefreshCw size={14} />
-                            </button>
-                          )}
                           {t.status === 'pending' && (
                             <>
                               <button 
