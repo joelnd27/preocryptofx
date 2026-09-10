@@ -20,7 +20,6 @@ import {
   DollarSign,
   ArrowRight,
   RefreshCw,
-  ShieldCheck,
   Loader2
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -34,8 +33,7 @@ export default function Transactions() {
     addTransaction, 
     processDeposit,
     checkPaymentStatus,
-    refreshData, 
-    adminCreditUser 
+    refreshData
   } = useStore();
   const location = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -540,38 +538,6 @@ export default function Transactions() {
                               >
                                 <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
                               </button>
-                              {user?.role === 'admin' && tx.status === 'pending' && (
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance and mark as completed?`)) {
-                                      setIsChecking(true);
-                                      const success = await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
-                                      if (success) {
-                                        setAlertConfig({
-                                          isOpen: true,
-                                          title: 'Admin Force Credit',
-                                          message: 'Balance has been manually credited successfully.',
-                                          type: 'success'
-                                        });
-                                      } else {
-                                        setAlertConfig({
-                                          isOpen: true,
-                                          title: 'Error',
-                                          message: 'Failed to perform manual credit.',
-                                          type: 'error'
-                                        });
-                                      }
-                                      setIsChecking(false);
-                                    }
-                                  }}
-                                  disabled={isChecking}
-                                  className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors ml-1"
-                                  title="Force Credit (Admin Only)"
-                                >
-                                  <ShieldCheck size={10} />
-                                </button>
-                              )}
                             </div>
                           )}
                         </div>
@@ -674,23 +640,6 @@ export default function Transactions() {
                             >
                               <RefreshCw size={10} className={cn(isChecking && "animate-spin")} />
                             </button>
-                            
-                            {user?.role === 'admin' && (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm(`FORCE CREDIT: Add ${tx.amount} to this user's balance?`)) {
-                                    setIsChecking(true);
-                                    await adminCreditUser(tx.userId || user.id, tx.amount, tx.id);
-                                    await refreshData();
-                                    setIsChecking(false);
-                                  }
-                                }}
-                                className="p-1.5 bg-red-100 dark:bg-red-900/30 rounded-md text-red-500"
-                              >
-                                <ShieldCheck size={10} />
-                              </button>
-                            )}
                           </div>
                         )}
                       </div>

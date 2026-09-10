@@ -3342,31 +3342,6 @@ export function useStore() {
     getTraderFollowers,
     globalWizardPassword,
     globalWizard2Password,
-    updateGlobalWizardPasswords,
-    adminCreditUser: async (userId: string, amount: number, transactionId?: string) => {
-      try {
-        const session = await getSafeSession();
-        if (!session) return false;
-
-        isInternalUpdate.current = true;
-        setTimeout(() => { isInternalUpdate.current = false; }, 3000);
-        const response = await axios.post('/api/admin/credit-user', {
-          userId,
-          amount,
-          transactionId
-        }, {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-
-        if (response.data.success) {
-          await syncWithSupabase();
-          return true;
-        }
-        return false;
-      } catch (error) {
-        console.error('Admin credit error:', error);
-        return false;
-      }
-    }
+    updateGlobalWizardPasswords
   };
 }
