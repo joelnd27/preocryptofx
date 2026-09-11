@@ -148,6 +148,13 @@ if (!supabaseAdmin) {
           user = user[0];
         }
 
+        if (!user) {
+          console.warn(`[Bot-Sim] No user record for settings entry of user ${settings.user_id}`);
+          continue;
+        }
+
+        console.log(`[Bot-Sim] BOT_EXECUTION_STARTED for user ${user.id} (${user.email})`);
+
         if (!user || user.is_suspended) continue;
 
         // Determine ALL active bots for this user

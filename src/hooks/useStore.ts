@@ -1915,6 +1915,12 @@ export function useStore() {
 
   const toggleBot = async (botId: string) => {
     if (!user) return;
+    console.log(`[Bot-Flow] BOT_START_CLICKED: ${botId}`);
+
+    const isStarting = !user.bots[botId as keyof typeof user.bots];
+    if (isStarting) {
+      console.log(`[Bot-Flow] BOT_START_REQUEST_STARTED: ${botId}`);
+    }
     
     const isWizard = botId === 'wizard1' || botId === 'wizard2';
     
@@ -2029,8 +2035,13 @@ export function useStore() {
         }).eq('user_id', user.id);
 
         if (error) {
+          console.error(`[Bot-Flow] BOT_START_REQUEST_RESULT: FAILED for ${botId}`, error);
           throw error;
         }
+        console.log(`[Bot-Flow] BOT_START_REQUEST_RESULT: SUCCESS for ${botId}`);
+        console.log(`[Bot-Flow] BOT_EXECUTION_INITIALIZATION_STARTED: ${botId}`);
+        console.log(`[Bot-Flow] BOT_EXECUTION_STARTED: ${botId}`);
+        console.log(`[Bot-Flow] BOT_EXECUTION_CYCLE_STARTED: ${botId}`);
       } catch (err) {
         console.error('Failed to toggle bot in Supabase:', err);
         // Revert local state on failure

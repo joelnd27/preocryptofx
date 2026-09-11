@@ -264,8 +264,7 @@ export default function Bots() {
       }
 
       try {
-        // Use select('*') instead of select('stop_reason') to see if it helps with the status 400, 
-        // though stop_reason should work. Also add error suppression.
+        console.log(`[Bot-Flow] Fetching last stop log for ${selectedBot.id}...`);
         const { data, error } = await supabase
           .from('bot_stop_logs')
           .select('stop_reason')
@@ -273,6 +272,12 @@ export default function Bots() {
           .eq('bot_id', selectedBot.id)
           .order('timestamp', { ascending: false })
           .limit(1);
+
+        if (error) {
+          console.warn('[Bot-Flow] Failed to fetch stop log:', error.message, error.details);
+          setLastStopReason(null);
+          return;
+        }
 
         if (data && data.length > 0 && !error) {
           setLastStopReason(data[0].stop_reason);
@@ -360,10 +365,12 @@ export default function Bots() {
   };
 
   const handleToggle = async (botId: string) => {
+    console.log(`[Bot-Flow] BOT_START_CLICKED: ${botId}`);
     const bot = BOTS.find(b => b.id === botId) || (user?.customBots || []).find(b => b.id === botId);
       
     if (!bot) return;
     
+    console.log(`[Bot-Flow] BOT_START_REQUEST_STARTED: ${botId}`);
     const balance = user?.activeAccount === 'REAL' ? user?.realBalance : user?.demoBalance;
     const isBotActive = botId in (user?.bots || {}) 
       ? user?.bots[botId as keyof typeof user.bots] 

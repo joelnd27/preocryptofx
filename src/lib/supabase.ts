@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/['"]/g, '');
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim().replace(/['"]/g, '');
+const supabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL || '').trim().replace(/['"]/g, '');
+const supabaseAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY || '').trim().replace(/['"]/g, '');
+
+if (typeof window !== 'undefined') {
+  console.log('[Supabase] Initializing client-side Supabase...');
+  if (!supabaseUrl) console.warn('[Supabase] VITE_SUPABASE_URL is missing!');
+  if (!supabaseAnonKey) console.warn('[Supabase] VITE_SUPABASE_ANON_KEY is missing!');
+}
 
 // Initialize with placeholders if missing to prevent top-level crash,
 // but they will fail gracefully when actually used.
@@ -14,6 +20,11 @@ export const supabase = createClient(effectiveUrl, effectiveKey, {
     persistSession: true,
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? window.localStorage : undefined
+  },
+  global: {
+    headers: {
+      'x-client-info': 'preocryptofx-web'
+    }
   }
 });
 
