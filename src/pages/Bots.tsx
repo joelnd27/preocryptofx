@@ -140,8 +140,26 @@ const BOTS: BotConfig[] = [
 ];
 
 export default function Bots() {
-  const { user, toggleBot, unlockBot, updateBotConfig, addBotProfit, addTrade, importBot } = useStore();
+  const { user, toggleBot, unlockBot, updateBotConfig, addBotProfit, addTrade, importBot, refreshData } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
+  
+  // Periodic Refresh for Live Logs and Profits
+  useEffect(() => {
+    // Only poll if the currently selected bot is active
+    const isBotActive = selectedBot.id in (user?.bots || {}) 
+      ? user?.bots[selectedBot.id as keyof typeof user.bots] 
+      : (user?.activeCustomBotIds || []).includes(selectedBot.id);
+
+    if (!isBotActive) return;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshData();
+      }
+    }, 5000); // Refresh every 5 seconds for live feel
+
+    return () => clearInterval(interval);
+  }, [selectedBot.id, user?.bots, user?.activeCustomBotIds, refreshData]);
   
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }>>(() => {
     const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }> = {};
