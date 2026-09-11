@@ -27,13 +27,14 @@ import {
   Lock,
   Eye,
   EyeOff,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 import { CRYPTO_LIST } from '../types';
 import AlertModal from '../components/AlertModal';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface BotConfig {
   id: string;
@@ -263,21 +264,23 @@ export default function Bots() {
       }
 
       try {
+        // Use select('*') instead of select('stop_reason') to see if it helps with the status 400, 
+        // though stop_reason should work. Also add error suppression.
         const { data, error } = await supabase
           .from('bot_stop_logs')
           .select('stop_reason')
           .eq('user_id', user.id)
           .eq('bot_id', selectedBot.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .order('timestamp', { ascending: false })
+          .limit(1);
 
-        if (data && !error) {
-          setLastStopReason(data.stop_reason);
+        if (data && data.length > 0 && !error) {
+          setLastStopReason(data[0].stop_reason);
         } else {
           setLastStopReason(null);
         }
       } catch (err) {
+        console.warn('Silent fail for fetchLastStopLog:', err);
         setLastStopReason(null);
       }
     };
@@ -867,7 +870,7 @@ export default function Bots() {
                 </p>
               </div>
 
-              {lastStopReason && !isSelectedBotActive && (
+              {lastStopReason && typeof lastStopReason === 'string' && !isSelectedBotActive && (
                 <div className="p-2 bg-red-500/5 border border-red-500/10 rounded-lg flex gap-2 items-center">
                   <AlertTriangle size={10} className="text-red-500 shrink-0" />
                   <p className="text-[9px] text-red-500 leading-tight font-black">
@@ -928,22 +931,36 @@ export default function Bots() {
       <div className="lg:col-span-4 h-full">
         <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-sm font-black flex items-center gap-2 uppercase tracking-widest text-slate-900 dark:text-white">
-              <History size={16} className="text-blue-500" /> {isSelectedBotActive ? 'Activity Log' : 'Bot Logs'}
-            </h3>
-            <div className={cn(
-              "flex items-center gap-2 px-2 py-1 rounded-full border",
-              isSelectedBotActive 
-                ? "bg-green-500/10 border-green-500/20" 
-                : "bg-blue-500/10 border-blue-500/20"
-            )}>
-              {isSelectedBotActive && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>}
-              <span className={cn(
-                "text-[9px] font-black uppercase tracking-widest",
-                isSelectedBotActive ? "text-green-600 dark:text-green-400" : "text-blue-600 dark:text-blue-400"
+            <div className="flex flex-col gap-0.5">
+              <h3 className="text-sm font-black flex items-center gap-2 uppercase tracking-widest text-slate-900 dark:text-white">
+                <History size={16} className="text-blue-500" /> {isSelectedBotActive ? 'Activity Log' : 'Bot Logs'}
+              </h3>
+              {!isSupabaseConfigured() && (
+                <p className="text-[7px] text-red-500 font-black uppercase tracking-tighter">Database Disconnected</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => window.location.reload()}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-400"
+                title="Force Sync"
+              >
+                <RefreshCw size={12} className={cn(isSelectedBotActive && "animate-spin-slow")} />
+              </button>
+              <div className={cn(
+                "flex items-center gap-2 px-2 py-1 rounded-full border",
+                isSelectedBotActive 
+                  ? "bg-green-500/10 border-green-500/20" 
+                  : "bg-blue-500/10 border-blue-500/20"
               )}>
-                {isSelectedBotActive ? 'Live' : `${logs.length} entries`}
-              </span>
+                {isSelectedBotActive && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>}
+                <span className={cn(
+                  "text-[9px] font-black uppercase tracking-widest",
+                  isSelectedBotActive ? "text-green-600 dark:text-green-400" : "text-blue-600 dark:text-blue-400"
+                )}>
+                  {isSelectedBotActive ? 'Live' : `${logs.length} entries`}
+                </span>
+              </div>
             </div>
           </div>
           

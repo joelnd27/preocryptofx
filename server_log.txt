@@ -1,0 +1,38 @@
+
+> react-example@0.0.0 dev
+> tsx server.ts
+
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+[Supabase] Admin client initialized successfully.
+[App] Environment Check: { hasSyncUrl: true, hasWebhookSecret: true, rate: '129.58' }
+[Bot-Sim] BOT_STARTED
+[Bot-Sim] BOT_EXECUTION_CYCLE_STARTED
+[Bot-Sim] TRADE_ATTEMPT: user da9731c1-e233-465f-9e21-ba670629bfa6 bot scalping
+WebSocket server error: Port 24678 is already in use
+[Bot-Sim] Error fetching latest state for scalping: {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column bot_settings.id does not exist'
+}
+[Bot-Sim] TRADE_ATTEMPT: user a5b70e80-b3a9-4744-9cf6-3dbba7d80623 bot scalping
+node:events:497
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use 0.0.0.0:3000
+    at Server.setupListenHandle [as _listen2] (node:net:1941:16)
+    at listenInCluster (node:net:1998:12)
+    at node:net:2207:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1977:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:89:21) {
+  code: 'EADDRINUSE',
+  errno: -98,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3000
+}
+
+Node.js v22.23.2

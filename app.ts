@@ -99,18 +99,43 @@ if (!supabaseAdmin) {
 
       console.log('[Bot-Sim] BOT_EXECUTION_CYCLE_STARTED');
 
-      // 1. Get all bot_settings records
-      const { data: botSettings, error: fetchError } = await supabaseAdmin
+      // 1. Get ONLY bot_settings records where at least one bot is active
+      // We filter by the main columns and merge with those having active extended bots
+      const { data: mainActive, error: fetchError } = await supabaseAdmin
         .from('bot_settings')
-        .select('*, users(*)');
+        .select('*, users(*)')
+        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
 
       if (fetchError) {
         console.error('[Bot-Sim] Error fetching bot settings:', fetchError);
         return;
       }
 
-      if (!botSettings || botSettings.length === 0) {
-        console.log('[Bot-Sim] No bot settings found.');
+      let botSettings = mainActive || [];
+      
+      // Also fetch users who have extended bots active (starlight, etc) but no main bots
+      // Since filtering JSONB is complex in a single OR, we do a second targeted fetch
+      const { data: extendedSettings, error: extError } = await supabaseAdmin
+        .from('bot_settings')
+        .select('*, users(*)')
+        .not('bot_stats', 'is', null);
+      
+      if (!extError && extendedSettings) {
+        const trulyActiveExtended = extendedSettings.filter(s => {
+          const activeStates = s.bot_stats?.active_states || {};
+          return Object.values(activeStates).some(v => v === true);
+        });
+        
+        const existingIds = new Set(botSettings.map(s => s.user_id));
+        trulyActiveExtended.forEach(s => {
+          if (!existingIds.has(s.user_id)) {
+            botSettings.push(s);
+          }
+        });
+      }
+
+      if (botSettings.length === 0) {
+        console.log('[Bot-Sim] No active bot settings found.');
         return;
       }
 
@@ -158,9 +183,38 @@ if (!supabaseAdmin) {
         for (const botToSimulate of activeBots) {
           const botId = botToSimulate.id;
           
-          // Use a random execution filter to prevent overwhelming the DB with updates every 5s for every bot
-          // But ensures continuous execution over time.
-          if (Math.random() > 0.4) continue; 
+          // Use a random execution filter to ensure activity but not overwhelming the DB
+          // Increased frequency (reduced skip chance from 0.4 to 0.1)
+          const skipChance = 0.1;
+          const isHeartbeatCycle = Math.random() < 0.2; // 20% chance to log a heartbeat if no trade
+
+          if (Math.random() > (1 - skipChance)) {
+             // Continue to trade execution
+          } else if (isHeartbeatCycle) {
+             // Log a heartbeat message so users see activity
+             const heartbeats = [
+               "Analyzing neural patterns...",
+               "Scanning liquidity pools...",
+               "Checking momentum indicators...",
+               "Monitoring volume expansion...",
+               "Neural network evaluating entry...",
+               "Calculating volatility delta..."
+             ];
+             const message = `[${new Date().toLocaleTimeString()}] ${heartbeats[Math.floor(Math.random() * heartbeats.length)]}`;
+             
+             // Update logs periodically
+             const { data: latestLogs } = await supabaseAdmin.from('bot_settings').select('bot_logs').eq('user_id', user.id).single();
+             if (latestLogs) {
+               const updatedLogs = [
+                 { botId, message, timestamp: Date.now() },
+                 ...(latestLogs.bot_logs || [])
+               ].slice(0, 50);
+               await supabaseAdmin.from('bot_settings').update({ bot_logs: updatedLogs }).eq('user_id', user.id);
+             }
+             continue;
+          } else {
+             continue;
+          }
 
           console.log(`[Bot-Sim] TRADE_ATTEMPT: user ${user.id} bot ${botId}`);
 
@@ -170,7 +224,7 @@ if (!supabaseAdmin) {
           const botTargetPercentage = Number(botConfig.targetProfit || settings.target_profit_percentage || 0);
           
           // Re-fetch latest data for atomic-like checks
-          const { data: latestSettings, error: sErr } = await supabaseAdmin.from('bot_settings').select('*').eq('id', settings.id).single();
+          const { data: latestSettings, error: sErr } = await supabaseAdmin.from('bot_settings').select('*').eq('user_id', user.id).single();
           const { data: freshUser, error: uErr } = await supabaseAdmin.from('users').select('*').eq('id', user.id).single();
           
           if (sErr || uErr || !freshUser || !latestSettings) {
@@ -201,7 +255,7 @@ if (!supabaseAdmin) {
           const sessionStartProfits = latestSettings.bot_session_start_profits || {};
           if (sessionStartProfits[botId] === undefined) {
             sessionStartProfits[botId] = currentDailyProfit;
-            await supabaseAdmin.from('bot_settings').update({ bot_session_start_profits: sessionStartProfits }).eq('id', settings.id);
+            await supabaseAdmin.from('bot_settings').update({ bot_session_start_profits: sessionStartProfits }).eq('user_id', user.id);
           }
 
           const sessionProfit = Number((currentDailyProfit - (sessionStartProfits[botId] || 0)).toFixed(2));
@@ -210,7 +264,7 @@ if (!supabaseAdmin) {
           console.log(`[Bot-Sim] STOP_CONDITION_CHECK: Profit Goal check for bot ${botId} (Current: ${sessionProfit}, Goal: ${targetProfitAmount})`);
           if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
             console.log(`[Bot-Sim] STOP_CONDITION_CHECK: PROFIT_GOAL_REACHED for bot ${botId}`);
-            await stopBotAtomic(user.id, settings.id, botId, botToSimulate.type, 'PROFIT_GOAL_REACHED', sessionProfit, targetProfitAmount, currentBalance, botStake);
+            await stopBotAtomic(user.id, botId, botToSimulate.type, 'PROFIT_GOAL_REACHED', sessionProfit, targetProfitAmount, currentBalance, botStake);
             continue;
           }
 
@@ -218,7 +272,7 @@ if (!supabaseAdmin) {
           console.log(`[Bot-Sim] STOP_CONDITION_CHECK: Balance check for bot ${botId} (Balance: ${currentBalance}, Stake: ${botStake})`);
           if (currentBalance < botStake) {
             console.log(`[Bot-Sim] STOP_CONDITION_CHECK: INSUFFICIENT_BALANCE for bot ${botId}`);
-            await stopBotAtomic(user.id, settings.id, botId, botToSimulate.type, 'INSUFFICIENT_BALANCE', sessionProfit, targetProfitAmount, currentBalance, botStake);
+            await stopBotAtomic(user.id, botId, botToSimulate.type, 'INSUFFICIENT_BALANCE', sessionProfit, targetProfitAmount, currentBalance, botStake);
             continue;
           }
 
@@ -272,7 +326,7 @@ if (!supabaseAdmin) {
           const logEntry = {
             botId,
             message: `[${new Date().toLocaleTimeString()}] Bot executed trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
-            timestamp: Date.now()
+            timestamp: new Date().toISOString()
           };
           const updatedLogs = [logEntry, ...(latestSettings.bot_logs || [])].slice(0, 50);
 
@@ -280,7 +334,7 @@ if (!supabaseAdmin) {
             bot_stats: updatedBotStats,
             bot_logs: updatedLogs,
             updated_at: new Date().toISOString()
-          }).eq('id', settings.id);
+          }).eq('user_id', user.id);
 
           if (settingsUpdateErr) {
             console.error(`[Bot-Sim] Error updating bot settings:`, settingsUpdateErr);
@@ -295,7 +349,7 @@ if (!supabaseAdmin) {
             price: randomCoin.basePrice,
             profit: profitAmount,
             status: 'CLOSED',
-            timestamp: Date.now(),
+            timestamp: new Date().toISOString(),
             source: 'BOT'
           });
 
@@ -305,7 +359,7 @@ if (!supabaseAdmin) {
           const finalSessionProfit = Number((sessionProfit + profitAmount).toFixed(2));
           if (botTargetPercentage > 0 && botStake >= 10 && finalSessionProfit >= targetProfitAmount) {
             console.log(`[Bot-Sim] STOP_CONDITION_CHECK: PROFIT_GOAL_REACHED (post-trade) for bot ${botId}`);
-            await stopBotAtomic(user.id, settings.id, botId, botToSimulate.type, 'PROFIT_GOAL_REACHED', finalSessionProfit, targetProfitAmount, newBalance, botStake);
+            await stopBotAtomic(user.id, botId, botToSimulate.type, 'PROFIT_GOAL_REACHED', finalSessionProfit, targetProfitAmount, newBalance, botStake);
           }
         }
       }
@@ -318,13 +372,14 @@ if (!supabaseAdmin) {
   };
 
   // Atomic stop helper to ensure consistency
-  async function stopBotAtomic(userId: string, settingsId: string, botId: string, botType: string, reason: string, currentProfit: number, goal: number, balance: number, stake: number) {
+  async function stopBotAtomic(userId: string, botId: string, botType: string, reason: string, currentProfit: number, goal: number, balance: number, stake: number) {
     if (!supabaseAdmin) return;
     console.log(`[Bot-Sim] BOT_STOPPED: ${botId} for user ${userId}. Reason: ${reason}`);
     
     // 1. Fetch current stats to preserve other bots' states
-    const { data: currentSettings } = await supabaseAdmin.from('bot_settings').select('bot_stats, bot_session_start_profits').eq('id', settingsId).single();
+    const { data: currentSettings } = await supabaseAdmin.from('bot_settings').select('bot_stats, bot_session_start_profits').eq('user_id', userId).single();
     if (!currentSettings) return;
+
 
     const botStats = currentSettings.bot_stats || {};
     const activeStates = botStats.active_states || {};
@@ -365,7 +420,7 @@ if (!supabaseAdmin) {
     if (botId === 'custom') updatePayload.custom_active = false;
 
     // 3. Atomically deactivate in DB
-    const { error: stopErr } = await supabaseAdmin.from('bot_settings').update(updatePayload).eq('id', settingsId);
+    const { error: stopErr } = await supabaseAdmin.from('bot_settings').update(updatePayload).eq('user_id', userId);
     if (stopErr) {
       console.error(`[Bot-Sim] Error during atomic stop update:`, stopErr);
     }
@@ -381,7 +436,8 @@ if (!supabaseAdmin) {
       actual_profit: currentProfit,
       actual_balance: balance,
       min_required_balance: stake,
-      is_user_initiated: false
+      is_user_initiated: false,
+      timestamp: new Date().toISOString()
     });
     
     if (logErr) {

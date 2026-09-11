@@ -1996,6 +1996,7 @@ export function useStore() {
       botConfigs: updatedConfigs
     };
 
+    const previousUser = { ...user };
     isInternalUpdate.current = true;
     setUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
@@ -2004,7 +2005,7 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').update({
+        const { error } = await supabase.from('bot_settings').update({
           scalping_active: updatedBots.scalping,
           trend_active: updatedBots.trend,
           ai_active: updatedBots.ai,
@@ -2026,8 +2027,19 @@ export function useStore() {
           },
           updated_at: new Date().toISOString()
         }).eq('user_id', user.id);
+
+        if (error) {
+          throw error;
+        }
       } catch (err) {
         console.error('Failed to toggle bot in Supabase:', err);
+        // Revert local state on failure
+        setUser(previousUser);
+        setUsers(prev => prev.map(u => u.id === user.id ? previousUser : u));
+        
+        // Show alert to user
+        const errMsg = err instanceof Error ? err.message : 'Connection failed. Please check your internet and DNS settings.';
+        alert(`Failed to start bot: ${errMsg}`);
       }
     }
   };

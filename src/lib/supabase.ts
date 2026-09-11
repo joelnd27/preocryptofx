@@ -3,7 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/['"]/g, '');
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim().replace(/['"]/g, '');
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Initialize with placeholders if missing to prevent top-level crash,
+// but they will fail gracefully when actually used.
+const effectiveUrl = supabaseUrl || 'https://placeholder.supabase.co';
+const effectiveKey = supabaseAnonKey || 'placeholder';
+
+export const supabase = createClient(effectiveUrl, effectiveKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
