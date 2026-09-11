@@ -760,23 +760,22 @@ export function useStore() {
     const setupSubscriptions = (userId: string, referralCode?: string) => {
       const userChannelName = `user-profile-${userId}`;
       const transChannelName = `user-transactions-${userId}`;
+      const botChannelName = `user-bots-${userId}`;
       const referralChannelName = referralCode ? `referrals-${referralCode}` : null;
 
       // Avoid duplicate subscriptions
       const existingChannels = supabase.getChannels();
       const hasUserChannel = existingChannels.some(c => c.topic === `realtime:${userChannelName}`);
       const hasTransChannel = existingChannels.some(c => c.topic === `realtime:${transChannelName}`);
+      const hasBotChannel = existingChannels.some(c => c.topic === `realtime:${botChannelName}`);
       let hasReferralChannel = false;
       if (referralChannelName) {
         hasReferralChannel = existingChannels.some(c => c.topic === `realtime:${referralChannelName}`);
       }
 
-      if (hasUserChannel && hasTransChannel && (!referralChannelName || hasReferralChannel)) {
+      if (hasUserChannel && hasTransChannel && hasBotChannel && (!referralChannelName || hasReferralChannel)) {
         return;
       }
-
-      // Cleanup existing channels first (optional but safer)
-      // supabase.removeAllChannels(); // This might be too aggressive if multiple stores exist
 
       // Subscribe to user profile changes
       if (!hasUserChannel) {
@@ -788,6 +787,22 @@ export function useStore() {
             table: 'users', 
             filter: `id=eq.${userId}` 
           }, () => {
+            syncWithSupabase();
+          })
+          .subscribe();
+      }
+
+      // Subscribe to bot_settings changes (Crucial for backend deactivations)
+      if (!hasBotChannel) {
+        supabase
+          .channel(botChannelName)
+          .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'bot_settings',
+            filter: `user_id=eq.${userId}`
+          }, () => {
+            console.log('[Realtime] Bot settings updated. Syncing...');
             syncWithSupabase();
           })
           .subscribe();
