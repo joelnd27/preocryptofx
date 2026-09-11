@@ -72,10 +72,27 @@ CREATE TABLE IF NOT EXISTS public.bot_settings (
     is_active boolean DEFAULT false,
     risk_level text DEFAULT 'medium',
     auto_trade boolean DEFAULT false,
+    bot_session_start_profits jsonb DEFAULT '{}',
     settings jsonb DEFAULT '{}',
     created_at timestamptz DEFAULT now(),
     updated_at timestamptz DEFAULT now(),
     UNIQUE(user_id, bot_type)
+);
+
+-- Bot Stop Logs Table
+CREATE TABLE IF NOT EXISTS public.bot_stop_logs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES public.users(id) ON DELETE CASCADE,
+    bot_id text NOT NULL,
+    bot_name text,
+    stop_reason text NOT NULL, -- 'PROFIT_GOAL_REACHED', 'INSUFFICIENT_BALANCE', 'MANUAL'
+    previous_status text,
+    profit_goal float8,
+    actual_profit float8,
+    actual_balance float8,
+    min_required_balance float8,
+    is_user_initiated boolean DEFAULT false,
+    timestamp timestamptz DEFAULT now()
 );
 
 -- Copy Traders Table

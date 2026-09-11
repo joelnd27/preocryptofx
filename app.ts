@@ -85,6 +85,218 @@ if (!supabaseAdmin) {
 
   // Run cleanup every 1 minute
   setInterval(() => cleanupStaleTransactions(false), 60 * 1000);
+
+  // BOT SIMULATION LOGIC (Backend authoritative)
+  const runBotSimulation = async () => {
+    try {
+      if (!supabaseAdmin) return;
+
+      // 1. Get all bot_settings that have at least one active bot
+      const { data: botSettings, error: fetchError } = await supabaseAdmin
+        .from('bot_settings')
+        .select('*, users(*)')
+        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
+
+      if (fetchError) {
+        console.error('[Bot-Sim] Error fetching active bots:', fetchError);
+        return;
+      }
+
+      if (!botSettings || botSettings.length === 0) return;
+
+      console.log(`[Bot-Sim] Simulating for ${botSettings.length} users...`);
+
+      for (const settings of botSettings) {
+        const user = settings.users;
+        if (!user || user.is_suspended) continue;
+
+        // Determine active bots for this user
+        const botStats = settings.bot_stats || {};
+        const activeStates = botStats.active_states || {};
+        
+        const activeBots: {id: string, type: string}[] = [];
+        if (settings.scalping_active) activeBots.push({id: 'scalping', type: 'standard'});
+        if (settings.trend_active) activeBots.push({id: 'trend', type: 'standard'});
+        if (settings.ai_active) activeBots.push({id: 'ai', type: 'standard'});
+        if (activeStates.vortex) activeBots.push({id: 'vortex', type: 'standard'});
+        if (activeStates.orbit) activeBots.push({id: 'orbit', type: 'standard'});
+        if (activeStates.starlight) activeBots.push({id: 'starlight', type: 'standard'});
+        if (activeStates.galaxy) activeBots.push({id: 'galaxy', type: 'standard'});
+        if (activeStates.nova) activeBots.push({id: 'nova', type: 'standard'});
+        if (activeStates.wizard1) activeBots.push({id: 'wizard1', type: 'standard'});
+        if (activeStates.wizard2) activeBots.push({id: 'wizard2', type: 'standard'});
+        
+        if (settings.custom_active && activeStates.active_custom_ids) {
+          activeStates.active_custom_ids.forEach((id: string) => {
+            activeBots.push({id, type: 'custom'});
+          });
+        }
+
+        if (activeBots.length === 0) continue;
+
+        // Pick ONE random bot to simulate a trade for (mimicking client behavior but server-side)
+        const botToSimulate = activeBots[Math.floor(Math.random() * activeBots.length)];
+        const botId = botToSimulate.id;
+        
+        const botConfigs = botStats.configs || {};
+        const botConfig = botConfigs[botId] || {};
+        const botStake = botConfig.stake || settings.bot_stake || 10;
+        const botTargetPercentage = botConfig.targetProfit || settings.target_profit_percentage || 0;
+        
+        const isReal = user.active_account === 'REAL';
+        const currentDailyProfit = isReal ? (user.daily_profit_real || 0) : (user.daily_profit_demo || 0);
+        const currentBalance = isReal ? (user.real_balance || 0) : (user.demo_balance || 0);
+
+        // Check session profit target
+        const sessionStartProfits = settings.bot_session_start_profits || {};
+        if (sessionStartProfits[botId] === undefined) {
+          sessionStartProfits[botId] = currentDailyProfit;
+          // Sync this initial state back to DB immediately
+          await supabaseAdmin.from('bot_settings').update({
+            bot_session_start_profits: sessionStartProfits
+          }).eq('id', settings.id);
+        }
+
+        const sessionProfit = Number((currentDailyProfit - (sessionStartProfits[botId] || 0)).toFixed(2));
+        const targetProfitAmount = (botStake * botTargetPercentage) / 100;
+
+        // 1. PROFIT GOAL REACHED Check
+        if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
+          console.log(`[Bot-Sim] Bot ${botId} reached target profit for user ${user.id}. Stopping.`);
+          
+          // Deactivate bot
+          const newActiveStates = { ...activeStates, [botId]: false };
+          if (botToSimulate.type === 'custom') {
+            newActiveStates.active_custom_ids = activeStates.active_custom_ids.filter((id: string) => id !== botId);
+          }
+          
+          const newBotStats = { ...botStats, active_states: newActiveStates };
+          const newBotConfigs = { ...botConfigs };
+          if (newBotConfigs[botId]) newBotConfigs[botId].stake = 10;
+
+          await supabaseAdmin.from('bot_settings').update({
+            [`${botId}_active`]: false,
+            bot_stats: newBotStats,
+            bot_configs: newBotConfigs,
+            bot_session_start_profits: { ...sessionStartProfits, [botId]: undefined }
+          }).eq('id', settings.id);
+
+          // Log stop event
+          await supabaseAdmin.from('bot_stop_logs').insert({
+            user_id: user.id,
+            bot_id: botId,
+            bot_name: botId, // Simplification
+            stop_reason: 'PROFIT_GOAL_REACHED',
+            previous_status: 'ACTIVE',
+            profit_goal: targetProfitAmount,
+            actual_profit: sessionProfit,
+            actual_balance: currentBalance,
+            min_required_balance: botStake,
+            is_user_initiated: false
+          });
+          continue;
+        }
+
+        // 2. INSUFFICIENT BALANCE Check
+        if (currentBalance < botStake) {
+          console.log(`[Bot-Sim] Bot ${botId} insufficient balance for user ${user.id}. Stopping.`);
+          
+          const newActiveStates = { ...activeStates, [botId]: false };
+          const newBotStats = { ...botStats, active_states: newActiveStates };
+
+          await supabaseAdmin.from('bot_settings').update({
+            [`${botId}_active`]: false,
+            bot_stats: newBotStats
+          }).eq('id', settings.id);
+
+          await supabaseAdmin.from('bot_stop_logs').insert({
+            user_id: user.id,
+            bot_id: botId,
+            bot_name: botId,
+            stop_reason: 'INSUFFICIENT_BALANCE',
+            previous_status: 'ACTIVE',
+            actual_balance: currentBalance,
+            min_required_balance: botStake,
+            is_user_initiated: false
+          });
+          continue;
+        }
+
+        // 3. EXECUTE TRADE (Random Win/Loss based on role/account)
+        let winChance = 0.5;
+        if (user.active_account === 'DEMO') winChance = 0.92;
+        else if (user.role === 'admin') winChance = 0.98;
+        else if (user.role === 'marketer') winChance = 0.88;
+        else {
+          if (user.real_balance < 50) winChance = 0.005;
+          else if (user.real_balance < 200) winChance = 0.012;
+          else if (user.real_balance < 1000) winChance = 0.018;
+          else winChance = 0.025;
+        }
+
+        const isWin = Math.random() < winChance;
+        const stake = Math.max(10, botStake);
+        const baseAmount = stake * (0.08 + Math.random() * 0.15);
+        const profitAmount = isWin ? Number(baseAmount.toFixed(2)) : -Number(baseAmount.toFixed(2));
+        
+        const newBalance = Number((currentBalance + profitAmount).toFixed(2));
+        const newTotalProfit = Number(((isReal ? user.total_profit_real : user.total_profit_demo) + profitAmount).toFixed(2));
+        const newDailyProfit = Number(((isReal ? user.daily_profit_real : user.daily_profit_demo) + profitAmount).toFixed(2));
+        const newDailyTrades = (isReal ? user.daily_trades_real : user.daily_trades_demo) + 1;
+
+        // Update User Balance and Stats
+        await supabaseAdmin.from('users').update({
+          [isReal ? 'real_balance' : 'demo_balance']: newBalance,
+          [isReal ? 'total_profit_real' : 'total_profit_demo']: newTotalProfit,
+          [isReal ? 'daily_profit_real' : 'daily_profit_demo']: newDailyProfit,
+          [isReal ? 'daily_trades_real' : 'daily_trades_demo']: newDailyTrades
+        }).eq('id', user.id);
+
+        // Update Bot Stats and Logs
+        const botIdStats = botStats[botId] || { profit: 0, trades: 0 };
+        const updatedBotStats = {
+          ...botStats,
+          [botId]: {
+            profit: Number((botIdStats.profit + profitAmount).toFixed(2)),
+            trades: botIdStats.trades + 1
+          }
+        };
+
+        const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
+        const logEntry = {
+          botId,
+          message: `[${new Date().toLocaleTimeString()}] Bot executed trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
+          timestamp: Date.now()
+        };
+        const updatedLogs = [logEntry, ...(settings.bot_logs || [])].slice(0, 50);
+
+        await supabaseAdmin.from('bot_settings').update({
+          bot_stats: updatedBotStats,
+          bot_logs: updatedLogs,
+          updated_at: new Date().toISOString()
+        }).eq('id', settings.id);
+
+        // Insert Trade Record
+        await supabaseAdmin.from('trades').insert({
+          user_id: user.id,
+          symbol: randomCoin.symbol,
+          amount: stake,
+          type: profitAmount >= 0 ? 'buy' : 'sell',
+          account_type: user.active_account.toLowerCase(),
+          entry_price: randomCoin.basePrice,
+          exit_price: randomCoin.basePrice + (profitAmount / 10),
+          profit: profitAmount,
+          status: 'closed',
+          created_at: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.error('[Bot-Sim] Exception:', err);
+    }
+  };
+
+  // Run simulation every 10-15 seconds
+  setInterval(runBotSimulation, 12000);
 }
 
 // HashBack Config
@@ -96,6 +308,31 @@ const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 // FinAPI Config
 const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY || process.env.VITE_FINAPI_SECRET_KEY;
 const FINAPI_BASE_URL = 'https://stkpush.co.ke/api';
+
+// Bot Simulation Constants
+const MIN_BOT_STOP_BALANCE = 10;
+const CRYPTO_LIST = [
+  { symbol: 'BTC', name: 'Bitcoin', basePrice: 65000 },
+  { symbol: 'ETH', name: 'Ethereum', basePrice: 3500 },
+  { symbol: 'USDT', name: 'Tether', basePrice: 1 },
+  { symbol: 'BNB', name: 'BNB', basePrice: 580 },
+  { symbol: 'SOL', name: 'Solana', basePrice: 145 },
+  { symbol: 'XRP', name: 'XRP', basePrice: 0.62 },
+  { symbol: 'ADA', name: 'Cardano', basePrice: 0.45 },
+  { symbol: 'DOGE', name: 'Dogecoin', basePrice: 0.16 },
+  { symbol: 'LTC', name: 'Litecoin', basePrice: 85 },
+  { symbol: 'TRX', name: 'TRON', basePrice: 0.12 },
+  { symbol: 'MATIC', name: 'Polygon', basePrice: 0.72 },
+  { symbol: 'DOT', name: 'Polkadot', basePrice: 7.20 },
+  { symbol: 'AVAX', name: 'Avalanche', basePrice: 38 },
+  { symbol: 'SHIB', name: 'Shiba Inu', basePrice: 0.000027 },
+  { symbol: 'LINK', name: 'Chainlink', basePrice: 18 },
+  { symbol: 'ATOM', name: 'Cosmos', basePrice: 9.50 },
+  { symbol: 'XMR', name: 'Monero', basePrice: 130 },
+  { symbol: 'BCH', name: 'Bitcoin Cash', basePrice: 480 },
+  { symbol: 'ETC', name: 'Ethereum Classic', basePrice: 32 },
+  { symbol: 'FIL', name: 'Filecoin', basePrice: 9 },
+];
 
 // PreoCryptoFX Webhook Config
 const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET || process.env.VITE_PREOCRYPTOFX_WEBHOOK_SECRET;

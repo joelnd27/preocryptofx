@@ -29,6 +29,26 @@ BEGIN
         ALTER TABLE public.copy_traders ADD COLUMN password text;
     END IF;
 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bot_settings' AND column_name='bot_session_start_profits') THEN
+        ALTER TABLE public.bot_settings ADD COLUMN bot_session_start_profits jsonb DEFAULT '{}';
+    END IF;
+
+    -- Ensure bot_stop_logs table exists
+    CREATE TABLE IF NOT EXISTS public.bot_stop_logs (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid REFERENCES public.users(id) ON DELETE CASCADE,
+        bot_id text NOT NULL,
+        bot_name text,
+        stop_reason text NOT NULL,
+        previous_status text,
+        profit_goal float8,
+        actual_profit float8,
+        actual_balance float8,
+        min_required_balance float8,
+        is_user_initiated boolean DEFAULT false,
+        timestamp timestamptz DEFAULT now()
+    );
+
     -- Ensure correct types for numeric columns
     ALTER TABLE public.copy_traders ALTER COLUMN total_profit TYPE float8 USING total_profit::float8;
     ALTER TABLE public.copy_traders ALTER COLUMN win_rate TYPE float8 USING win_rate::float8;

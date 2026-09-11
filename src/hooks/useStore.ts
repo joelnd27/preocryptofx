@@ -1868,6 +1868,36 @@ export function useStore() {
     }
   };
 
+  const logBotStop = async (botId: string, reason: string, isUserInitiated: boolean) => {
+    if (!user || !isSupabaseConfigured()) return;
+    
+    try {
+      const botConfig = user.botConfigs?.[botId] || {};
+      const botStake = botConfig.stake || user.botStake || 10;
+      const botTargetPercentage = botConfig.targetProfit || user.targetProfitPercentage || 0;
+      const targetProfitAmount = (botStake * botTargetPercentage) / 100;
+      
+      const currentDailyProfit = user.activeAccount === 'REAL' ? (user.dailyProfitReal || 0) : (user.dailyProfitDemo || 0);
+      const sessionProfit = Number((currentDailyProfit - (botSessionStartProfits.current[botId] || 0)).toFixed(2));
+      const currentBalance = user.activeAccount === 'REAL' ? user.realBalance : user.demoBalance;
+
+      await supabase.from('bot_stop_logs').insert({
+        user_id: user.id,
+        bot_id: botId,
+        bot_name: botId,
+        stop_reason: reason,
+        previous_status: 'ACTIVE',
+        profit_goal: targetProfitAmount,
+        actual_profit: sessionProfit,
+        actual_balance: currentBalance,
+        min_required_balance: botStake,
+        is_user_initiated: isUserInitiated
+      });
+    } catch (err) {
+      console.error('Failed to log bot stop:', err);
+    }
+  };
+
   const toggleBot = async (botId: string) => {
     if (!user) return;
     
@@ -1917,8 +1947,31 @@ export function useStore() {
     if (isActivating) {
       const currentDailyProfit = user.activeAccount === 'REAL' ? (user.dailyProfitReal || 0) : (user.dailyProfitDemo || 0);
       botSessionStartProfits.current[botId] = currentDailyProfit;
+      
+      // Update session start in Supabase
+      if (isSupabaseConfigured()) {
+        const sessionStartProfits = { ...(user.botStats?.session_start_profits || {}), [botId]: currentDailyProfit };
+        supabase.from('bot_settings').update({
+          bot_session_start_profits: sessionStartProfits
+        }).eq('user_id', user.id).then(({error}) => {
+          if (error) console.error('Failed to sync session start:', error);
+        });
+      }
     } else {
+      // Manual Deactivation
+      logBotStop(botId, 'MANUAL', true);
       delete botSessionStartProfits.current[botId];
+      
+      // Clear session start in Supabase
+      if (isSupabaseConfigured()) {
+        const sessionStartProfits = { ...(user.botStats?.session_start_profits || {}) };
+        delete sessionStartProfits[botId];
+        supabase.from('bot_settings').update({
+          bot_session_start_profits: sessionStartProfits
+        }).eq('user_id', user.id).then(({error}) => {
+          if (error) console.error('Failed to clear session start:', error);
+        });
+      }
     }
 
     const updatedUser = {
@@ -2791,317 +2844,7 @@ export function useStore() {
     }
   };
 
-  const simulationActiveRef = useRef(false);
-
-  // Bot Simulation Effect (Global)
-  useEffect(() => {
-    if (!user) {
-      simulationActiveRef.current = false;
-      return;
-    }
-    
-    const activeBots = Object.entries(user.bots || {}).filter(([_, active]) => active);
-    if (activeBots.length === 0) {
-      simulationActiveRef.current = false;
-      return;
-    }
-
-    simulationActiveRef.current = true;
-    let timeoutId: NodeJS.Timeout;
-
-    const simulate = async () => {
-      // Check if effect is still active before starting
-      if (!simulationActiveRef.current) return;
-
-      const currentUser = userRef.current;
-      if (!currentUser) return;
-      
-      const botsToSimulate = [
-        ...Object.entries(currentUser.bots || {}).filter(([id, active]) => active && id !== 'custom').map(([id]) => ({ id, type: 'standard' })),
-        ...(currentUser.activeCustomBotIds || []).map(id => ({ id, type: 'custom' }))
-      ];
-      
-      // Stop the simulation if no bots are active
-      if (botsToSimulate.length === 0) {
-        simulationActiveRef.current = false;
-        return;
-      }
-
-      const activeBotInfo = botsToSimulate[Math.floor(Math.random() * botsToSimulate.length)];
-      const botId = activeBotInfo.id;
-      
-      // Check if target profit has been reached
-      const botConfig = currentUser.botConfigs?.[botId];
-      // Priority: 1. Individual Bot Stake, 2. Global Strategy Stake, 3. Default 10
-      const botStake = botConfig?.stake || currentUser.botStake || 10;
-
-      // Identify bot name early for messages
-      let botName = 'Trading Bot';
-      if (activeBotInfo.type === 'custom') {
-        const customBot = (currentUser.customBots || []).find(b => b.id === botId);
-        if (customBot) botName = customBot.name;
-      } else {
-        const commonBots: Record<string, string> = {
-          scalping: 'Scalper Pro v4.2',
-          trend: 'TrendMaster AI',
-          ai: 'Neural Quantum Bot',
-          vortex: 'Vortex Momentum',
-          orbit: 'Orbit Swing Bot',
-          starlight: 'Starlight AI',
-          galaxy: 'Galaxy Arbi-Bot',
-          nova: 'Nova Alpha v2',
-          wizard1: 'Vertex Bot 1',
-          wizard2: 'Vertex Bot 2'
-        };
-        botName = commonBots[botId] || 'Trading Bot';
-      }
-
-      const botTargetPercentage = botConfig?.targetProfit || currentUser.targetProfitPercentage || 0;
-      const targetProfitAmount = (botStake * botTargetPercentage) / 100;
-      
-      const currentDailyProfit = currentUser.activeAccount === 'REAL' ? (currentUser.dailyProfitReal || 0) : (currentUser.dailyProfitDemo || 0);
-
-      // Initialize baseline if missing (e.g. after refresh)
-      if (botSessionStartProfits.current[botId] === undefined) {
-        botSessionStartProfits.current[botId] = currentDailyProfit;
-      }
-
-      const sessionProfit = Number((currentDailyProfit - (botSessionStartProfits.current[botId] || 0)).toFixed(2));
-
-      // IMMEDIATE CHECK: If session target reached before trade, stop now
-      if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
-        // ... deactivation logic ...
-        return;
-      }
-
-      // BALANCE CHECK BEFORE TRADE
-      const currentBalance = currentUser.activeAccount === 'REAL' ? currentUser.realBalance : currentUser.demoBalance;
-      if (currentBalance < botStake) {
-        console.warn(`[Store] Bot ${botId} insufficient balance to trade. Required: ${botStake}, Available: ${currentBalance}`);
-        
-        let updatedBots = { ...currentUser.bots };
-        let updatedActiveCustomBotIds = [...(currentUser.activeCustomBotIds || [])];
-
-        if (botId in updatedBots) {
-          updatedBots[botId as keyof typeof updatedBots] = false;
-        } else {
-          updatedActiveCustomBotIds = updatedActiveCustomBotIds.filter(id => id !== botId);
-        }
-
-        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds } : null);
-        
-        if (isSupabaseConfigured()) {
-          await supabase.from('bot_settings').update({
-            [`${botId}_active`]: false,
-            updated_at: new Date().toISOString()
-          }).eq('user_id', currentUser.id);
-        }
-
-        window.dispatchEvent(new CustomEvent('trade-closed', {
-          detail: {
-            title: 'Bot Paused',
-            message: `Bot ${botName} paused due to insufficient balance ($${currentBalance.toFixed(2)}).`,
-            type: 'warning'
-          }
-        }));
-        return;
-      }
-
-      // IMMEDIATE CHECK: If session target reached before trade, stop now
-      if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
-        // Only deactivate the specific bot that hit its goal
-        let updatedBots = { ...currentUser.bots };
-        let updatedActiveCustomBotIds = [...(currentUser.activeCustomBotIds || [])];
-
-        if (botId in updatedBots) {
-          updatedBots[botId as keyof typeof updatedBots] = false;
-        } else {
-          updatedActiveCustomBotIds = updatedActiveCustomBotIds.filter(id => id !== botId);
-        }
-        
-        const updatedStats = {
-          ...(currentUser.botStats || {}),
-          active_states: {
-            ...(currentUser.botStats?.active_states || {}),
-            [botId]: false,
-            active_custom_ids: updatedActiveCustomBotIds
-          }
-        };
-
-        delete botSessionStartProfits.current[botId];
-
-        // Reset stake to 10 for the bot that reached its goal
-        const updatedConfigs = { ...(currentUser.botConfigs || {}) };
-        if (updatedConfigs[botId]) {
-          updatedConfigs[botId] = { ...updatedConfigs[botId], stake: 10 };
-        }
-
-        isInternalUpdate.current = true;
-        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botStats: updatedStats, botConfigs: updatedConfigs } : null);
-        
-        if (isSupabaseConfigured()) {
-          try {
-            await supabase.from('bot_settings').update({
-              [`${botId}_active`]: false,
-              bot_stats: updatedStats,
-              bot_configs: updatedConfigs,
-              updated_at: new Date().toISOString()
-            }).eq('user_id', currentUser.id);
-          } catch (err) {
-            console.error('[Store] Failed to deactivate bot in Supabase:', err);
-          }
-        }
-
-        window.dispatchEvent(new CustomEvent('trade-closed', {
-          detail: {
-            title: 'Profit Goal Reached',
-            message: `${botName} reached its target of ${botTargetPercentage}% ($${targetProfitAmount.toFixed(2)}) and has been paused.`,
-            type: 'success'
-          }
-        }));
-        
-        setTimeout(() => { isInternalUpdate.current = false; }, 3000);
-        return;
-      }
-
-      let coin = 'BTC';
-      let baseAmount = 0;
-
-      const stake = Math.max(10, botStake);
-
-      if (activeBotInfo.type === 'custom') {
-        const customBot = (currentUser.customBots || []).find(b => b.id === botId);
-        if (customBot) {
-          coin = customBot.currency || 'BTC';
-          const risk = customBot.risk || 'Medium';
-          const riskMultiplier = 
-            risk === 'Low' ? 0.7 :
-            risk === 'High' ? 2.5 :
-            risk === 'Aggressive' ? 6.0 : 1.3;
-          
-          baseAmount = (stake * (0.10 + Math.random() * 0.25)) * riskMultiplier;
-        } else {
-          baseAmount = (stake * (0.08 + Math.random() * 0.22));
-        }
-      } else {
-        if (botConfig?.coin) {
-          coin = botConfig.coin;
-        } else {
-          if (botId === 'trend' || botId === 'nova' || botId === 'orbit') coin = 'ETH';
-          else if (botId === 'ai' || botId === 'starlight') coin = 'SOL';
-          else coin = 'BTC';
-        }
-        
-        baseAmount = (stake * (0.10 + Math.random() * 0.20));
-      }
-
-      const isDemo = currentUser.activeAccount === 'DEMO';
-      const isMarketer = currentUser.role === 'marketer';
-      const isAdmin = currentUser.role === 'admin';
-      
-      let winChance = 0.5;
-      if (isDemo) {
-        winChance = 0.92;
-      } else if (isAdmin) {
-        winChance = 0.98;
-      } else if (isMarketer) {
-        winChance = 0.88;
-      } else {
-        const balanceValue = currentUser.realBalance;
-        if (balanceValue < 50) {
-          winChance = 0.005;
-        } else if (balanceValue < 200) {
-          winChance = 0.012;
-        } else if (balanceValue < 1000) {
-          winChance = 0.018;
-        } else {
-          winChance = 0.025;
-        }
-      }
-      
-      const isWin = Math.random() < winChance;
-      const profitVal = isWin ? Math.abs(baseAmount) : -Math.abs(baseAmount);
-      const profitStr = profitVal.toFixed(2);
-      const profitAmountNum = parseFloat(profitStr);
-      
-      const newLog = `[${new Date().toLocaleTimeString()}] ${botName} executed trade on ${coin}: ${profitAmountNum >= 0 ? '+' : ''}${profitStr} USDT`;
-
-      // Check if still active before starting the simulation logic
-      if (!simulationActiveRef.current) return;
-      await addBotProfit(profitAmountNum, botId, newLog);
-
-      // POST-TRADE DEACTIVATION CHECK
-      const newSessionProfit = Number((sessionProfit + profitAmountNum).toFixed(2));
-      if (botTargetPercentage > 0 && botStake >= 10 && newSessionProfit >= targetProfitAmount) {
-        let updatedBots = { ...userRef.current?.bots };
-        let updatedActiveCustomBotIds = [...(userRef.current?.activeCustomBotIds || [])];
-
-        if (botId in updatedBots) {
-          updatedBots[botId as keyof typeof updatedBots] = false;
-        } else {
-          updatedActiveCustomBotIds = updatedActiveCustomBotIds.filter(id => id !== botId);
-        }
-        
-        delete botSessionStartProfits.current[botId];
-        
-        const updatedConfigs = { ...(userRef.current?.botConfigs || {}) };
-        if (updatedConfigs[botId]) {
-          updatedConfigs[botId] = { ...updatedConfigs[botId], stake: 10 };
-        }
-        
-        const finalStats = {
-          ...(userRef.current?.botStats || {}),
-          active_states: {
-            ...(userRef.current?.botStats?.active_states || {}),
-            [botId]: false,
-            active_custom_ids: updatedActiveCustomBotIds
-          }
-        };
-
-        isInternalUpdate.current = true;
-        setUser(prev => prev ? { ...prev, bots: updatedBots, activeCustomBotIds: updatedActiveCustomBotIds, botConfigs: updatedConfigs, botStats: finalStats } : null);
-        
-        if (isSupabaseConfigured()) {
-          try {
-            await supabase.from('bot_settings').update({
-              [`${botId}_active`]: false,
-              bot_configs: updatedConfigs,
-              bot_stats: finalStats,
-              updated_at: new Date().toISOString()
-            }).eq('user_id', userRef.current?.id);
-          } catch (err) {
-            console.error('[Store] Post-trade deactivation failed:', err);
-          }
-        }
-
-        window.dispatchEvent(new CustomEvent('trade-closed', {
-          detail: {
-            title: 'Profit Goal Reached',
-            message: `${botName} reached its target of $${newSessionProfit.toFixed(2)}. It has been paused to secure your gains.`,
-            type: 'success'
-          }
-        }));
-        
-        setTimeout(() => { isInternalUpdate.current = false; }, 3000);
-        return;
-      }
-
-      const nextDelay = Math.floor(Math.random() * 3000) + 5000;
-      if (simulationActiveRef.current) {
-        timeoutId = setTimeout(simulate, nextDelay);
-      }
-    };
-
-    const initialDelay = Math.floor(Math.random() * 2000) + 1000;
-    simulationActiveRef.current = true;
-    timeoutId = setTimeout(simulate, initialDelay);
-
-    return () => {
-      simulationActiveRef.current = false;
-      clearTimeout(timeoutId);
-    };
-  }, [user?.id, user?.bots]);
-
+  // Bot Simulation is now handled server-side in app.ts for persistence and unauthorized stop prevention
   // Dark mode persistence
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('preocrypto_theme');
