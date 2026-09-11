@@ -190,15 +190,11 @@ if (!supabaseAdmin) {
         for (const botToSimulate of activeBots) {
           const botId = botToSimulate.id;
           
-          // Use a random execution filter to ensure activity but not overwhelming the DB
-          // Increased frequency (reduced skip chance from 0.4 to 0.1)
-          const skipChance = 0.1;
-          const isHeartbeatCycle = Math.random() < 0.2; // 20% chance to log a heartbeat if no trade
+          // Removed skipChance filter to ensure bots execute immediately and continuously.
+          // Heartbeat logs will be added without blocking the trade execution.
+          const showHeartbeat = Math.random() < 0.15; 
 
-          if (Math.random() > (1 - skipChance)) {
-             // Continue to trade execution
-          } else if (isHeartbeatCycle) {
-             // Log a heartbeat message so users see activity
+          if (showHeartbeat) {
              const heartbeats = [
                "Analyzing neural patterns...",
                "Scanning liquidity pools...",
@@ -209,7 +205,6 @@ if (!supabaseAdmin) {
              ];
              const message = `[${new Date().toLocaleTimeString()}] ${heartbeats[Math.floor(Math.random() * heartbeats.length)]}`;
              
-             // Update logs periodically
              const { data: latestLogs } = await supabaseAdmin.from('bot_settings').select('bot_logs').eq('user_id', user.id).single();
              if (latestLogs) {
                const updatedLogs = [
@@ -218,9 +213,6 @@ if (!supabaseAdmin) {
                ].slice(0, 50);
                await supabaseAdmin.from('bot_settings').update({ bot_logs: updatedLogs }).eq('user_id', user.id);
              }
-             continue;
-          } else {
-             continue;
           }
 
           console.log(`[Bot-Sim] TRADE_ATTEMPT: user ${user.id} bot ${botId}`);

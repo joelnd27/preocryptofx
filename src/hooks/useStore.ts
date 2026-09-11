@@ -612,6 +612,7 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           botStake: Number(botSettingsData?.bot_stake || 10),
           targetProfitPercentage: Number(botSettingsData?.target_profit_percentage || 0),
+          botSessionStartProfits: botSettingsData?.bot_session_start_profits || {},
           referrals: fetchedReferrals,
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           copyingTraderId: userData.copying_trader_id,
@@ -1965,15 +1966,17 @@ export function useStore() {
     }
 
     // Initialize session profit tracking when bot is turned ON
+    const updatedSessionStartProfits = { ...(user.botSessionStartProfits || {}) };
+    
     if (isActivating) {
       const currentDailyProfit = user.activeAccount === 'REAL' ? (user.dailyProfitReal || 0) : (user.dailyProfitDemo || 0);
       botSessionStartProfits.current[botId] = currentDailyProfit;
+      updatedSessionStartProfits[botId] = currentDailyProfit;
       
       // Update session start in Supabase
       if (isSupabaseConfigured()) {
-        const sessionStartProfits = { ...(user.botStats?.session_start_profits || {}), [botId]: currentDailyProfit };
         supabase.from('bot_settings').update({
-          bot_session_start_profits: sessionStartProfits
+          bot_session_start_profits: updatedSessionStartProfits
         }).eq('user_id', user.id).then(({error}) => {
           if (error) console.error('Failed to sync session start:', error);
         });
@@ -1982,13 +1985,12 @@ export function useStore() {
       // Manual Deactivation
       logBotStop(botId, 'MANUAL', true);
       delete botSessionStartProfits.current[botId];
+      delete updatedSessionStartProfits[botId];
       
       // Clear session start in Supabase
       if (isSupabaseConfigured()) {
-        const sessionStartProfits = { ...(user.botStats?.session_start_profits || {}) };
-        delete sessionStartProfits[botId];
         supabase.from('bot_settings').update({
-          bot_session_start_profits: sessionStartProfits
+          bot_session_start_profits: updatedSessionStartProfits
         }).eq('user_id', user.id).then(({error}) => {
           if (error) console.error('Failed to clear session start:', error);
         });
@@ -1999,7 +2001,8 @@ export function useStore() {
       ...user,
       bots: updatedBots,
       activeCustomBotIds: updatedActiveCustomBotIds,
-      botConfigs: updatedConfigs
+      botConfigs: updatedConfigs,
+      botSessionStartProfits: updatedSessionStartProfits
     };
 
     const previousUser = { ...user };
