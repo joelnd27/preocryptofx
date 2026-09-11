@@ -301,7 +301,7 @@ if (!supabaseAdmin) {
           const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
           const logEntry = {
             botId,
-            message: `[${new Date().toLocaleTimeString()}] Bot executed trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
+            message: `Bot executed trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
             timestamp: new Date().toISOString()
           };
           const updatedLogs = [logEntry, ...(latestSettings.bot_logs || [])].slice(0, 50);

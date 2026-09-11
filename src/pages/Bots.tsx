@@ -949,6 +949,9 @@ export default function Bots() {
                 logs.map((log, i) => {
                   const logMessage = typeof log === 'string' ? log : log.message;
                   const logKey = typeof log === 'string' ? log + i : (log.timestamp || Date.now()) + i;
+                  const logTimestamp = typeof log === 'object' && log.timestamp 
+                    ? `[${new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}] `
+                    : '';
                   
                   return (
                     <motion.div
@@ -970,7 +973,7 @@ export default function Bots() {
                           logMessage.includes("+") ? "bg-green-500" : logMessage.includes("-") ? "bg-red-500" : "bg-blue-500"
                         )} />
                         <p className="text-[11px] font-bold tracking-tight">
-                          {logMessage}
+                          <span className="opacity-50">{logTimestamp}</span>{logMessage}
                         </p>
                       </div>
                     </motion.div>
@@ -1376,6 +1379,9 @@ export default function Bots() {
                       ) : (
                         logs.map((log, i) => {
                           const logMessage = typeof log === 'string' ? log : log.message;
+                          const logTimestamp = typeof log === 'object' && log.timestamp 
+                            ? `[${new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}] `
+                            : '';
                           return (
                             <div key={i} className={cn(
                               "p-2.5 rounded-lg border font-mono text-[9px] leading-relaxed transition-all shadow-sm",
@@ -1385,7 +1391,7 @@ export default function Bots() {
                                   ? "bg-red-500/5 border-red-500/10 text-red-600 dark:text-red-400" 
                                   : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
                             )}>
-                              {logMessage}
+                              <span className="opacity-50">{logTimestamp}</span>{logMessage}
                             </div>
                           );
                         })
