@@ -26,12 +26,14 @@ import {
   Save,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertTriangle
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
 import { CRYPTO_LIST } from '../types';
 import AlertModal from '../components/AlertModal';
+import { supabase } from '../lib/supabase';
 
 interface BotConfig {
   id: string;
@@ -251,6 +253,37 @@ export default function Bots() {
   const [importJson, setImportJson] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [lastStopReason, setLastStopReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchLastStopLog = async () => {
+      if (!user?.id || isSelectedBotActive) {
+        setLastStopReason(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('bot_stop_logs')
+          .select('stop_reason')
+          .eq('user_id', user.id)
+          .eq('bot_id', selectedBot.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (data && !error) {
+          setLastStopReason(data.stop_reason);
+        } else {
+          setLastStopReason(null);
+        }
+      } catch (err) {
+        setLastStopReason(null);
+      }
+    };
+
+    fetchLastStopLog();
+  }, [selectedBot.id, isSelectedBotActive, user?.id]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [alertConfig, setAlertConfig] = useState<{
@@ -833,6 +866,15 @@ export default function Bots() {
                   Threshold: <span className="text-slate-900 dark:text-white">${selectedBot.minDeposit}</span>. Priority signals.
                 </p>
               </div>
+
+              {lastStopReason && !isSelectedBotActive && (
+                <div className="p-2 bg-red-500/5 border border-red-500/10 rounded-lg flex gap-2 items-center">
+                  <AlertTriangle size={10} className="text-red-500 shrink-0" />
+                  <p className="text-[9px] text-red-500 leading-tight font-black">
+                    Last Stopped: <span className="text-slate-900 dark:text-white uppercase tracking-tighter">{lastStopReason.replace(/_/g, ' ')}</span>
+                  </p>
+                </div>
+              )}
 
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
                 <h4 className="text-[9px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500 mb-2">
