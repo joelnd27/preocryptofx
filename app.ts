@@ -227,10 +227,11 @@ if (!supabaseAdmin) {
           }
 
           // Check profit goal (PROFIT_GOAL_REACHED condition)
-          const sessionStartProfits = latestSettings.bot_session_start_profits || {};
+          const sessionStartProfits = botStats.session_start_profits || {};
           if (sessionStartProfits[botId] === undefined) {
             sessionStartProfits[botId] = currentDailyProfit;
-            await supabaseAdmin.from('bot_settings').update({ bot_session_start_profits: sessionStartProfits }).eq('user_id', user.id);
+            const updatedBotStats = { ...botStats, session_start_profits: sessionStartProfits };
+            await supabaseAdmin.from('bot_settings').update({ bot_stats: updatedBotStats }).eq('user_id', user.id);
           }
 
           const sessionProfit = Number((currentDailyProfit - (sessionStartProfits[botId] || 0)).toFixed(2));
@@ -359,7 +360,7 @@ if (!supabaseAdmin) {
     const botStats = currentSettings.bot_stats || {};
     const activeStates = botStats.active_states || {};
     const botConfigs = botStats.configs || {};
-    const sessionStartProfits = { ...(currentSettings.bot_session_start_profits || {}) };
+    const sessionStartProfits = { ...(botStats.session_start_profits || {}) };
 
     // 2. Prepare deactivation
     const newActiveStates = { ...activeStates, [botId]: false };
@@ -373,18 +374,18 @@ if (!supabaseAdmin) {
       newBotConfigs[botId] = { ...newBotConfigs[botId], stake: 10 };
     }
     
-    const newBotStats = { 
-      ...botStats, 
-      active_states: newActiveStates,
-      configs: newBotConfigs
-    };
-
     // Remove from session tracking
     delete sessionStartProfits[botId];
 
+    const newBotStats = { 
+      ...botStats, 
+      active_states: newActiveStates,
+      configs: newBotConfigs,
+      session_start_profits: sessionStartProfits
+    };
+
     const updatePayload: any = {
       bot_stats: newBotStats,
-      bot_session_start_profits: sessionStartProfits,
       updated_at: new Date().toISOString()
     };
 
@@ -398,25 +399,6 @@ if (!supabaseAdmin) {
     const { error: stopErr } = await supabaseAdmin.from('bot_settings').update(updatePayload).eq('user_id', userId);
     if (stopErr) {
       console.error(`[Bot-Sim] Error during atomic stop update:`, stopErr);
-    }
-
-    // 4. Log the termination
-    const { error: logErr } = await supabaseAdmin.from('bot_stop_logs').insert({
-      user_id: userId,
-      bot_id: botId,
-      bot_name: botId,
-      stop_reason: reason,
-      previous_status: 'ACTIVE',
-      profit_goal: goal,
-      actual_profit: currentProfit,
-      actual_balance: balance,
-      min_required_balance: stake,
-      is_user_initiated: false,
-      timestamp: new Date().toISOString()
-    });
-    
-    if (logErr) {
-      console.error(`[Bot-Sim] Error inserting stop log:`, logErr);
     }
   }
 

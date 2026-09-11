@@ -83,7 +83,6 @@ export interface User {
   botLogs?: (string | BotLog)[];
   botStake?: number;
   targetProfitPercentage?: number;
-  botSessionStartProfits?: Record<string, number>;
   referralCode: string;
   copyingTraderId?: string;
   referredBy?: string;

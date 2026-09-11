@@ -254,44 +254,7 @@ export default function Bots() {
   const [importJson, setImportJson] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [lastStopReason, setLastStopReason] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchLastStopLog = async () => {
-      if (!user?.id || isSelectedBotActive) {
-        setLastStopReason(null);
-        return;
-      }
-
-      try {
-        console.log(`[Bot-Flow] Fetching last stop log for ${selectedBot.id}...`);
-        const { data, error } = await supabase
-          .from('bot_stop_logs')
-          .select('stop_reason')
-          .eq('user_id', user.id)
-          .eq('bot_id', selectedBot.id)
-          .order('timestamp', { ascending: false })
-          .limit(1);
-
-        if (error) {
-          console.warn('[Bot-Flow] Failed to fetch stop log:', error.message, error.details);
-          setLastStopReason(null);
-          return;
-        }
-
-        if (data && data.length > 0 && !error) {
-          setLastStopReason(data[0].stop_reason);
-        } else {
-          setLastStopReason(null);
-        }
-      } catch (err) {
-        console.warn('Silent fail for fetchLastStopLog:', err);
-        setLastStopReason(null);
-      }
-    };
-
-    fetchLastStopLog();
-  }, [selectedBot.id, isSelectedBotActive, user?.id]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [alertConfig, setAlertConfig] = useState<{
@@ -877,14 +840,7 @@ export default function Bots() {
                 </p>
               </div>
 
-              {lastStopReason && typeof lastStopReason === 'string' && !isSelectedBotActive && (
-                <div className="p-2 bg-red-500/5 border border-red-500/10 rounded-lg flex gap-2 items-center">
-                  <AlertTriangle size={10} className="text-red-500 shrink-0" />
-                  <p className="text-[9px] text-red-500 leading-tight font-black">
-                    Last Stopped: <span className="text-slate-900 dark:text-white uppercase tracking-tighter">{lastStopReason.replace(/_/g, ' ')}</span>
-                  </p>
-                </div>
-              )}
+
 
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
                 <h4 className="text-[9px] font-black flex items-center gap-2 uppercase tracking-widest text-slate-500 mb-2">
