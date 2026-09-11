@@ -940,7 +940,7 @@ export default function Bots() {
           <div className="flex items-center justify-between mb-5">
             <div className="flex flex-col gap-0.5">
               <h3 className="text-sm font-black flex items-center gap-2 uppercase tracking-widest text-slate-900 dark:text-white">
-                <History size={16} className="text-blue-500" /> {isSelectedBotActive ? 'Activity Log' : 'Bot Logs'}
+                <History size={16} className="text-blue-500" /> BOT LOGS
               </h3>
               {!isSupabaseConfigured() && (
                 <p className="text-[7px] text-red-500 font-black uppercase tracking-tighter">Database Disconnected</p>
@@ -954,18 +954,9 @@ export default function Bots() {
               >
                 <RefreshCw size={12} className={cn(isSelectedBotActive && "animate-spin-slow")} />
               </button>
-              <div className={cn(
-                "flex items-center gap-2 px-2 py-1 rounded-full border",
-                isSelectedBotActive 
-                  ? "bg-green-500/10 border-green-500/20" 
-                  : "bg-blue-500/10 border-blue-500/20"
-              )}>
-                {isSelectedBotActive && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>}
-                <span className={cn(
-                  "text-[9px] font-black uppercase tracking-widest",
-                  isSelectedBotActive ? "text-green-600 dark:text-green-400" : "text-blue-600 dark:text-blue-400"
-                )}>
-                  {isSelectedBotActive ? 'Live' : `${logs.length} entries`}
+              <div className="flex items-center gap-2 px-2 py-1 rounded-full border bg-blue-500/10 border-blue-500/20">
+                <span className="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">
+                  {logs.length} entries
                 </span>
               </div>
             </div>

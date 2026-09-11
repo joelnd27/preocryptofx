@@ -190,31 +190,7 @@ if (!supabaseAdmin) {
         for (const botToSimulate of activeBots) {
           const botId = botToSimulate.id;
           
-          // Removed skipChance filter to ensure bots execute immediately and continuously.
-          // Heartbeat logs will be added without blocking the trade execution.
-          const showHeartbeat = Math.random() < 0.15; 
-
-          if (showHeartbeat) {
-             const heartbeats = [
-               "Analyzing neural patterns...",
-               "Scanning liquidity pools...",
-               "Checking momentum indicators...",
-               "Monitoring volume expansion...",
-               "Neural network evaluating entry...",
-               "Calculating volatility delta..."
-             ];
-             const message = `[${new Date().toLocaleTimeString()}] ${heartbeats[Math.floor(Math.random() * heartbeats.length)]}`;
-             
-             const { data: latestLogs } = await supabaseAdmin.from('bot_settings').select('bot_logs').eq('user_id', user.id).single();
-             if (latestLogs) {
-               const updatedLogs = [
-                 { botId, message, timestamp: Date.now() },
-                 ...(latestLogs.bot_logs || [])
-               ].slice(0, 50);
-               await supabaseAdmin.from('bot_settings').update({ bot_logs: updatedLogs }).eq('user_id', user.id);
-             }
-          }
-
+          // Removed heartbeat logs to increase speed and maintain clean bot logs as requested by user.
           console.log(`[Bot-Sim] TRADE_ATTEMPT: user ${user.id} bot ${botId}`);
 
           const botConfigs = botStats.configs || {};
@@ -445,7 +421,7 @@ if (!supabaseAdmin) {
   }
 
   // Run simulation every 5 seconds
-  setInterval(runBotSimulation, 5000);
+  setInterval(runBotSimulation, 3000);
   runBotSimulation(); // Start immediately
 }
 
