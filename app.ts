@@ -87,37 +87,52 @@ if (!supabaseAdmin) {
   setInterval(() => cleanupStaleTransactions(false), 60 * 1000);
 
   // BOT SIMULATION LOGIC (Backend authoritative)
+  let isSimulationRunning = false;
   const runBotSimulation = async () => {
+    if (isSimulationRunning) return;
+    isSimulationRunning = true;
+
     try {
       if (!supabaseAdmin) return;
 
-      // 1. Get all bot_settings that have at least one active bot
+      console.log('[Bot-Sim] Cycle started...');
+
+      // 1. Get all bot_settings records
+      // We must fetch all because active states for extended bots (starlight, etc)
+      // are stored inside the bot_stats JSONB column and not just the 4 boolean flags.
       const { data: botSettings, error: fetchError } = await supabaseAdmin
         .from('bot_settings')
-        .select('*, users(*)')
-        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
+        .select('*, users(*)');
 
       if (fetchError) {
-        console.error('[Bot-Sim] Error fetching active bots:', fetchError);
+        console.error('[Bot-Sim] Error fetching bot settings:', fetchError);
         return;
       }
 
       if (!botSettings || botSettings.length === 0) return;
 
-      console.log(`[Bot-Sim] Simulating for ${botSettings.length} users...`);
-
+      let activeUserCount = 0;
       for (const settings of botSettings) {
-        const user = settings.users;
+        let user = settings.users;
+        if (Array.isArray(user)) {
+          user = user[0];
+        }
+
         if (!user || user.is_suspended) continue;
 
-        // Determine active bots for this user
+        // Determine ALL active bots for this user
         const botStats = settings.bot_stats || {};
         const activeStates = botStats.active_states || {};
         
         const activeBots: {id: string, type: string}[] = [];
+        
+        // Check Main 4 booleans
         if (settings.scalping_active) activeBots.push({id: 'scalping', type: 'standard'});
         if (settings.trend_active) activeBots.push({id: 'trend', type: 'standard'});
         if (settings.ai_active) activeBots.push({id: 'ai', type: 'standard'});
+        if (settings.custom_active) activeBots.push({id: 'custom', type: 'custom'});
+
+        // Check Extended bots in JSONB
         if (activeStates.vortex) activeBots.push({id: 'vortex', type: 'standard'});
         if (activeStates.orbit) activeBots.push({id: 'orbit', type: 'standard'});
         if (activeStates.starlight) activeBots.push({id: 'starlight', type: 'standard'});
@@ -126,19 +141,22 @@ if (!supabaseAdmin) {
         if (activeStates.wizard1) activeBots.push({id: 'wizard1', type: 'standard'});
         if (activeStates.wizard2) activeBots.push({id: 'wizard2', type: 'standard'});
         
-        if (settings.custom_active && activeStates.active_custom_ids) {
+        if (activeStates.active_custom_ids) {
           activeStates.active_custom_ids.forEach((id: string) => {
-            activeBots.push({id, type: 'custom'});
+            if (!activeBots.some(b => b.id === id)) {
+              activeBots.push({id, type: 'custom'});
+            }
           });
         }
 
         if (activeBots.length === 0) continue;
+        activeUserCount++;
 
         // AUTH DATA: Re-fetch user balance to prevent race conditions within the loop
         const { data: freshUser } = await supabaseAdmin.from('users').select('demo_balance, real_balance, active_account, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo').eq('id', user.id).single();
         if (!freshUser) continue;
 
-        // Pick up to 2 random bots to simulate trades for in this cycle (increased density)
+        // Pick up to 2 random bots to simulate trades for in this cycle
         const botsToExecute = activeBots.sort(() => 0.5 - Math.random()).slice(0, 2);
 
         for (const botToSimulate of botsToExecute) {
@@ -149,9 +167,9 @@ if (!supabaseAdmin) {
           const botStake = botConfig.stake || settings.bot_stake || 10;
           const botTargetPercentage = botConfig.targetProfit || settings.target_profit_percentage || 0;
           
-          // Re-fetch fresh user and settings for each bot in the sub-loop to handle sequential updates correctly
-          const { data: freshUser } = await supabaseAdmin.from('users').select('*').eq('id', user.id).single();
+          // Re-fetch latest settings for each bot in the sub-loop
           const { data: latestSettings } = await supabaseAdmin.from('bot_settings').select('*').eq('id', settings.id).single();
+          const { data: freshUser } = await supabaseAdmin.from('users').select('*').eq('id', user.id).single();
           
           if (!freshUser || !latestSettings) continue;
 
@@ -192,14 +210,16 @@ if (!supabaseAdmin) {
           }
 
           // 3. EXECUTE TRADE
+          console.log(`[Bot-Sim] Executing trade for user ${user.id} bot ${botId} (Stake: ${botStake})`);
+          
           let winChance = 0.5;
           if (freshUser.active_account === 'DEMO') winChance = 0.92;
-          else if (user.role === 'admin') winChance = 0.98;
-          else if (user.role === 'marketer') winChance = 0.88;
+          else if (freshUser.role === 'admin') winChance = 0.98;
+          else if (freshUser.role === 'marketer') winChance = 0.88;
           else {
-            if (freshUser.real_balance < 50) winChance = 0.005;
-            else if (freshUser.real_balance < 200) winChance = 0.012;
-            else if (freshUser.real_balance < 1000) winChance = 0.018;
+            if (currentBalance < 50) winChance = 0.005;
+            else if (currentBalance < 200) winChance = 0.012;
+            else if (currentBalance < 1000) winChance = 0.018;
             else winChance = 0.025;
           }
 
@@ -261,8 +281,11 @@ if (!supabaseAdmin) {
           }
         }
       }
+      console.log(`[Bot-Sim] Cycle finished. Processed ${activeUserCount} active users.`);
     } catch (err) {
       console.error('[Bot-Sim] Exception:', err);
+    } finally {
+      isSimulationRunning = false;
     }
   };
 
@@ -323,6 +346,7 @@ if (!supabaseAdmin) {
 
   // Run simulation every 5 seconds
   setInterval(runBotSimulation, 5000);
+  runBotSimulation(); // Start immediately
 }
 
 // HashBack Config
