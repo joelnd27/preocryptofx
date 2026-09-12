@@ -186,12 +186,13 @@ if (supabaseAdmin) {
       let totalTradesInCycle = 0;
       const currentActiveUsers: string[] = [];
 
-      for (const settings of allSettings) {
+      // Process users in parallel for high-speed trade execution (satisfies 10s interval requirement)
+      await Promise.all(allSettings.map(async (settings) => {
         try {
           let user = settings.users;
           if (Array.isArray(user)) user = user[0];
 
-          if (!user) continue;
+          if (!user) return;
 
           // SPECIAL DEBUG FOR JOSPHAT
           if (user.email === 'josphatndungu1022@gmail.com') {
@@ -229,13 +230,13 @@ if (supabaseAdmin) {
           }
 
           // Skip if no active bots for this user
-          if (activeBots.length === 0) continue;
+          if (activeBots.length === 0) return;
 
           currentActiveUsers.push(user.email || user.id);
           
           if (user.is_suspended) {
             if (simulationCycleCount % 10 === 0) console.log(`[Bot-Sim] User ${user.email} is suspended. Skipping.`);
-            continue;
+            return;
           }
 
           if (activeBots.length > 0 && simulationCycleCount % 5 === 0) {
@@ -287,17 +288,10 @@ if (supabaseAdmin) {
             // 3. Execute Simulated Trade
             // Trades execute every cycle for immediate feedback
             
-            let winChance = 0.55; // Reverted to standard 55% win rate
-            if (user.active_account === 'DEMO') winChance = 0.65;
-            else if (user.role === 'admin') winChance = 0.95;
-            else if (user.role === 'marketer') winChance = 0.85;
-            else {
-              // Standard user logic (reverted to original intended balance-based logic)
-              if (currentBalance < 50) winChance = 0.35; 
-              else if (currentBalance < 200) winChance = 0.45;
-              else if (currentBalance < 1000) winChance = 0.55;
-              else winChance = 0.60;
-            }
+            let winChance = 0.15; // Default for normal users on REAL account (< 20%)
+            if (user.active_account === 'DEMO') winChance = 0.96; // > 95% for all users on DEMO
+            else if (user.role === 'admin') winChance = 0.98;
+            else if (user.role === 'marketer') winChance = 0.86; // > 85% for marketers on REAL
 
             const isWin = Math.random() < winChance;
             const baseProfitPercent = 0.02 + Math.random() * 0.08; // 2% to 10% of stake
@@ -377,7 +371,7 @@ if (supabaseAdmin) {
         } catch (userErr) {
           console.error(`[Bot-Sim] User Loop Error (${settings.user_id}):`, userErr);
         }
-      }
+      }));
       if (totalTradesInCycle > 0) {
         console.log(`[Bot-Sim] CYCLE_COMPLETE: Trades: ${totalTradesInCycle}`);
       }
@@ -463,8 +457,8 @@ if (supabaseAdmin) {
     }
   }
 
-  // Run simulation every 2 seconds
-  setInterval(runBotSimulation, 2000);
+  // Run simulation every 1 second
+  setInterval(runBotSimulation, 1000);
   runBotSimulation(); // Start immediately
 }
 
