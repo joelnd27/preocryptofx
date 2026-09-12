@@ -2018,7 +2018,7 @@ export function useStore() {
         // First check if the record exists to prevent "update 0 rows" silent failure
         const { data: existing, error: fetchErr } = await supabase
           .from('bot_settings')
-          .select('id')
+          .select('user_id')
           .eq('user_id', user.id)
           .maybeSingle();
 
