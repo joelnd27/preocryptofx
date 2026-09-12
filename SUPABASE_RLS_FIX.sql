@@ -1,37 +1,60 @@
--- 1. SCHEMA REPAIR (Ensures the table has all required columns)
--- This fixes the "Could not find column" errors and ensures data consistency
+-- 1. SCHEMA REPAIR (Aggressive fix for all required columns and constraints)
 DO $$ 
 BEGIN
-    -- Ensure copy_traders table exists with correct types
-    CREATE TABLE IF NOT EXISTS public.copy_traders (
-        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-        name text NOT NULL,
-        win_rate float8 DEFAULT 0,
-        total_profit float8 DEFAULT 0,
-        followers integer DEFAULT 0,
-        min_investment float8 DEFAULT 0,
-        description text,
-        status text DEFAULT 'active',
-        is_simulated boolean DEFAULT false,
-        created_by text, -- Changed to text to support 'admin' string
-        created_at timestamptz DEFAULT now()
+    -- USERS Table: Ensure all profit and balance columns exist
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS total_profit_real float8 DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS total_profit_demo float8 DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_profit_real float8 DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_profit_demo float8 DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_trades_real integer DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_trades_demo integer DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS active_account text DEFAULT 'DEMO';
+
+    -- BOT_SETTINGS Table: Transition to single-record-per-user multi-bot schema
+    -- Ensure the table exists first
+    CREATE TABLE IF NOT EXISTS public.bot_settings (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid REFERENCES public.users(id) ON DELETE CASCADE,
+        created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now(),
+        UNIQUE(user_id)
     );
 
-    -- Ensure created_by is text (if table existed with uuid before)
-    ALTER TABLE public.copy_traders ALTER COLUMN created_by TYPE text USING created_by::text;
-
-    -- Add missing columns individually if they don't exist
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='copy_traders' AND column_name='avatar') THEN
-        ALTER TABLE public.copy_traders ADD COLUMN avatar text;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bot_settings' AND column_name='bot_type') THEN
+        ALTER TABLE public.bot_settings ALTER COLUMN bot_type DROP NOT NULL;
+    END IF;
+    
+    -- Fix Unique Constraints
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bot_settings_user_id_bot_type_key') THEN
+        ALTER TABLE public.bot_settings DROP CONSTRAINT bot_settings_user_id_bot_type_key;
+    END IF;
+    
+    -- Ensure user_id is unique so we only have one settings record per user
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bot_settings_user_id_key') THEN
+        ALTER TABLE public.bot_settings ADD CONSTRAINT bot_settings_user_id_key UNIQUE (user_id);
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='copy_traders' AND column_name='password') THEN
-        ALTER TABLE public.copy_traders ADD COLUMN password text;
+    -- Add missing boolean and config columns
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS scalping_active boolean DEFAULT false;
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS trend_active boolean DEFAULT false;
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS ai_active boolean DEFAULT false;
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS custom_active boolean DEFAULT false;
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS bot_stake float8 DEFAULT 10;
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS target_profit_percentage float8 DEFAULT 0;
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS bot_stats jsonb DEFAULT '{}';
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS bot_logs jsonb DEFAULT '[]';
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS bot_session_start_profits jsonb DEFAULT '{}';
+
+    -- TRADES Table: Fix missing columns used in simulation
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trades' AND column_name='symbol') THEN
+        ALTER TABLE public.trades ALTER COLUMN symbol DROP NOT NULL;
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bot_settings' AND column_name='bot_session_start_profits') THEN
-        ALTER TABLE public.bot_settings ADD COLUMN bot_session_start_profits jsonb DEFAULT '{}';
-    END IF;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS coin text;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS price float8;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS timestamp text;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS source text DEFAULT 'MANUAL';
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS account_type text DEFAULT 'DEMO';
 
     -- Ensure bot_stop_logs table exists
     CREATE TABLE IF NOT EXISTS public.bot_stop_logs (
@@ -49,10 +72,22 @@ BEGIN
         timestamp timestamptz DEFAULT now()
     );
 
-    -- Ensure correct types for numeric columns
-    ALTER TABLE public.copy_traders ALTER COLUMN total_profit TYPE float8 USING total_profit::float8;
-    ALTER TABLE public.copy_traders ALTER COLUMN win_rate TYPE float8 USING win_rate::float8;
-    ALTER TABLE public.copy_traders ALTER COLUMN min_investment TYPE float8 USING min_investment::float8;
+    -- Ensure copy_traders table exists with correct types
+    CREATE TABLE IF NOT EXISTS public.copy_traders (
+        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+        name text NOT NULL,
+        win_rate float8 DEFAULT 0,
+        total_profit float8 DEFAULT 0,
+        followers integer DEFAULT 0,
+        min_investment float8 DEFAULT 0,
+        description text,
+        status text DEFAULT 'active',
+        is_simulated boolean DEFAULT false,
+        created_by text,
+        avatar text,
+        password text,
+        created_at timestamptz DEFAULT now()
+    );
 
 END $$;
 
