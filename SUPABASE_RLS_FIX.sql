@@ -104,6 +104,11 @@ GRANT EXECUTE ON FUNCTION public.is_support() TO anon;
 
 -- 3. POLICIES
 
+-- BOT STOP LOGS
+CREATE POLICY "stop_logs_read_self" ON public.bot_stop_logs FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "stop_logs_insert_anyone" ON public.bot_stop_logs FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "stop_logs_admin_all" ON public.bot_stop_logs FOR ALL TO authenticated USING (public.is_admin());
+
 -- USERS
 CREATE POLICY "users_read_all_admin" ON public.users FOR SELECT TO authenticated USING (public.is_admin());
 CREATE POLICY "users_read_self" ON public.users FOR SELECT TO authenticated USING (auth.uid() = id);

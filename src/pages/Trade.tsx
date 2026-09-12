@@ -380,11 +380,12 @@ export default function Trade() {
   const activeTrades = (user?.trades || []).filter(t => t.status === 'OPEN');
 
   const calculateLiveProfit = (trade: TradeType) => {
+    if (!trade) return 0;
     const currentPrice = prices[trade.coin];
     if (!currentPrice) return 0;
     
     // If we have a pre-calculated target profit, we should trend towards it
-    if (trade.targetProfit !== undefined) {
+    if (trade.targetProfit !== undefined && trade.timestamp) {
       const startTime = trade.timestamp;
       const durationMs = (trade.duration || 60) * 1000;
       const elapsed = Date.now() - startTime;

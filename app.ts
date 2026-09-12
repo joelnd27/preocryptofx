@@ -101,9 +101,11 @@ if (!supabaseAdmin) {
       }
 
       // 1. Get ALL bot_settings records
+      // We check all potential active flags
       const { data: allSettings, error: fetchError } = await supabaseAdmin
         .from('bot_settings')
-        .select('*, users(id, email, role, is_suspended, active_account, demo_balance, real_balance, total_profit_demo, total_profit_real, daily_profit_demo, daily_profit_real, daily_trades_demo, daily_trades_real)');
+        .select('*')
+        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
 
       if (fetchError) {
         console.error('[Bot-Sim] Error fetching bot settings:', fetchError);
@@ -111,17 +113,28 @@ if (!supabaseAdmin) {
       }
 
       if (!allSettings || allSettings.length === 0) {
+        if (Math.random() > 0.9) console.log('[Bot-Sim] NO_ACTIVE_BOTS_FOUND');
         return;
       }
+
+      console.log(`[Bot-Sim] Processing ${allSettings.length} active users.`);
 
       let totalTradesInCycle = 0;
 
       for (const settings of allSettings) {
         try {
-          let user = settings.users;
-          if (Array.isArray(user)) user = user[0];
-          
-          if (!user || user.is_suspended) continue;
+          console.log(`[Bot-Sim] Checking user ${settings.user_id}...`);
+          // Fetch user details for this setting manually to avoid join issues
+          const { data: user, error: userError } = await supabaseAdmin
+            .from('users')
+            .select('id, email, role, is_suspended, active_account, demo_balance, real_balance, total_profit_demo, total_profit_real, daily_profit_demo, daily_profit_real, daily_trades_demo, daily_trades_real')
+            .eq('id', settings.user_id)
+            .single();
+
+          if (userError || !user || user.is_suspended) {
+            console.log(`[Bot-Sim] User ${settings.user_id} skip: error=${!!userError}, suspended=${user?.is_suspended}`);
+            continue;
+          }
 
         // Determine ALL active bots for this user
         const botStats = settings.bot_stats || {};
@@ -197,10 +210,10 @@ if (!supabaseAdmin) {
           else if (user.role === 'admin') winChance = 0.98;
           else if (user.role === 'marketer') winChance = 0.88;
           else {
-            if (currentBalance < 50) winChance = 0.005;
-            else if (currentBalance < 200) winChance = 0.012;
-            else if (currentBalance < 1000) winChance = 0.018;
-            else winChance = 0.025;
+            if (currentBalance < 50) winChance = 0.15; // Increased base win chance for normal users to prevent discouragement
+            else if (currentBalance < 200) winChance = 0.22;
+            else if (currentBalance < 1000) winChance = 0.28;
+            else winChance = 0.35;
           }
 
           const isWin = Math.random() < winChance;
@@ -342,6 +355,25 @@ if (!supabaseAdmin) {
     const { error: stopErr } = await supabaseAdmin.from('bot_settings').update(updatePayload).eq('user_id', userId);
     if (stopErr) {
       console.error(`[Bot-Sim] Error during atomic stop update:`, stopErr);
+    }
+
+    // 4. Log the stop event
+    try {
+      await supabaseAdmin.from('bot_stop_logs').insert({
+        user_id: userId,
+        bot_id: botId,
+        bot_name: botId,
+        stop_reason: reason,
+        previous_status: 'ACTIVE',
+        profit_goal: goal,
+        actual_profit: currentProfit,
+        actual_balance: balance,
+        min_required_balance: stake,
+        is_user_initiated: false,
+        timestamp: new Date().toISOString()
+      });
+    } catch (logErr) {
+      console.error(`[Bot-Sim] Error logging bot stop:`, logErr);
     }
   }
 
