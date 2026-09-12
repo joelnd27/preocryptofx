@@ -2015,7 +2015,16 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        const { error } = await supabase.from('bot_settings').update({
+        // First check if the record exists to prevent "update 0 rows" silent failure
+        const { data: existing, error: fetchErr } = await supabase
+          .from('bot_settings')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+
+        const updatePayload = {
           scalping_active: updatedBots.scalping,
           trend_active: updatedBots.trend,
           ai_active: updatedBots.ai,
@@ -2036,12 +2045,22 @@ export function useStore() {
             configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
-        }).eq('user_id', user.id);
+        };
 
-        if (error) {
-          console.error(`[Bot-Flow] BOT_START_REQUEST_RESULT: FAILED for ${botId}`, error);
-          throw error;
+        if (!existing) {
+          console.log('[Bot-Flow] Initializing bot_settings for new user...');
+          const { error: insertErr } = await supabase
+            .from('bot_settings')
+            .insert({ ...updatePayload, user_id: user.id });
+          if (insertErr) throw insertErr;
+        } else {
+          const { error: updateErr } = await supabase
+            .from('bot_settings')
+            .update(updatePayload)
+            .eq('user_id', user.id);
+          if (updateErr) throw updateErr;
         }
+
         console.log(`[Bot-Flow] BOT_START_REQUEST_RESULT: SUCCESS for ${botId}`);
         console.log(`[Bot-Flow] BOT_EXECUTION_INITIALIZATION_STARTED: ${botId}`);
         console.log(`[Bot-Flow] BOT_EXECUTION_STARTED: ${botId}`);
@@ -2085,13 +2104,21 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').update({
+        const updatePayload = {
           bot_stats: {
             ...(user.botStats || {}),
             configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
-        }).eq('user_id', user.id);
+        };
+
+        const { data: existing } = await supabase.from('bot_settings').select('id').eq('user_id', user.id).maybeSingle();
+        
+        if (!existing) {
+          await supabase.from('bot_settings').insert({ ...updatePayload, user_id: user.id });
+        } else {
+          await supabase.from('bot_settings').update(updatePayload).eq('user_id', user.id);
+        }
       } catch (err) {
         console.error('Failed to update bot config in Supabase:', err);
       }
@@ -2133,7 +2160,7 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('bot_settings').update({
+        const updatePayload = {
           bot_stake: stake,
           target_profit_percentage: targetPercentage,
           bot_stats: {
@@ -2141,7 +2168,15 @@ export function useStore() {
             configs: updatedConfigs
           },
           updated_at: new Date().toISOString()
-        }).eq('user_id', user.id);
+        };
+
+        const { data: existing } = await supabase.from('bot_settings').select('id').eq('user_id', user.id).maybeSingle();
+        
+        if (!existing) {
+          await supabase.from('bot_settings').insert({ ...updatePayload, user_id: user.id });
+        } else {
+          await supabase.from('bot_settings').update(updatePayload).eq('user_id', user.id);
+        }
       } catch (err) {
         console.error('Failed to update bot global settings in Supabase:', err);
       }
