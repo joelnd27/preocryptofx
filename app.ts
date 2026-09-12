@@ -39,6 +39,40 @@ app.get('/api/bot/status', (req, res) => {
   });
 });
 
+app.post('/api/bot/toggle', async (req, res) => {
+  const { userId, botId, active, updatePayload } = req.body;
+  
+  if (!supabaseAdmin) {
+    return res.status(500).json({ error: 'Admin client not initialized' });
+  }
+
+  if (!userId || !botId) {
+    return res.status(400).json({ error: 'Missing userId or botId' });
+  }
+
+  try {
+    console.log(`[API] Toggle Bot Request: User ${userId}, Bot ${botId}, Active ${active}`);
+    
+    const { error } = await supabaseAdmin
+      .from('bot_settings')
+      .upsert({ 
+        user_id: userId, 
+        ...updatePayload,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+
+    if (error) {
+      console.error('[API] Toggle Bot Error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[API] Toggle Bot Exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -124,44 +158,59 @@ if (supabaseAdmin) {
     try {
       if (!supabaseAdmin) {
         console.warn('[Bot-Sim] Simulation skipped: supabaseAdmin client not initialized.');
+        isSimulationRunning = false;
         return;
       }
 
-      // 1. Get ALL bot_settings records
-      // We fetch ALL records to ensure we don't miss any due to complex filters
+      // 1. Get ONLY bot_settings records that have active bots
+      // We use a filter to ensure we stay well under the 1000 row limit and only process what's needed
       const { data: allSettings, error: fetchError } = await supabaseAdmin
         .from('bot_settings')
-        .select('*');
+        .select('*, users(*)')
+        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
 
       if (fetchError) {
-        console.error('[Bot-Sim] CRITICAL: Error fetching all bot settings:', fetchError);
+        console.error('[Bot-Sim] CRITICAL: Error fetching active bot settings:', fetchError);
+        isSimulationRunning = false;
         return;
       }
 
       if (!allSettings || allSettings.length === 0) {
-        console.log('[Bot-Sim] IDLE: No bot_settings found in DB.');
+        if (simulationCycleCount % 10 === 0) console.log('[Bot-Sim] IDLE: No bot_settings found in DB.');
+        isSimulationRunning = false;
         return;
       }
 
-      console.log(`[Bot-Sim] Found ${allSettings.length} bot_settings records. Checking for active bots...`);
-
+      console.log(`[Bot-Sim] Cycle #${simulationCycleCount} | Found ${allSettings.length} settings records.`);
+      
       let totalTradesInCycle = 0;
+      const currentActiveUsers: string[] = [];
 
       for (const settings of allSettings) {
         try {
+          let user = settings.users;
+          if (Array.isArray(user)) user = user[0];
+
+          if (!user) continue;
+
+          // SPECIAL DEBUG FOR JOSPHAT
+          if (user.email === 'josphatndungu1022@gmail.com') {
+             console.log(`[Bot-Sim] Found josphat in loop. scalping=${settings.scalping_active}, balance=${user.real_balance}`);
+          }
+
+          if (simulationCycleCount % 5 === 0 && (settings.scalping_active || settings.trend_active || settings.ai_active)) {
+            console.log(`[Bot-Sim] Checking User ${user.email}: scalping=${settings.scalping_active}, trend=${settings.trend_active}, ai=${settings.ai_active}`);
+          }
+          
           const botStats = settings.bot_stats || {};
           const activeStates = botStats.active_states || {};
           
-          if (simulationCycleCount % 15 === 0) {
-             console.log(`[Bot-Sim] Heartbeat: User ${settings.user_id} | scalping: ${settings.scalping_active} | active_states:`, JSON.stringify(activeStates));
-          }
-
           // Determine which bots are actually active
           const activeBots: {id: string, type: string}[] = [];
-          if (settings.scalping_active === true || settings.scalping_active === 'true') activeBots.push({id: 'scalping', type: 'standard'});
-          if (settings.trend_active === true || settings.trend_active === 'true') activeBots.push({id: 'trend', type: 'standard'});
-          if (settings.ai_active === true || settings.ai_active === 'true') activeBots.push({id: 'ai', type: 'standard'});
-          if (settings.custom_active === true || settings.custom_active === 'true') activeBots.push({id: 'custom', type: 'custom'});
+          if (settings.scalping_active) activeBots.push({id: 'scalping', type: 'standard'});
+          if (settings.trend_active) activeBots.push({id: 'trend', type: 'standard'});
+          if (settings.ai_active) activeBots.push({id: 'ai', type: 'standard'});
+          if (settings.custom_active) activeBots.push({id: 'custom', type: 'custom'});
 
           // Extended bots in JSONB
           const extendedBotIds = ['vortex', 'orbit', 'starlight', 'galaxy', 'nova', 'wizard1', 'wizard2'];
@@ -182,27 +231,14 @@ if (supabaseAdmin) {
           // Skip if no active bots for this user
           if (activeBots.length === 0) continue;
 
-          currentActiveUsers.push(settings.user_id);
-          console.log(`[Bot-Sim] User ${settings.user_id} has ${activeBots.length} active bots. Fetching user profile...`);
-
-          // Fetch user details for this setting
-          const { data: user, error: userError } = await supabaseAdmin
-            .from('users')
-            .select('*')
-            .eq('id', settings.user_id)
-            .single();
-
-          if (userError || !user) {
-            console.error(`[Bot-Sim] User ${settings.user_id} profile NOT found or error:`, userError);
-            continue;
-          }
-
+          currentActiveUsers.push(user.email || user.id);
+          
           if (user.is_suspended) {
-            console.log(`[Bot-Sim] User ${user.email} is suspended. Skipping.`);
+            if (simulationCycleCount % 10 === 0) console.log(`[Bot-Sim] User ${user.email} is suspended. Skipping.`);
             continue;
           }
 
-          if (activeBots.length > 0) {
+          if (activeBots.length > 0 && simulationCycleCount % 5 === 0) {
             console.log(`[Bot-Sim] User ${user.email} has ${activeBots.length} active bots: ${activeBots.map(b => b.id).join(', ')}`);
           }
 

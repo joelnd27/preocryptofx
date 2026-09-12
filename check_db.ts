@@ -11,7 +11,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 async function checkBots() {
   const { data: users, error: userError } = await supabaseAdmin
     .from('users')
-    .select('id, email, demo_balance, real_balance')
+    .select('id, email, demo_balance, real_balance, active_account, role, daily_profit_demo, daily_profit_real, daily_trades_demo, daily_trades_real')
     .eq('email', 'josphatndungu1022@gmail.com')
     .single();
 

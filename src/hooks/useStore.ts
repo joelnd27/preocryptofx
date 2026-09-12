@@ -2015,15 +2015,6 @@ export function useStore() {
 
     if (isSupabaseConfigured()) {
       try {
-        // First check if the record exists to prevent "update 0 rows" silent failure
-        const { data: existing, error: fetchErr } = await supabase
-          .from('bot_settings')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (fetchErr) throw fetchErr;
-
         const updatePayload = {
           scalping_active: updatedBots.scalping,
           trend_active: updatedBots.trend,
@@ -2047,18 +2038,20 @@ export function useStore() {
           updated_at: new Date().toISOString()
         };
 
-        if (!existing) {
-          console.log('[Bot-Flow] Initializing bot_settings for new user...');
-          const { error: insertErr } = await supabase
-            .from('bot_settings')
-            .insert({ ...updatePayload, user_id: user.id });
-          if (insertErr) throw insertErr;
-        } else {
-          const { error: updateErr } = await supabase
-            .from('bot_settings')
-            .update(updatePayload)
-            .eq('user_id', user.id);
-          if (updateErr) throw updateErr;
+        const response = await fetch('/api/bot/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            botId,
+            active: updatedBots[botId as keyof User['bots']],
+            updatePayload
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to toggle bot');
         }
 
         console.log(`[Bot-Flow] BOT_START_REQUEST_RESULT: SUCCESS for ${botId}`);
@@ -2066,12 +2059,11 @@ export function useStore() {
         console.log(`[Bot-Flow] BOT_EXECUTION_STARTED: ${botId}`);
         console.log(`[Bot-Flow] BOT_EXECUTION_CYCLE_STARTED: ${botId}`);
       } catch (err) {
-        console.error('Failed to toggle bot in Supabase:', err);
+        console.error('Failed to toggle bot via API:', err);
         // Revert local state on failure
         setUser(previousUser);
         setUsers(prev => prev.map(u => u.id === user.id ? previousUser : u));
         
-        // Show alert to user
         const errMsg = err instanceof Error ? err.message : 'Connection failed. Please check your internet and DNS settings.';
         alert(`Failed to start bot: ${errMsg}`);
       }
