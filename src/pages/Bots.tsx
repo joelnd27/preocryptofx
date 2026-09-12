@@ -156,7 +156,7 @@ export default function Bots() {
       if (document.visibilityState === 'visible') {
         refreshData();
       }
-    }, 5000); // Refresh every 5 seconds for live feel
+    }, 2000); // Refresh every 2 seconds for live feel
 
     return () => clearInterval(interval);
   }, [selectedBot.id, user?.bots, user?.activeCustomBotIds, refreshData]);
