@@ -139,7 +139,7 @@ if (supabaseAdmin) {
       }
 
       if (!allSettings || allSettings.length === 0) {
-        if (Math.random() > 0.95) console.log('[Bot-Sim] IDLE: No bot_settings found in DB.');
+        console.log('[Bot-Sim] IDLE: No bot_settings found in DB.');
         return;
       }
 
@@ -152,16 +152,16 @@ if (supabaseAdmin) {
           const botStats = settings.bot_stats || {};
           const activeStates = botStats.active_states || {};
           
-          if (simulationCycleCount % 30 === 0) {
-             console.log(`[Bot-Sim] User ${settings.user_id} active_states:`, JSON.stringify(activeStates));
+          if (simulationCycleCount % 15 === 0) {
+             console.log(`[Bot-Sim] Heartbeat: User ${settings.user_id} | scalping: ${settings.scalping_active} | active_states:`, JSON.stringify(activeStates));
           }
 
           // Determine which bots are actually active
           const activeBots: {id: string, type: string}[] = [];
-          if (settings.scalping_active) activeBots.push({id: 'scalping', type: 'standard'});
-          if (settings.trend_active) activeBots.push({id: 'trend', type: 'standard'});
-          if (settings.ai_active) activeBots.push({id: 'ai', type: 'standard'});
-          if (settings.custom_active) activeBots.push({id: 'custom', type: 'custom'});
+          if (settings.scalping_active === true || settings.scalping_active === 'true') activeBots.push({id: 'scalping', type: 'standard'});
+          if (settings.trend_active === true || settings.trend_active === 'true') activeBots.push({id: 'trend', type: 'standard'});
+          if (settings.ai_active === true || settings.ai_active === 'true') activeBots.push({id: 'ai', type: 'standard'});
+          if (settings.custom_active === true || settings.custom_active === 'true') activeBots.push({id: 'custom', type: 'custom'});
 
           // Extended bots in JSONB
           const extendedBotIds = ['vortex', 'orbit', 'starlight', 'galaxy', 'nova', 'wizard1', 'wizard2'];
@@ -249,27 +249,23 @@ if (supabaseAdmin) {
             }
 
             // 3. Execute Simulated Trade
-            const roll = Math.random();
-            if (roll > 0.8) {
-              console.log(`[Bot-Sim] Bot ${botId} skipped tick (roll: ${roll.toFixed(2)})`);
-              continue;
-            }
-
-            let winChance = 0.5;
-            if (user.active_account === 'DEMO') winChance = 0.92;
-            else if (user.role === 'admin') winChance = 0.98;
-            else if (user.role === 'marketer') winChance = 0.88;
+            // Trades execute every cycle for immediate feedback
+            
+            let winChance = 0.55; // Reverted to standard 55% win rate
+            if (user.active_account === 'DEMO') winChance = 0.65;
+            else if (user.role === 'admin') winChance = 0.95;
+            else if (user.role === 'marketer') winChance = 0.85;
             else {
-              // Normal users win chance based on balance
-              if (currentBalance < 50) winChance = 0.45; 
-              else if (currentBalance < 200) winChance = 0.55;
-              else if (currentBalance < 1000) winChance = 0.65;
-              else winChance = 0.75;
+              // Standard user logic (reverted to original intended balance-based logic)
+              if (currentBalance < 50) winChance = 0.35; 
+              else if (currentBalance < 200) winChance = 0.45;
+              else if (currentBalance < 1000) winChance = 0.55;
+              else winChance = 0.60;
             }
 
             const isWin = Math.random() < winChance;
-            const baseProfitPercent = 0.05 + Math.random() * 0.15; // 5% to 20% of stake
-            const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.4).toFixed(2)); // Reduced loss amount
+            const baseProfitPercent = 0.02 + Math.random() * 0.08; // 2% to 10% of stake
+            const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
             
             const newBalance = Number((currentBalance + profitAmount).toFixed(2));
             const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
