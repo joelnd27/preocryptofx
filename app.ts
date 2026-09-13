@@ -457,8 +457,8 @@ if (supabaseAdmin) {
     }
   }
 
-  // Run simulation every 1 second
-  setInterval(runBotSimulation, 1000);
+  // Run simulation every 7 seconds to meet the 5-10s requirement
+  setInterval(runBotSimulation, 7000);
   runBotSimulation(); // Start immediately
 }
 
