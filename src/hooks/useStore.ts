@@ -2051,8 +2051,15 @@ export function useStore() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to toggle bot');
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to toggle bot');
+          } else {
+            const errorText = await response.text();
+            console.error('[Bot-Flow] API Error (Non-JSON):', errorText);
+            throw new Error(`Server returned an unexpected response (Status ${response.status}). Please refresh and try again.`);
+          }
         }
 
         console.log(`[Bot-Flow] BOT_START_REQUEST_RESULT: SUCCESS for ${botId}`);
