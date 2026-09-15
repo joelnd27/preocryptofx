@@ -620,8 +620,9 @@ export function useStore() {
           trades: finalTrades
         };
 
+
         // Safety: If sync took too long and user interacted in between, skip applying to avoid flicker
-        if (isInternalUpdate.current || (Date.now() - syncStartTime > 5000)) {
+        if (isInternalUpdate.current || (Date.now() - syncStartTime > 10000)) {
           console.log('[Sync] Discarding stale sync results to preserve local interactions.');
           return;
         }
@@ -2827,9 +2828,9 @@ export function useStore() {
     }
   };
 
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     await syncWithSupabase();
-  };
+  }, [syncWithSupabase]);
 
   const checkPaymentStatus = async (transaction_id: string) => {
     try {

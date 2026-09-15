@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -143,23 +143,30 @@ export default function Bots() {
   const { user, toggleBot, unlockBot, updateBotConfig, addBotProfit, addTrade, importBot, refreshData } = useStore();
   const [selectedBot, setSelectedBot] = useState<BotConfig>(BOTS[0]);
   
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   // Periodic Refresh for Live Logs and Profits
   useEffect(() => {
-    // Only poll if the currently selected bot is active
-    const isBotActive = selectedBot.id in (user?.bots || {}) 
-      ? user?.bots[selectedBot.id as keyof typeof user.bots] 
-      : (user?.activeCustomBotIds || []).includes(selectedBot.id);
-
-    if (!isBotActive) return;
-
+    // We use a stable interval and check activity inside using the latest user state from Ref
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState !== 'visible' || !userRef.current) return;
+
+      const currentUser = userRef.current;
+      const isBotActive = selectedBot.id in (currentUser.bots || {}) 
+        ? currentUser.bots[selectedBot.id as keyof typeof currentUser.bots] 
+        : (currentUser.activeCustomBotIds || []).includes(selectedBot.id);
+
+      if (isBotActive) {
+        console.log(`[Polling] Refreshing data for active bot: ${selectedBot.id}`);
         refreshData();
       }
-    }, 2000); // Refresh every 2 seconds for live feel
+    }, 4000); // 4 seconds is more stable and still feels real-time
 
     return () => clearInterval(interval);
-  }, [selectedBot.id, user?.bots, user?.activeCustomBotIds, refreshData]);
+  }, [selectedBot.id, refreshData]); 
   
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }>>(() => {
     const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }> = {};
