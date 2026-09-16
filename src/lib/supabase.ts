@@ -4,9 +4,19 @@ const supabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE
 const supabaseAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY || '').trim().replace(/['"]/g, '');
 
 if (typeof window !== 'undefined') {
-  console.log('[Supabase] Initializing client-side Supabase...');
+  const isConfigured = !!supabaseUrl && !!supabaseAnonKey;
+  const isPlaceholder = isConfigured && (supabaseUrl.includes('placeholder') || supabaseAnonKey.includes('placeholder'));
+  
+  console.log('[Supabase] Initializing client-side Supabase...', {
+    configured: isConfigured,
+    placeholder: isPlaceholder,
+    urlSet: !!supabaseUrl,
+    keySet: !!supabaseAnonKey
+  });
+  
   if (!supabaseUrl) console.warn('[Supabase] VITE_SUPABASE_URL is missing!');
   if (!supabaseAnonKey) console.warn('[Supabase] VITE_SUPABASE_ANON_KEY is missing!');
+  if (isPlaceholder) console.error('[Supabase] API keys are still placeholders. Authentication will fail.');
 }
 
 // Initialize with placeholders if missing to prevent top-level crash,

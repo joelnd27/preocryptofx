@@ -324,91 +324,60 @@ export function useStore() {
     processPending();
   }, [user?.id, user?.role, user?.transactions?.length]);
 
+  const sessionPromise = useRef<Promise<any> | null>(null);
+
   const getSafeSession = useCallback(async () => {
     if (!isSupabaseConfigured()) return null;
-    try {
-      // Use getSession() but with extra care
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
-        const isUnrecoverable = 
-          msg.includes('refresh token not found') || 
-          msg.includes('invalid refresh token') || 
-          msg.includes('refresh_token_not_found') ||
-          msg.includes('invalid_refresh_token') ||
-          msg.includes('session_not_found') ||
-          msg.includes('invalid_grant') ||
-          msg.includes('refresh token is invalid') ||
-          msg.includes('expired') && (msg.includes('refresh') || msg.includes('token'));
+    
+    // Use a singleton promise to prevent concurrent getSession calls
+    if (sessionPromise.current) {
+      return sessionPromise.current;
+    }
 
-        if (isUnrecoverable) {
-          console.error('[Auth] Unrecoverable session error:', error.message);
-          
-          // Clear only if we are absolutely sure the session is gone
-          const { data: { session: retrySession } } = await supabase.auth.getSession();
-          if (!retrySession) {
-            if (userRef.current) setUser(null);
-            localStorage.removeItem('preocrypto_user');
-            
-            // Clean auth storage
-            Object.keys(localStorage).forEach(key => {
-              if (key.startsWith('sb-') || key.includes('supabase.auth.token')) {
-                localStorage.removeItem(key);
-              }
-            });
-            
-            await supabase.auth.signOut().catch(() => {});
-          }
+    sessionPromise.current = (async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('[Auth] getSession error:', error.message);
           return null;
         }
-        
-        console.warn('[Auth] Session check warning:', error.message);
+        return session;
+      } catch (e: any) {
+        console.error('[Auth] getSession exception:', e.message);
         return null;
+      } finally {
+        sessionPromise.current = null;
       }
-      return session;
-    } catch (e: any) {
-      console.error('[Auth] Session exception:', e.message);
-      return null;
-    }
+    })();
+
+    return sessionPromise.current;
   }, []);
+
+  const isAuthInitialized = useRef(false);
+  const isSyncing = useRef(false);
 
   // Sync with Supabase if configured
   const syncWithSupabase = useCallback(async (providedSession?: any) => {
     if (!isSupabaseConfigured()) return;
     
-    // Check internal update flag with a timestamp-based cooldown to avoid blocking forever
-    // but still protect against race conditions during user interaction
-    if (isInternalUpdate.current) {
-      console.log('[Sync] Skipping sync: user interaction or internal update in progress.');
-      return;
-    }
+    if (isSyncing.current) return;
 
+    isSyncing.current = true;
     const syncStartTime = Date.now();
-
     try {
-      // Sync clock once or periodically
-      if (!serverTimeSynced.current) {
-        try {
-          const stRes = await axios.get('/api/server-time');
-          if (stRes.data.server_time_iso) {
-            const serverTime = new Date(stRes.data.server_time_iso).getTime();
-            serverTimeOffset.current = serverTime - Date.now();
-            serverTimeSynced.current = true;
-            console.log(`[Sync] Clock calibrated. Offset: ${serverTimeOffset.current}ms`);
-          }
-        } catch (e) {
-          console.warn('[Sync] Could not calibrate clock:', e);
-        }
+      // 1. Get current session (prefer provided from event)
+      let session = providedSession;
+      if (!session) {
+        // Use the protected getSafeSession to avoid lock contention
+        session = await getSafeSession();
       }
-
-      const session = providedSession || await getSafeSession();
+      
       if (!session || !session.user) {
         console.log('[Sync] No active session found');
         return;
       }
 
-      console.log('[Sync] Starting sync for:', session.user.email);
+      // 2. Fetch User Profile
       const { data: userData, error } = await supabase
         .from('users')
         .select('*, transactions(*), trades(*), bot_settings(*)')
@@ -416,45 +385,7 @@ export function useStore() {
         .maybeSingle();
 
       if (error) {
-        const msg = String(error.message || error || '').toLowerCase();
-        const isAuthError = 
-          msg.includes('refresh token not found') || 
-          msg.includes('invalid refresh token') || 
-          msg.includes('invalid_grant') ||
-          msg.includes('refresh token is invalid') ||
-          msg.includes('session_not_found') ||
-          msg.includes('invalid_refresh_token');
-
-        if (isAuthError) {
-          console.error('[Sync] Unrecoverable auth error during DB sync:', error.message);
-          if (userRef.current) setUser(null);
-          localStorage.removeItem('preocrypto_user');
-          await supabase.auth.signOut().catch(() => {});
-          return;
-        }
-
-        const isNetworkError = 
-          msg.includes('failed to fetch') || 
-          msg.includes('network error') || 
-          msg.includes('load failed') || 
-          msg.includes('fetch') || 
-          msg.includes('typeerror') ||
-          msg.includes('connection') ||
-          msg.includes('aborted') ||
-          msg.includes('timeout') ||
-          msg.includes('undefined') ||
-          !navigator.onLine;
-
-        if (isNetworkError) {
-          // Suppress noise for network issues
-          if (msg.includes('fetch') || msg.includes('network') || msg.includes('typeerror')) {
-            console.warn('[Sync] Network connection unavailable. Using offline state.');
-          } else {
-            console.error('[Sync] DB Error:', error.message);
-          }
-        } else {
-          console.error('[Sync] DB Error:', error.message);
-        }
+        console.error('[Sync] DB Error:', error.message);
         return;
       }
 
@@ -734,163 +665,93 @@ export function useStore() {
       }
     } catch (error) {
       console.error('[Sync] Sync Exception:', error);
+    } finally {
+      isSyncing.current = false;
     }
   }, [ADMIN_EMAILS, ADMIN_IDS, setUser]);
 
+  // 1. Global Initialization (Auth Listener & Heartbeat)
   useEffect(() => {
-    // Call auto-process RPC on load to sync DB
-    if (isSupabaseConfigured()) {
-      supabase.rpc('auto_process_pending').then(({ error }) => {
-        if (error) console.warn('Auto-process RPC failed (might not be created yet):', error.message);
-      });
-    }
+    if (!isSupabaseConfigured()) return;
 
-    syncWithSupabase();
-    
-    // Heartbeat sync every 30 seconds to prevent state drift and hacks
-    const heartbeat = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        syncWithSupabase();
-      }
-    }, 30000);
+    console.log('[Auth] Initializing global session listener...');
 
-    // Set up real-time subscription for the current user
-    let userSubscription: any = null;
-    let transactionsSubscription: any = null;
-
-    const setupSubscriptions = (userId: string, referralCode?: string) => {
-      const userChannelName = `user-profile-${userId}`;
-      const transChannelName = `user-transactions-${userId}`;
-      const botChannelName = `user-bots-${userId}`;
-      const referralChannelName = referralCode ? `referrals-${referralCode}` : null;
-
-      // Avoid duplicate subscriptions
-      const existingChannels = supabase.getChannels();
-      const hasUserChannel = existingChannels.some(c => c.topic === `realtime:${userChannelName}`);
-      const hasTransChannel = existingChannels.some(c => c.topic === `realtime:${transChannelName}`);
-      const hasBotChannel = existingChannels.some(c => c.topic === `realtime:${botChannelName}`);
-      let hasReferralChannel = false;
-      if (referralChannelName) {
-        hasReferralChannel = existingChannels.some(c => c.topic === `realtime:${referralChannelName}`);
-      }
-
-      if (hasUserChannel && hasTransChannel && hasBotChannel && (!referralChannelName || hasReferralChannel)) {
-        return;
-      }
-
-      // Subscribe to user profile changes
-      if (!hasUserChannel) {
-        userSubscription = supabase
-          .channel(userChannelName)
-          .on('postgres_changes', { 
-            event: 'UPDATE', 
-            schema: 'public', 
-            table: 'users', 
-            filter: `id=eq.${userId}` 
-          }, () => {
-            syncWithSupabase();
-          })
-          .subscribe();
-      }
-
-      // Subscribe to bot_settings changes (Crucial for backend deactivations)
-      if (!hasBotChannel) {
-        supabase
-          .channel(botChannelName)
-          .on('postgres_changes', {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'bot_settings',
-            filter: `user_id=eq.${userId}`
-          }, () => {
-            console.log('[Realtime] Bot settings updated. Syncing...');
-            syncWithSupabase();
-          })
-          .subscribe();
-      }
-
-      // Subscribe to transaction changes
-      if (!hasTransChannel) {
-        transactionsSubscription = supabase
-          .channel(transChannelName)
-          .on('postgres_changes', { 
-            event: '*', 
-            schema: 'public', 
-            table: 'transactions', 
-            filter: `user_id=eq.${userId}` 
-          }, () => {
-            syncWithSupabase();
-          })
-          .subscribe();
-      }
-
-      // Subscribe to new referrals and their updates
-      if (referralChannelName && !hasReferralChannel) {
-        supabase
-          .channel(referralChannelName)
-          .on('postgres_changes', {
-            event: '*',
-            schema: 'public',
-            table: 'users',
-            filter: `referred_by=eq.${referralCode}`
-          }, () => {
-            syncWithSupabase();
-          })
-          .subscribe();
-      }
-    };
-
-    // If we already have a user, ensure subscriptions are active
-    if (user?.id) {
-      setupSubscriptions(user.id, user.referralCode);
-    }
-
-    // Set up auth listener
+    // Global Auth Listener
+    // Note: INITIAL_SESSION event will trigger automatically on subscribe
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`[Auth Event] ${event}`, session ? 'Session Active' : 'No Session');
       
       if (session?.user) {
-        // Use the session directly provided by the event to avoid redundant getSession()
         syncWithSupabase(session);
-      } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session) || event === 'USER_UPDATED') {
-        // Only clear if we explicitly don't have a session
-        if (!session) {
-          setUser(null);
-          localStorage.removeItem('preocrypto_user');
-          supabase.removeAllChannels();
-          userSubscription = null;
-          transactionsSubscription = null;
-        }
+      } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        setUser(null);
+        localStorage.removeItem('preocrypto_user');
+        supabase.removeAllChannels();
       }
     });
 
-    // Global handler for the specific "Refresh Token Not Found" error that can happen in the background
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    // Global unhandled rejection handler for auth
+    const handleRejection = (event: PromiseRejectionEvent) => {
       const msg = String(event.reason?.message || event.reason || '').toLowerCase();
       if (msg.includes('refresh token not found') || msg.includes('invalid refresh token')) {
-        console.error('[Auth] Global catch: Unrecoverable refresh token error detected.');
         setUser(null);
         localStorage.removeItem('preocrypto_user');
         supabase.auth.signOut().catch(() => {});
       }
     };
 
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    window.addEventListener('unhandledrejection', handleRejection);
 
-    // Periodically check session health to catch refresh token issues early
-    const healthCheck = setInterval(async () => {
-      if (isSupabaseConfigured() && userRef.current) {
-        await getSafeSession();
+    // Periodically process pending transactions (Global admin task)
+    const processInterval = setInterval(() => {
+      if (isSupabaseConfigured()) {
+        (supabase.rpc('auto_process_pending') as any).catch(() => {});
       }
-    }, 60000); // Check every minute
+    }, 60000);
 
     return () => {
       subscription.unsubscribe();
-      clearInterval(healthCheck);
-      supabase.removeAllChannels();
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      clearInterval(processInterval);
+      window.removeEventListener('unhandledrejection', handleRejection);
     };
-  }, [syncWithSupabase, user?.id, user?.referralCode]);
+  }, [syncWithSupabase]);
+
+  // 2. User-Specific Heartbeat
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Heartbeat sync
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isSyncing.current) {
+        syncWithSupabase();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user?.id, syncWithSupabase]);
+
+  // 3. User-Specific Realtime Subscriptions
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const userChannel = supabase.channel(`user-profile-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, () => syncWithSupabase())
+      .subscribe();
+
+    const botChannel = supabase.channel(`user-bots-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bot_settings', filter: `user_id=eq.${user.id}` }, () => syncWithSupabase())
+      .subscribe();
+
+    const transChannel = supabase.channel(`user-transactions-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` }, () => syncWithSupabase())
+      .subscribe();
+
+    return () => {
+      userChannel.unsubscribe();
+      botChannel.unsubscribe();
+      transChannel.unsubscribe();
+    };
+  }, [user?.id, syncWithSupabase]);
 
   useEffect(() => {
     if (user) {
