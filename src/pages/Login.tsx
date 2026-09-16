@@ -25,14 +25,23 @@ export default function Login() {
       navigate('/dashboard');
     } catch (err: any) {
       console.error('Login error:', err);
-      const errorMessage = err.message || 'An unexpected error occurred';
+      let errorMessage = err.message;
       
-      if (errorMessage.includes('rate limit exceeded')) {
-        setError('Security limit reached. Please wait a few minutes or disable "Rate Limits" in your Supabase Auth settings.');
-      } else if (errorMessage.includes('Invalid login credentials') || errorMessage.includes('Invalid credentials')) {
+      // Handle cases where the error message is empty, an empty object string, or undefined
+      if (!errorMessage || errorMessage === '{}' || errorMessage === 'undefined' || typeof errorMessage !== 'string') {
+        errorMessage = 'Failed to log in. Please try again later.';
+      }
+      
+      const lowerMsg = errorMessage.toLowerCase();
+      
+      if (lowerMsg.includes('rate limit exceeded')) {
+        setError('Security limit reached. Please wait a few minutes.');
+      } else if (lowerMsg.includes('invalid login credentials') || lowerMsg.includes('invalid credentials')) {
         setError('Invalid email or password. Please check your credentials.');
-      } else if (errorMessage.includes('Email not confirmed')) {
+      } else if (lowerMsg.includes('email not confirmed')) {
         setError('Please confirm your email address before logging in.');
+      } else if (lowerMsg.includes('timeout') || lowerMsg.includes('service unavailable') || lowerMsg.includes('504') || lowerMsg.includes('503')) {
+        setError('Failed to log in. Server is busy, please try again in a moment.');
       } else {
         setError(errorMessage);
       }

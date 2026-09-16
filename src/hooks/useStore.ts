@@ -703,9 +703,13 @@ export function useStore() {
     window.addEventListener('unhandledrejection', handleRejection);
 
     // Periodically process pending transactions (Global admin task)
-    const processInterval = setInterval(() => {
+    const processInterval = setInterval(async () => {
       if (isSupabaseConfigured()) {
-        (supabase.rpc('auto_process_pending') as any).catch(() => {});
+        try {
+          await supabase.rpc('auto_process_pending');
+        } catch (err) {
+          // Quietly fail as this is a background maintenance task
+        }
       }
     }, 60000);
 
