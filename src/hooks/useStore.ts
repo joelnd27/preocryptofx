@@ -1834,31 +1834,10 @@ export function useStore() {
     if (isActivating) {
       const currentDailyProfit = user.activeAccount === 'REAL' ? (user.dailyProfitReal || 0) : (user.dailyProfitDemo || 0);
       botSessionStartProfits.current[botId] = currentDailyProfit;
-      
-      // Update session start in Supabase
-      if (isSupabaseConfigured()) {
-        const sessionStartProfits = { ...(user.botStats?.session_start_profits || {}), [botId]: currentDailyProfit };
-        supabase.from('bot_settings').update({
-          bot_stats: { ...user.botStats, session_start_profits: sessionStartProfits }
-        }).eq('user_id', user.id).then(({error}) => {
-          if (error) console.error('Failed to sync session start:', error);
-        });
-      }
     } else {
       // Manual Deactivation
       logBotStop(botId, 'MANUAL', true);
       delete botSessionStartProfits.current[botId];
-      
-      // Clear session start in Supabase
-      if (isSupabaseConfigured()) {
-        const sessionStartProfits = { ...(user.botStats?.session_start_profits || {}) };
-        delete sessionStartProfits[botId];
-        supabase.from('bot_settings').update({
-          bot_stats: { ...user.botStats, session_start_profits: sessionStartProfits }
-        }).eq('user_id', user.id).then(({error}) => {
-          if (error) console.error('Failed to clear session start:', error);
-        });
-      }
     }
 
     const updatedUser = {
@@ -1899,18 +1878,23 @@ export function useStore() {
               wizard2: updatedBots.wizard2,
               active_custom_ids: updatedActiveCustomBotIds
             },
-            configs: updatedConfigs
+            configs: updatedConfigs,
+            session_start_profits: botSessionStartProfits.current
           },
           updated_at: new Date().toISOString()
         };
 
+        const session = await getSafeSession();
         const response = await fetch('/api/bot/toggle', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
           body: JSON.stringify({
             userId: user.id,
             botId,
-            active: updatedBots[botId as keyof User['bots']],
+            active: isActivating,
             updatePayload
           })
         });

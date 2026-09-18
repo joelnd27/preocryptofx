@@ -542,7 +542,9 @@ export default function Bots() {
           allBots.length > 3 ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-4" : "grid-cols-1 md:grid-cols-3"
         )}>
           {allBots.map((bot) => {
-            const isActive = user?.bots[bot.id as keyof typeof user.bots];
+            const isActive = bot.id in (user?.bots || {}) 
+              ? user?.bots[bot.id as keyof typeof user.bots] 
+              : (user?.activeCustomBotIds || []).includes(bot.id);
             const isCustom = bot.id.startsWith('custom-');
             const isWizard = bot.id === 'wizard1' || bot.id === 'wizard2';
             const isUnlocked = (user?.unlockedBotIds || []).includes(bot.id) || user?.role === 'marketer' || user?.role === 'admin';

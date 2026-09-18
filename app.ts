@@ -106,6 +106,14 @@ if (!supabaseAdmin) {
   console.warn('[Supabase] SUPABASE_SERVICE_ROLE_KEY is missing. Admin operations will fail.');
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
+  
+  // Start the simulation early to ensure it runs
+  console.log('[Bot-Sim] Initializing 5s interval loop...');
+  setInterval(runBotSimulation, 5000);
+  setTimeout(() => {
+    console.log('[Bot-Sim] Manual first run trigger...');
+    runBotSimulation();
+  }, 1000);
 }
 
 // BOT SIMULATION LOGIC (Backend authoritative)
@@ -114,9 +122,8 @@ let lastSimulationTime: string | null = null;
 let simulationCycleCount = 0;
 let activeUserIds: string[] = [];
 
-if (supabaseAdmin) {
-  // Auto-reject stale transactions (older than 10 minutes)
-  console.log('[App] Environment Check:', {
+// Auto-reject stale transactions (older than 10 minutes)
+console.log('[App] Environment Check:', {
     hasSyncUrl: !!process.env.ONEAPP_SYNC_URL,
     hasWebhookSecret: !!process.env.PREOCRYPTOFX_WEBHOOK_SECRET,
     rate: process.env.USD_KES_RATE || '129.58'
@@ -163,14 +170,12 @@ if (supabaseAdmin) {
   console.log('[Bot-Sim] BOT_STARTED');
 
   // BOT SIMULATION LOGIC (Backend authoritative)
-  const runBotSimulation = async () => {
-    if (isSimulationRunning) return;
-    isSimulationRunning = true;
+  async function runBotSimulation() {
     lastSimulationTime = new Date().toISOString();
     simulationCycleCount++;
     const currentActiveUsers: string[] = [];
 
-    if (simulationCycleCount % 30 === 0) {
+    if (simulationCycleCount % 10 === 0) {
       console.log(`[Bot-Sim] Heartbeat: Cycle #${simulationCycleCount}`);
     }
 
@@ -181,18 +186,18 @@ if (supabaseAdmin) {
         return;
       }
 
-      // 1. Get ONLY bot_settings records that have active bots
-      // Optimized: Select only necessary columns to reduce database load and network traffic
+      // 1. Get bot_settings records - Basic filter for active bots
       const { data: allSettings, error: fetchError } = await supabaseAdmin
         .from('bot_settings')
         .select(`
           user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, updated_at,
           users:user_id (
-            id, email, role, status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, 
+            id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, 
             total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account
           )
         `)
-        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true');
+        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true')
+        .limit(3000); 
 
       if (fetchError) {
         // If it's a transient database error (timeout, busy, schema cache), just log a warning and wait for next cycle
@@ -217,7 +222,14 @@ if (supabaseAdmin) {
         return;
       }
 
-      console.log(`[Bot-Sim] Cycle #${simulationCycleCount} | Found ${allSettings.length} settings records.`);
+      const activeCount = allSettings.filter(s => {
+        const stats = s.bot_stats || {};
+        const activeStates = stats.active_states || {};
+        const hasActiveExtended = Object.values(activeStates).some(v => v === true || v === 'true');
+        return s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
+      }).length;
+
+      console.log(`[Bot-Sim] Cycle #${simulationCycleCount} | Records: ${allSettings.length} | Active Bots Found: ${activeCount}`);
       
       let totalTradesInCycle = 0;
       const currentActiveUsers: string[] = [];
@@ -226,15 +238,8 @@ if (supabaseAdmin) {
       // Optimized: Batch updates per user to reduce DB load
       await Promise.all(allSettings.map(async (settings: any) => {
         try {
-          let user: any = settings.users;
-          if (Array.isArray(user)) user = user[0];
-
+          const user: any = Array.isArray(settings.users) ? settings.users[0] : settings.users;
           if (!user) return;
-
-          // SPECIAL DEBUG FOR JOSPHAT
-          if (user.email === 'josphatndungu1022@gmail.com') {
-             console.log(`[Bot-Sim] Found josphat in loop. scalping=${settings.scalping_active}, balance=${user.real_balance}`);
-          }
 
           if (simulationCycleCount % 5 === 0 && (settings.scalping_active || settings.trend_active || settings.ai_active)) {
             console.log(`[Bot-Sim] Checking User ${user.email}: scalping=${settings.scalping_active}, trend=${settings.trend_active}, ai=${settings.ai_active}`);
@@ -257,7 +262,7 @@ if (supabaseAdmin) {
               activeBots.push({id, type: 'standard'});
             }
           });
-          
+
           if (activeStates.active_custom_ids && Array.isArray(activeStates.active_custom_ids)) {
             activeStates.active_custom_ids.forEach((id: string) => {
               if (!activeBots.some(b => b.id === id)) {
@@ -307,94 +312,113 @@ if (supabaseAdmin) {
               updatedBotStats.session_start_profits = sessionStartProfits;
             }
 
-            const sessionProfit = Number((currentDailyProfit - (sessionStartProfits[botId] || 0)).toFixed(2));
+            const sessionStartProfit = (sessionStartProfits[botId] !== undefined) ? Number(sessionStartProfits[botId]) : currentDailyProfit;
+            const sessionProfit = Number((currentDailyProfit - sessionStartProfit).toFixed(2));
             const targetProfitAmount = (botStake * botTargetPercentage) / 100;
 
             if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
+              if (user.email === 'josphatndungu1022@gmail.com') console.log(`[Bot-Sim] JOSPHAT: Bot ${botId} reached target ${targetProfitAmount}. Stopping.`);
               stopActions.push({ botId, type: botToSimulate.type, reason: 'PROFIT_GOAL_REACHED', sessionProfit, targetProfitAmount, currentBalance, botStake });
               continue;
             }
 
             // 2. Balance Check
             if (currentBalance < botStake) {
+              if (user.email === 'josphatndungu1022@gmail.com') {
+                console.warn(`[Bot-Sim] JOSPHAT: Insufficient balance for ${botId}. Balance: ${currentBalance}, Stake: ${botStake}`);
+              }
               stopActions.push({ botId, type: botToSimulate.type, reason: 'INSUFFICIENT_BALANCE', sessionProfit, targetProfitAmount, currentBalance, botStake });
               continue;
             }
 
             // 3. Execute Simulated Trade
-            let winChance = 0.15; // Default
-            if (user.active_account === 'DEMO') winChance = 0.96;
-            else if (user.role === 'admin') winChance = 0.98;
-            else if (user.role === 'marketer') winChance = 0.86;
+            const chance = Math.random();
+            if (chance < 0.8) { // 80% chance every 5 seconds for hyper-aggressive runs
+              let winChance = 0.15; // Default
+              if (user.active_account === 'DEMO') winChance = 0.96;
+              else if (user.role === 'admin') winChance = 0.98;
+              else if (user.role === 'marketer') winChance = 0.86;
 
-            const isWin = Math.random() < winChance;
-            const baseProfitPercent = 0.02 + Math.random() * 0.08;
-            const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
-            
-            const newBalance = Number((currentBalance + profitAmount).toFixed(2));
-            const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
-            const newTotalProfit = Number(((isReal ? (Number(user.total_profit_real) || 0) : (Number(user.total_profit_demo) || 0)) + profitAmount).toFixed(2));
-            const newDailyTrades = (isReal ? (Number(user.daily_trades_real) || 0) : (Number(user.daily_trades_demo) || 0)) + 1;
+              const isWin = Math.random() < winChance;
+              const baseProfitPercent = 0.02 + Math.random() * 0.08;
+              const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
+              
+              const newBalance = Number((currentBalance + profitAmount).toFixed(2));
+              const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
+              const newTotalProfit = Number(((isReal ? (Number(user.total_profit_real) || 0) : (Number(user.total_profit_demo) || 0)) + profitAmount).toFixed(2));
+              const newDailyTrades = (isReal ? (Number(user.daily_trades_real) || 0) : (Number(user.daily_trades_demo) || 0)) + 1;
 
-            // Apply updates to the user's running balance for this cycle
-            if (isReal) {
-              user.real_balance = newBalance;
-              user.total_profit_real = newTotalProfit;
-              user.daily_profit_real = newDailyProfit;
-              user.daily_trades_real = newDailyTrades;
+              // Apply updates to the user's running balance for this cycle
+              if (isReal) {
+                user.real_balance = newBalance;
+                user.total_profit_real = newTotalProfit;
+                user.daily_profit_real = newDailyProfit;
+                user.daily_trades_real = newDailyTrades;
+              } else {
+                user.demo_balance = newBalance;
+                user.total_profit_demo = newTotalProfit;
+                user.daily_profit_demo = newDailyProfit;
+                user.daily_trades_demo = newDailyTrades;
+              }
+
+              // Update Bot Stats & Logs
+              updatedBotStats[botId] = {
+                profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
+                trades: (updatedBotStats[botId]?.trades || 0) + 1
+              };
+
+              const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
+              updatedLogs.unshift({
+                botId,
+                message: `Bot executed ${profitAmount >= 0 ? 'profitable' : 'defensive'} trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
+                timestamp: new Date().toISOString()
+              });
+
+              tradesToInsert.push({
+                user_id: user.id,
+                coin: randomCoin.symbol,
+                amount: botStake,
+                type: profitAmount >= 0 ? 'BUY' : 'SELL',
+                account_type: user.active_account.toUpperCase(),
+                price: randomCoin.basePrice,
+                profit: profitAmount,
+                status: 'CLOSED',
+                timestamp: new Date().toISOString(),
+                source: 'BOT'
+              });
             } else {
-              user.demo_balance = newBalance;
-              user.total_profit_demo = newTotalProfit;
-              user.daily_profit_demo = newDailyProfit;
-              user.daily_trades_demo = newDailyTrades;
+              // Heartbeat log (Always log if no trade executed, for visual confirmation)
+              const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
+              updatedLogs.unshift({
+                botId,
+                message: `[${randomCoin.symbol}] Analyzing market patterns for high-probability signals...`,
+                timestamp: new Date().toISOString()
+              });
             }
-
-            // Update Bot Stats & Logs
-            updatedBotStats[botId] = {
-              profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
-              trades: (updatedBotStats[botId]?.trades || 0) + 1
-            };
-
-            const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
-            updatedLogs.unshift({
-              botId,
-              message: `Bot executed ${profitAmount >= 0 ? 'profitable' : 'defensive'} trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
-              timestamp: new Date().toISOString()
-            });
-
-            tradesToInsert.push({
-              user_id: user.id,
-              coin: randomCoin.symbol,
-              amount: botStake,
-              type: profitAmount >= 0 ? 'BUY' : 'SELL',
-              account_type: user.active_account.toUpperCase(),
-              price: randomCoin.basePrice,
-              profit: profitAmount,
-              status: 'CLOSED',
-              timestamp: new Date().toISOString(),
-              source: 'BOT'
-            });
           }
 
           // PERFORM BATCHED UPDATES
-          if (tradesToInsert.length > 0) {
-            // 1. Update User Table
-            const { error: userUpdateErr } = await supabaseAdmin.from('users').update({
-              real_balance: user.real_balance,
-              demo_balance: user.demo_balance,
-              total_profit_real: user.total_profit_real,
-              total_profit_demo: user.total_profit_demo,
-              daily_profit_real: user.daily_profit_real,
-              daily_profit_demo: user.daily_profit_demo,
-              daily_trades_real: user.daily_trades_real,
-              daily_trades_demo: user.daily_trades_demo
-            }).eq('id', user.id);
+          // 3. Update DB if changes occurred
+          if (tradesToInsert.length > 0 || updatedLogs.length !== (settings.bot_logs || []).length) {
+            // 1. Update User Table if balance/stats changed
+            if (tradesToInsert.length > 0) {
+              const { error: userUpdateErr } = await supabaseAdmin.from('users').update({
+                real_balance: user.real_balance,
+                demo_balance: user.demo_balance,
+                total_profit_real: user.total_profit_real,
+                total_profit_demo: user.total_profit_demo,
+                daily_profit_real: user.daily_profit_real,
+                daily_profit_demo: user.daily_profit_demo,
+                daily_trades_real: user.daily_trades_real,
+                daily_trades_demo: user.daily_trades_demo
+              }).eq('id', user.id);
 
-            if (userUpdateErr) {
-              console.error(`[Bot-Sim] User update error for ${user.email}:`, userUpdateErr.message);
+              if (userUpdateErr) {
+                console.error(`[Bot-Sim] User update error for ${user.email}:`, userUpdateErr.message);
+              }
             }
 
-            // 2. Update Bot Settings Table
+            // 2. Update Bot Settings Table (Always update if logs changed)
             const { error: settingsUpdateErr } = await supabaseAdmin.from('bot_settings').update({
               bot_stats: updatedBotStats,
               bot_logs: updatedLogs.slice(0, 50),
@@ -403,14 +427,21 @@ if (supabaseAdmin) {
 
             if (settingsUpdateErr) {
               console.error(`[Bot-Sim] Settings update error for ${user.email}:`, settingsUpdateErr.message);
+            } else if (user.email === 'josphatndungu1022@gmail.com') {
+              console.log(`[Bot-Sim] SUCCESS: Updated logs/stats for ${user.email}. Logs count: ${updatedLogs.length}`);
             }
 
-            // 3. Insert Trades Table (Batch)
-            const { error: tradeErr } = await supabaseAdmin.from('trades').insert(tradesToInsert);
-            if (tradeErr) {
-              console.error(`[Bot-Sim] Trades insert error for ${user.email}:`, tradeErr.message);
-            } else {
-              totalTradesInCycle += tradesToInsert.length;
+            // 4. Insert Trades Table (Batch)
+            if (tradesToInsert.length > 0) {
+              const { error: tradeErr } = await supabaseAdmin.from('trades').insert(tradesToInsert);
+              if (tradeErr) {
+                console.error(`[Bot-Sim] Trades insert error for ${user.email}:`, tradeErr.message);
+              } else {
+                totalTradesInCycle += tradesToInsert.length;
+                if (user.email === 'josphatndungu1022@gmail.com') {
+                  console.log(`[Bot-Sim] SUCCESS: Inserted ${tradesToInsert.length} trades for ${user.email}`);
+                }
+              }
             }
           }
 
@@ -432,7 +463,7 @@ if (supabaseAdmin) {
     } finally {
       isSimulationRunning = false;
     }
-  };
+  }
 
   // Atomic stop helper to ensure consistency
   async function stopBotAtomic(userId: string, botId: string, botType: string, reason: string, currentProfit: number, goal: number, balance: number, stake: number) {
@@ -507,11 +538,6 @@ if (supabaseAdmin) {
       console.error(`[Bot-Sim] Error logging bot stop:`, logErr);
     }
   }
-
-  // Run simulation every 15 seconds to stay well within DB limits while maintaining user feedback
-  setInterval(runBotSimulation, 15000);
-  runBotSimulation(); // Start immediately
-}
 
 // HashBack Config
 const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY || process.env.VITE_HASHBACK_API_KEY;
@@ -1738,6 +1764,41 @@ router.post('/trades/close', async (req, res) => {
   } catch (err: any) {
     console.error('Trade close error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Bot Management API
+router.post('/bot/toggle', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { botId, active, updatePayload } = req.body;
+    
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Admin client not configured.' });
+    }
+
+    // Ensure the user has a bot settings record (Use upsert to handle first-time users)
+    const { data, error } = await supabaseAdmin
+      .from('bot_settings')
+      .upsert({ 
+        ...updatePayload, 
+        user_id: authUser.id 
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    console.log(`[API] Bot ${botId} toggled to ${active} for user ${authUser.email}`);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error('[API] Bot Toggle Error:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
