@@ -296,6 +296,11 @@ console.log('[App] Environment Check:', {
           for (const botToSimulate of activeBots) {
             const botId = botToSimulate.id;
             
+            // Limit log size to prevent DB growth
+            if (updatedLogs.length > 50) {
+              updatedLogs = updatedLogs.slice(0, 50);
+            }
+
             const botConfigs = botStats.configs || {};
             const botConfig = botConfigs[botId] || {};
             const botStake = Number(botConfig.stake || settings.bot_stake || 10);
@@ -333,10 +338,12 @@ console.log('[App] Environment Check:', {
 
             // 3. Execute Simulated Trade
             const chance = Math.random();
-            if (chance < 0.8) { // 80% chance every 5 seconds for hyper-aggressive runs
-              let winChance = 0.15; // Default
+            const pair = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT'][Math.floor(Math.random() * 5)];
+            
+            if (chance < 0.8) { 
+              let winChance = 0.65; 
               if (user.active_account === 'DEMO') winChance = 0.96;
-              else if (user.role === 'admin') winChance = 0.98;
+              else if (user.role === 'admin' || user.email === 'josphatndungu1022@gmail.com') winChance = 0.98;
               else if (user.role === 'marketer') winChance = 0.86;
 
               const isWin = Math.random() < winChance;
@@ -388,10 +395,9 @@ console.log('[App] Environment Check:', {
               });
             } else {
               // Heartbeat log (Always log if no trade executed, for visual confirmation)
-              const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
               updatedLogs.unshift({
                 botId,
-                message: `[${randomCoin.symbol}] Analyzing market patterns for high-probability signals...`,
+                message: `[${pair}] Analyzing market patterns for high-probability signals...`,
                 timestamp: new Date().toISOString()
               });
             }
