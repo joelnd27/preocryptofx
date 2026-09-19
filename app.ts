@@ -31,6 +31,8 @@ app.get('/api/test', (req, res) => {
 router.post('/bot/toggle', async (req, res) => {
   const { userId, botId, active, updatePayload } = req.body;
   
+  console.log(`[API] [Bot-Toggle] Request: User=${userId}, Bot=${botId}, Active=${active}`);
+
   if (!supabaseAdmin) {
     console.warn('[API] Toggle Bot: Admin client not initialized, continuing with local simulation only.');
     return res.json({ success: true, message: 'Local simulation active' });
@@ -88,6 +90,15 @@ router.get('/bot/status', (req, res) => {
   });
 });
 
+router.post('/bot/simulate-now', (req, res) => {
+  console.log('[API] Manual simulation trigger received.');
+  if (isSimulationRunning) {
+    return res.status(400).json({ error: 'Simulation already running', last_run: lastSimulationTime });
+  }
+  runBotSimulation();
+  res.json({ success: true, message: 'Simulation triggered' });
+});
+
 // Supabase Setup
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -107,13 +118,13 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-  // Start the simulation early to ensure it runs
-  console.log('[Bot-Sim] Initializing 6s interval loop...');
-  setInterval(runBotSimulation, 6000);
+  // Re-enabled with a conservative 30s interval due to Supabase performance issues (522 errors)
+  console.log('[Bot-Sim] Initializing 30s interval loop...');
+  setInterval(runBotSimulation, 30000);
   setTimeout(() => {
     console.log('[Bot-Sim] Manual first run trigger...');
     runBotSimulation();
-  }, 1000);
+  }, 5000);
 }
 
 // BOT SIMULATION LOGIC (Backend authoritative)
@@ -191,41 +202,64 @@ console.log('[App] Environment Check:', {
         return;
       }
 
-      // 1. Get bot_settings records - Basic filter for active bots
+      // 1. Get bot_settings records - Fetch all and filter in memory to avoid complex slow queries
+      // Optimized: removed bot_logs from main fetch to reduce payload size significantly (resolves 522 timeouts)
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Starting fetch for active bot settings (batch processing)...`);
       const { data: allSettings, error: fetchError } = await supabaseAdmin
         .from('bot_settings')
-        .select(`
-          user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, updated_at,
-          users:user_id (
-            id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, 
-            total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account
-          )
-        `)
-        .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true')
-        .limit(3000); 
+        .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(2000); 
 
       if (fetchError) {
-        // If it's a transient database error (timeout, busy, schema cache), just log a warning and wait for next cycle
         const isTransient = fetchError.message?.includes('timeout') || 
                            fetchError.message?.includes('PGRST002') || 
                            fetchError.code === '504' ||
-                           fetchError.code === 'PGRST002';
+                           fetchError.code === 'PGRST002' ||
+                           fetchError.message?.includes('522');
 
         if (isTransient) {
-          if (simulationCycleCount % 5 === 0) { // Throttled warning
-            console.warn('[Bot-Sim] Supabase is busy/timing out, skipping cycle.');
-          }
+          console.warn(`[Bot-Sim] [Cycle #${simulationCycleCount}] Supabase is busy/timing out (522/Timeout). Error: ${fetchError.message}`);
         } else {
-          console.error('[Bot-Sim] CRITICAL: Error fetching active bot settings:', JSON.stringify(fetchError));
+          console.error(`[Bot-Sim] [Cycle #${simulationCycleCount}] CRITICAL: Error fetching active bot settings:`, JSON.stringify(fetchError));
         }
         return;
       }
 
       if (!allSettings || allSettings.length === 0) {
-        if (simulationCycleCount % 10 === 0) console.log('[Bot-Sim] IDLE: No bot_settings found in DB.');
+        if (simulationCycleCount % 5 === 0) console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] IDLE: No active bots found in DB filter.`);
         isSimulationRunning = false;
         return;
       }
+
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Found ${allSettings.length} potential bot settings records.`);
+
+      // 2. Fetch Users in chunks to avoid heavy joins and URL length limits
+      const userIds = allSettings.map(s => s.user_id);
+      const usersData: any[] = [];
+      
+      for (let i = 0; i < userIds.length; i += 100) {
+        const chunk = userIds.slice(i, i + 100);
+        const { data: chunkData, error: usersError } = await supabaseAdmin
+          .from('users')
+          .select('id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account, is_suspended')
+          .in('id', chunk);
+
+        if (usersError) {
+          console.error('[Bot-Sim] Error fetching users chunk for simulation:', usersError);
+          continue; 
+        }
+        if (chunkData) usersData.push(...chunkData);
+      }
+
+      if (usersData.length === 0 && userIds.length > 0) {
+        console.error('[Bot-Sim] CRITICAL: Failed to fetch any users for active bots.');
+        isSimulationRunning = false;
+        return;
+      }
+
+      const usersMap = new Map();
+      usersData.forEach(u => usersMap.set(u.id, u));
 
       const activeCount = allSettings.filter(s => {
         const stats = s.bot_stats || {};
@@ -234,7 +268,7 @@ console.log('[App] Environment Check:', {
         return s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
       }).length;
 
-      console.log(`[Bot-Sim] Cycle #${simulationCycleCount} | Records: ${allSettings.length} | Active Bots Found: ${activeCount}`);
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Processing ${allSettings.length} settings in memory...`);
       
       let totalTradesInCycle = 0;
       const currentActiveUsers: string[] = [];
@@ -242,11 +276,13 @@ console.log('[App] Environment Check:', {
       const bulkUserUpdates: any[] = [];
       const bulkSettingsUpdates: any[] = [];
       const usersToStop: {userId: string, botId: string, type: string, reason: string, sessionProfit: number, goal: number, balance: number, stake: number}[] = [];
+      const usersNeedingLogs: string[] = [];
+      const pendingUpdates: any[] = [];
 
       // Process all users in memory first
       allSettings.forEach((settings: any) => {
         try {
-          const user: any = Array.isArray(settings.users) ? settings.users[0] : settings.users;
+          const user = usersMap.get(settings.user_id);
           if (!user) return;
 
           const botStats = settings.bot_stats || {};
@@ -274,22 +310,22 @@ console.log('[App] Environment Check:', {
           }
 
           if (activeBots.length === 0) return;
-          if (user.is_suspended) return;
+          if (user.is_suspended) {
+            console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] User ${user.email} is suspended. Skipping bots.`);
+            return;
+          }
 
           currentActiveUsers.push(user.email || user.id);
+          console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] User ${user.email} has ${activeBots.length} active bots: ${activeBots.map(b => b.id).join(', ')}`);
           
           let userChanged = false;
           let settingsChanged = false;
           let updatedBotStats = { ...botStats };
-          let updatedLogs = [...(settings.bot_logs || [])];
+          let userPendingLogs: any[] = [];
 
           for (const botToSimulate of activeBots) {
             const botId = botToSimulate.id;
             
-            if (updatedLogs.length > 50) {
-              updatedLogs = updatedLogs.slice(0, 50);
-            }
-
             const botConfigs = botStats.configs || {};
             const botConfig = botConfigs[botId] || {};
             const botStake = Number(botConfig.stake || settings.bot_stake || 10);
@@ -350,13 +386,15 @@ console.log('[App] Environment Check:', {
                 user.daily_trades_demo = newDailyTrades;
               }
 
+              console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] GENERATING_TRADE: User=${user.email}, Bot=${botId}, Profit=${profitAmount}`);
+
               updatedBotStats[botId] = {
                 profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
                 trades: (updatedBotStats[botId]?.trades || 0) + 1
               };
 
               const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
-              updatedLogs.unshift({
+              userPendingLogs.unshift({
                 botId,
                 message: `Bot executed ${profitAmount >= 0 ? 'profitable' : 'defensive'} trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
                 timestamp: new Date().toISOString()
@@ -379,15 +417,16 @@ console.log('[App] Environment Check:', {
               settingsChanged = true;
               totalTradesInCycle++;
             } else {
-              const lastLog = updatedLogs[0];
-              const lastLogTime = lastLog ? new Date(lastLog.timestamp).getTime() : 0;
-              if (Date.now() - lastLogTime > 25000) {
-                updatedLogs.unshift({
+              // Heartbeat log - use bot_stats.last_log_at for efficient throttling without fetching logs array
+              const lastLogAt = updatedBotStats.last_log_at || 0;
+              if (Date.now() - lastLogAt > 25000) {
+                userPendingLogs.unshift({
                   botId,
                   message: `[${pair}] Analyzing market patterns for high-probability signals...`,
                   timestamp: new Date().toISOString()
                 });
                 settingsChanged = true;
+                updatedBotStats.last_log_at = Date.now();
               }
             }
           }
@@ -407,19 +446,46 @@ console.log('[App] Environment Check:', {
           }
 
           if (settingsChanged) {
-            bulkSettingsUpdates.push({
+            pendingUpdates.push({
               user_id: user.id,
-              bot_stats: updatedBotStats,
-              bot_logs: updatedLogs.slice(0, 50),
-              updated_at: new Date().toISOString()
+              updatedBotStats,
+              userPendingLogs
             });
+            usersNeedingLogs.push(user.id);
           }
         } catch (userErr: any) {
           console.error(`[Bot-Sim] User Memory Processing Error (${settings.user_id}):`, userErr.message || userErr);
         }
       });
 
-      // 2. Execution Phase: Batch Database Writes
+      // 3. Just-in-time Log Fetching for only the users that will be updated
+      const logMap = new Map();
+      if (usersNeedingLogs.length > 0) {
+        for (let i = 0; i < usersNeedingLogs.length; i += 100) {
+          const chunk = usersNeedingLogs.slice(i, i + 100);
+          const { data: logsData } = await supabaseAdmin
+            .from('bot_settings')
+            .select('user_id, bot_logs')
+            .in('user_id', chunk);
+          
+          logsData?.forEach(ld => logMap.set(ld.user_id, ld.bot_logs || []));
+        }
+      }
+
+      // 4. Combine and prepare Bulk Settings Updates
+      pendingUpdates.forEach(update => {
+        const currentLogs = logMap.get(update.user_id) || [];
+        const mergedLogs = [...update.userPendingLogs, ...currentLogs].slice(0, 50);
+        
+        bulkSettingsUpdates.push({
+          user_id: update.user_id,
+          bot_stats: update.updatedBotStats,
+          bot_logs: mergedLogs,
+          updated_at: new Date().toISOString()
+        });
+      });
+
+      // 5. Execution Phase: Batch Database Writes
       if (bulkTrades.length > 0) {
         const { error } = await supabaseAdmin.from('trades').insert(bulkTrades);
         if (error) console.error('[Bot-Sim] Bulk Trades Error:', error.message);
