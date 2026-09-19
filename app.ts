@@ -108,8 +108,8 @@ if (!supabaseAdmin) {
   console.log('[Supabase] Admin client initialized successfully.');
   
   // Start the simulation early to ensure it runs
-  console.log('[Bot-Sim] Initializing 5s interval loop...');
-  setInterval(runBotSimulation, 5000);
+  console.log('[Bot-Sim] Initializing 6s interval loop...');
+  setInterval(runBotSimulation, 6000);
   setTimeout(() => {
     console.log('[Bot-Sim] Manual first run trigger...');
     runBotSimulation();
@@ -171,6 +171,11 @@ console.log('[App] Environment Check:', {
 
   // BOT SIMULATION LOGIC (Backend authoritative)
   async function runBotSimulation() {
+    if (isSimulationRunning) {
+      console.log(`[Bot-Sim] Skipping cycle #${simulationCycleCount + 1}: Previous cycle still running.`);
+      return;
+    }
+    isSimulationRunning = true;
     lastSimulationTime = new Date().toISOString();
     simulationCycleCount++;
     const currentActiveUsers: string[] = [];
@@ -233,29 +238,26 @@ console.log('[App] Environment Check:', {
       
       let totalTradesInCycle = 0;
       const currentActiveUsers: string[] = [];
+      const bulkTrades: any[] = [];
+      const bulkUserUpdates: any[] = [];
+      const bulkSettingsUpdates: any[] = [];
+      const usersToStop: {userId: string, botId: string, type: string, reason: string, sessionProfit: number, goal: number, balance: number, stake: number}[] = [];
 
-      // Process users in parallel for high-speed trade execution (satisfies 10s interval requirement)
-      // Optimized: Batch updates per user to reduce DB load
-      await Promise.all(allSettings.map(async (settings: any) => {
+      // Process all users in memory first
+      allSettings.forEach((settings: any) => {
         try {
           const user: any = Array.isArray(settings.users) ? settings.users[0] : settings.users;
           if (!user) return;
 
-          if (simulationCycleCount % 5 === 0 && (settings.scalping_active || settings.trend_active || settings.ai_active)) {
-            console.log(`[Bot-Sim] Checking User ${user.email}: scalping=${settings.scalping_active}, trend=${settings.trend_active}, ai=${settings.ai_active}`);
-          }
-          
           const botStats = settings.bot_stats || {};
           const activeStates = botStats.active_states || {};
           
-          // Determine which bots are actually active
           const activeBots: {id: string, type: string}[] = [];
           if (settings.scalping_active) activeBots.push({id: 'scalping', type: 'standard'});
           if (settings.trend_active) activeBots.push({id: 'trend', type: 'standard'});
           if (settings.ai_active) activeBots.push({id: 'ai', type: 'standard'});
           if (settings.custom_active) activeBots.push({id: 'custom', type: 'custom'});
 
-          // Extended bots in JSONB
           const extendedBotIds = ['vortex', 'orbit', 'starlight', 'galaxy', 'nova', 'wizard1', 'wizard2'];
           extendedBotIds.forEach(id => {
             if (activeStates[id] === true || activeStates[id] === 'true') {
@@ -271,32 +273,19 @@ console.log('[App] Environment Check:', {
             });
           }
 
-          // Skip if no active bots for this user
           if (activeBots.length === 0) return;
+          if (user.is_suspended) return;
 
           currentActiveUsers.push(user.email || user.id);
           
-          if (user.is_suspended) {
-            if (simulationCycleCount % 10 === 0) console.log(`[Bot-Sim] User ${user.email} is suspended. Skipping.`);
-            return;
-          }
-
-          if (activeBots.length > 0 && simulationCycleCount % 5 === 0) {
-            console.log(`[Bot-Sim] User ${user.email} has ${activeBots.length} active bots: ${activeBots.map(b => b.id).join(', ')}`);
-          }
-
-          // Batch data for this user
-          let userBalanceUpdate: any = {};
+          let userChanged = false;
+          let settingsChanged = false;
           let updatedBotStats = { ...botStats };
           let updatedLogs = [...(settings.bot_logs || [])];
-          let tradesToInsert: any[] = [];
-          let stopActions: any[] = [];
 
-          // Process each active bot for this user
           for (const botToSimulate of activeBots) {
             const botId = botToSimulate.id;
             
-            // Limit log size to prevent DB growth
             if (updatedLogs.length > 50) {
               updatedLogs = updatedLogs.slice(0, 50);
             }
@@ -310,33 +299,27 @@ console.log('[App] Environment Check:', {
             const currentDailyProfit = isReal ? (Number(user.daily_profit_real) || 0) : (Number(user.daily_profit_demo) || 0);
             const currentBalance = isReal ? (Number(user.real_balance) || 0) : (Number(user.demo_balance) || 0);
 
-            // 1. Session Profit Goal Check
-            const sessionStartProfits = botStats.session_start_profits || {};
+            const sessionStartProfits = updatedBotStats.session_start_profits || {};
             if (sessionStartProfits[botId] === undefined) {
               sessionStartProfits[botId] = currentDailyProfit;
               updatedBotStats.session_start_profits = sessionStartProfits;
+              settingsChanged = true;
             }
 
-            const sessionStartProfit = (sessionStartProfits[botId] !== undefined) ? Number(sessionStartProfits[botId]) : currentDailyProfit;
+            const sessionStartProfit = Number(sessionStartProfits[botId]);
             const sessionProfit = Number((currentDailyProfit - sessionStartProfit).toFixed(2));
             const targetProfitAmount = (botStake * botTargetPercentage) / 100;
 
             if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
-              if (user.email === 'josphatndungu1022@gmail.com') console.log(`[Bot-Sim] JOSPHAT: Bot ${botId} reached target ${targetProfitAmount}. Stopping.`);
-              stopActions.push({ botId, type: botToSimulate.type, reason: 'PROFIT_GOAL_REACHED', sessionProfit, targetProfitAmount, currentBalance, botStake });
+              usersToStop.push({ userId: user.id, botId, type: botToSimulate.type, reason: 'PROFIT_GOAL_REACHED', sessionProfit, goal: targetProfitAmount, balance: currentBalance, stake: botStake });
               continue;
             }
 
-            // 2. Balance Check
             if (currentBalance < botStake) {
-              if (user.email === 'josphatndungu1022@gmail.com') {
-                console.warn(`[Bot-Sim] JOSPHAT: Insufficient balance for ${botId}. Balance: ${currentBalance}, Stake: ${botStake}`);
-              }
-              stopActions.push({ botId, type: botToSimulate.type, reason: 'INSUFFICIENT_BALANCE', sessionProfit, targetProfitAmount, currentBalance, botStake });
+              usersToStop.push({ userId: user.id, botId, type: botToSimulate.type, reason: 'INSUFFICIENT_BALANCE', sessionProfit, goal: targetProfitAmount, balance: currentBalance, stake: botStake });
               continue;
             }
 
-            // 3. Execute Simulated Trade
             const chance = Math.random();
             const pair = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT'][Math.floor(Math.random() * 5)];
             
@@ -355,7 +338,6 @@ console.log('[App] Environment Check:', {
               const newTotalProfit = Number(((isReal ? (Number(user.total_profit_real) || 0) : (Number(user.total_profit_demo) || 0)) + profitAmount).toFixed(2));
               const newDailyTrades = (isReal ? (Number(user.daily_trades_real) || 0) : (Number(user.daily_trades_demo) || 0)) + 1;
 
-              // Apply updates to the user's running balance for this cycle
               if (isReal) {
                 user.real_balance = newBalance;
                 user.total_profit_real = newTotalProfit;
@@ -368,7 +350,6 @@ console.log('[App] Environment Check:', {
                 user.daily_trades_demo = newDailyTrades;
               }
 
-              // Update Bot Stats & Logs
               updatedBotStats[botId] = {
                 profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
                 trades: (updatedBotStats[botId]?.trades || 0) + 1
@@ -381,7 +362,7 @@ console.log('[App] Environment Check:', {
                 timestamp: new Date().toISOString()
               });
 
-              tradesToInsert.push({
+              bulkTrades.push({
                 user_id: user.id,
                 coin: randomCoin.symbol,
                 amount: botStake,
@@ -393,75 +374,81 @@ console.log('[App] Environment Check:', {
                 timestamp: new Date().toISOString(),
                 source: 'BOT'
               });
+              
+              userChanged = true;
+              settingsChanged = true;
+              totalTradesInCycle++;
             } else {
-              // Heartbeat log (Always log if no trade executed, for visual confirmation)
-              updatedLogs.unshift({
-                botId,
-                message: `[${pair}] Analyzing market patterns for high-probability signals...`,
-                timestamp: new Date().toISOString()
-              });
+              const lastLog = updatedLogs[0];
+              const lastLogTime = lastLog ? new Date(lastLog.timestamp).getTime() : 0;
+              if (Date.now() - lastLogTime > 25000) {
+                updatedLogs.unshift({
+                  botId,
+                  message: `[${pair}] Analyzing market patterns for high-probability signals...`,
+                  timestamp: new Date().toISOString()
+                });
+                settingsChanged = true;
+              }
             }
           }
 
-          // PERFORM BATCHED UPDATES
-          // 3. Update DB if changes occurred
-          if (tradesToInsert.length > 0 || updatedLogs.length !== (settings.bot_logs || []).length) {
-            // 1. Update User Table if balance/stats changed
-            if (tradesToInsert.length > 0) {
-              const { error: userUpdateErr } = await supabaseAdmin.from('users').update({
-                real_balance: user.real_balance,
-                demo_balance: user.demo_balance,
-                total_profit_real: user.total_profit_real,
-                total_profit_demo: user.total_profit_demo,
-                daily_profit_real: user.daily_profit_real,
-                daily_profit_demo: user.daily_profit_demo,
-                daily_trades_real: user.daily_trades_real,
-                daily_trades_demo: user.daily_trades_demo
-              }).eq('id', user.id);
+          if (userChanged) {
+            bulkUserUpdates.push({
+              id: user.id,
+              real_balance: user.real_balance,
+              demo_balance: user.demo_balance,
+              total_profit_real: user.total_profit_real,
+              total_profit_demo: user.total_profit_demo,
+              daily_profit_real: user.daily_profit_real,
+              daily_profit_demo: user.daily_profit_demo,
+              daily_trades_real: user.daily_trades_real,
+              daily_trades_demo: user.daily_trades_demo
+            });
+          }
 
-              if (userUpdateErr) {
-                console.error(`[Bot-Sim] User update error for ${user.email}:`, userUpdateErr.message);
-              }
-            }
-
-            // 2. Update Bot Settings Table (Always update if logs changed)
-            const { error: settingsUpdateErr } = await supabaseAdmin.from('bot_settings').update({
+          if (settingsChanged) {
+            bulkSettingsUpdates.push({
+              user_id: user.id,
               bot_stats: updatedBotStats,
               bot_logs: updatedLogs.slice(0, 50),
               updated_at: new Date().toISOString()
-            }).eq('user_id', user.id);
-
-            if (settingsUpdateErr) {
-              console.error(`[Bot-Sim] Settings update error for ${user.email}:`, settingsUpdateErr.message);
-            } else if (user.email === 'josphatndungu1022@gmail.com') {
-              console.log(`[Bot-Sim] SUCCESS: Updated logs/stats for ${user.email}. Logs count: ${updatedLogs.length}`);
-            }
-
-            // 4. Insert Trades Table (Batch)
-            if (tradesToInsert.length > 0) {
-              const { error: tradeErr } = await supabaseAdmin.from('trades').insert(tradesToInsert);
-              if (tradeErr) {
-                console.error(`[Bot-Sim] Trades insert error for ${user.email}:`, tradeErr.message);
-              } else {
-                totalTradesInCycle += tradesToInsert.length;
-                if (user.email === 'josphatndungu1022@gmail.com') {
-                  console.log(`[Bot-Sim] SUCCESS: Inserted ${tradesToInsert.length} trades for ${user.email}`);
-                }
-              }
-            }
+            });
           }
-
-          // Handle stops sequentially (they are less frequent)
-          for (const stop of stopActions) {
-            await stopBotAtomic(user.id, stop.botId, stop.type, stop.reason, stop.sessionProfit, stop.targetProfitAmount, stop.currentBalance, stop.botStake);
-          }
-
         } catch (userErr: any) {
-          console.error(`[Bot-Sim] User Loop Error (${settings.user_id}):`, userErr.message || userErr);
+          console.error(`[Bot-Sim] User Memory Processing Error (${settings.user_id}):`, userErr.message || userErr);
         }
-      }));
-      if (totalTradesInCycle > 0) {
-        console.log(`[Bot-Sim] CYCLE_COMPLETE: Trades: ${totalTradesInCycle}`);
+      });
+
+      // 2. Execution Phase: Batch Database Writes
+      if (bulkTrades.length > 0) {
+        const { error } = await supabaseAdmin.from('trades').insert(bulkTrades);
+        if (error) console.error('[Bot-Sim] Bulk Trades Error:', error.message);
+      }
+
+      if (bulkUserUpdates.length > 0) {
+        // Chunk user upserts to stay under URL/body limits if needed
+        for (let i = 0; i < bulkUserUpdates.length; i += 50) {
+          const chunk = bulkUserUpdates.slice(i, i + 50);
+          const { error } = await supabaseAdmin.from('users').upsert(chunk);
+          if (error) console.error('[Bot-Sim] Bulk User Error:', error.message);
+        }
+      }
+
+      if (bulkSettingsUpdates.length > 0) {
+        for (let i = 0; i < bulkSettingsUpdates.length; i += 50) {
+          const chunk = bulkSettingsUpdates.slice(i, i + 50);
+          const { error } = await supabaseAdmin.from('bot_settings').upsert(chunk, { onConflict: 'user_id' });
+          if (error) console.error('[Bot-Sim] Bulk Settings Error:', error.message);
+        }
+      }
+
+      // 3. Handle Stops (Sequentially as they are rare and logic is more complex)
+      for (const stop of usersToStop) {
+        await stopBotAtomic(stop.userId, stop.botId, stop.type, stop.reason, stop.sessionProfit, stop.goal, stop.balance, stop.stake);
+      }
+
+      if (totalTradesInCycle > 0 || usersToStop.length > 0) {
+        console.log(`[Bot-Sim] CYCLE_COMPLETE: Trades: ${totalTradesInCycle}, Stops: ${usersToStop.length}, Users: ${bulkUserUpdates.length}`);
       }
       activeUserIds = currentActiveUsers;
     } catch (err) {
