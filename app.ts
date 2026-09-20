@@ -118,13 +118,9 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-  // Re-enabled with a conservative 30s interval due to Supabase performance issues (522 errors)
-  console.log('[Bot-Sim] Initializing 30s interval loop...');
-  setInterval(runBotSimulation, 30000);
-  setTimeout(() => {
-    console.log('[Bot-Sim] Manual first run trigger...');
-    runBotSimulation();
-  }, 5000);
+  // Ultra-conservative 2-minute interval
+  console.log('[Bot-Sim] Initializing 2-minute interval loop...');
+  setInterval(runBotSimulation, 120000);
 }
 
 // BOT SIMULATION LOGIC (Backend authoritative)
@@ -191,7 +187,7 @@ console.log('[App] Environment Check:', {
     simulationCycleCount++;
     const currentActiveUsers: string[] = [];
 
-    if (simulationCycleCount % 10 === 0) {
+    if (simulationCycleCount % 5 === 0) {
       console.log(`[Bot-Sim] Heartbeat: Cycle #${simulationCycleCount}`);
     }
 
@@ -202,14 +198,38 @@ console.log('[App] Environment Check:', {
         return;
       }
 
-      // 1. Get bot_settings records - Fetch all and filter in memory to avoid complex slow queries
-      // Optimized: removed bot_logs from main fetch to reduce payload size significantly (resolves 522 timeouts)
-      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Starting fetch for active bot settings (batch processing)...`);
-      const { data: allSettings, error: fetchError } = await supabaseAdmin
-        .from('bot_settings')
-        .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(2000); 
+      // 1. Get bot_settings records - Fetch only the most recently updated ones
+      // We use a small limit (150) and a retry mechanism for transient 522/timeouts.
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Fetching recent bot settings...`);
+      
+      let allSettings: any[] | null = null;
+      let fetchError: any = null;
+      
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const { data, error } = await supabaseAdmin
+          .from('bot_settings')
+          .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(150);
+        
+        if (!error) {
+          allSettings = data;
+          break;
+        }
+        
+        fetchError = error;
+        const isTransient = error.message?.includes('timeout') || 
+                           error.message?.includes('PGRST002') || 
+                           error.code === '504' ||
+                           error.message?.includes('522');
+
+        if (isTransient && attempt === 1) {
+          console.warn(`[Bot-Sim] [Cycle #${simulationCycleCount}] Supabase busy (Attempt 1), retrying in 5s...`);
+          await new Promise(r => setTimeout(r, 5000));
+        } else {
+          break; 
+        }
+      }
 
       if (fetchError) {
         const isTransient = fetchError.message?.includes('timeout') || 
@@ -223,23 +243,32 @@ console.log('[App] Environment Check:', {
         } else {
           console.error(`[Bot-Sim] [Cycle #${simulationCycleCount}] CRITICAL: Error fetching active bot settings:`, JSON.stringify(fetchError));
         }
-        return;
-      }
-
-      if (!allSettings || allSettings.length === 0) {
-        if (simulationCycleCount % 5 === 0) console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] IDLE: No active bots found in DB filter.`);
         isSimulationRunning = false;
         return;
       }
 
-      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Found ${allSettings.length} potential bot settings records.`);
+      // 2. Pre-filter settings in memory to find truly active users before fetching user data
+      const activeSettings = (allSettings || []).filter(s => {
+        const stats = s.bot_stats || {};
+        const activeStates = stats.active_states || {};
+        const hasActiveExtended = Object.values(activeStates).some(v => v === true || v === 'true');
+        return s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
+      });
 
-      // 2. Fetch Users in chunks to avoid heavy joins and URL length limits
-      const userIds = allSettings.map(s => s.user_id);
+      if (activeSettings.length === 0) {
+        if (simulationCycleCount % 5 === 0) console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] IDLE: No active bots found in filtered set.`);
+        isSimulationRunning = false;
+        return;
+      }
+
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Found ${activeSettings.length} active bot settings records.`);
+
+      // 3. Fetch Users only for active settings
+      const userIds = activeSettings.map(s => s.user_id);
       const usersData: any[] = [];
       
-      for (let i = 0; i < userIds.length; i += 100) {
-        const chunk = userIds.slice(i, i + 100);
+      for (let i = 0; i < userIds.length; i += 50) { // Smaller chunk size (50) for better reliability
+        const chunk = userIds.slice(i, i + 50);
         const { data: chunkData, error: usersError } = await supabaseAdmin
           .from('users')
           .select('id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account, is_suspended')
@@ -261,17 +290,10 @@ console.log('[App] Environment Check:', {
       const usersMap = new Map();
       usersData.forEach(u => usersMap.set(u.id, u));
 
-      const activeCount = allSettings.filter(s => {
-        const stats = s.bot_stats || {};
-        const activeStates = stats.active_states || {};
-        const hasActiveExtended = Object.values(activeStates).some(v => v === true || v === 'true');
-        return s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
-      }).length;
-
-      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Processing ${allSettings.length} settings in memory...`);
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Processing ${activeSettings.length} active users in memory...`);
       
       let totalTradesInCycle = 0;
-      const currentActiveUsers: string[] = [];
+      const currentActiveUsersInCycle: string[] = [];
       const bulkTrades: any[] = [];
       const bulkUserUpdates: any[] = [];
       const bulkSettingsUpdates: any[] = [];
@@ -279,8 +301,8 @@ console.log('[App] Environment Check:', {
       const usersNeedingLogs: string[] = [];
       const pendingUpdates: any[] = [];
 
-      // Process all users in memory first
-      allSettings.forEach((settings: any) => {
+      // Process all active settings in memory
+      activeSettings.forEach((settings: any) => {
         try {
           const user = usersMap.get(settings.user_id);
           if (!user) return;
@@ -315,7 +337,7 @@ console.log('[App] Environment Check:', {
             return;
           }
 
-          currentActiveUsers.push(user.email || user.id);
+          currentActiveUsersInCycle.push(user.email || user.id);
           console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] User ${user.email} has ${activeBots.length} active bots: ${activeBots.map(b => b.id).join(', ')}`);
           
           let userChanged = false;
@@ -516,7 +538,7 @@ console.log('[App] Environment Check:', {
       if (totalTradesInCycle > 0 || usersToStop.length > 0) {
         console.log(`[Bot-Sim] CYCLE_COMPLETE: Trades: ${totalTradesInCycle}, Stops: ${usersToStop.length}, Users: ${bulkUserUpdates.length}`);
       }
-      activeUserIds = currentActiveUsers;
+      activeUserIds = currentActiveUsersInCycle;
     } catch (err) {
       console.error('[Bot-Sim] Simulation Loop Exception:', err);
     } finally {

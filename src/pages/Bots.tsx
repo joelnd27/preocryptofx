@@ -148,25 +148,11 @@ export default function Bots() {
     userRef.current = user;
   }, [user]);
 
-  // Periodic Refresh for Live Logs and Profits
+  // Periodic Refresh removed as useStore handles Realtime updates
   useEffect(() => {
-    // We use a stable interval and check activity inside using the latest user state from Ref
-    const interval = setInterval(() => {
-      if (document.visibilityState !== 'visible' || !userRef.current) return;
-
-      const currentUser = userRef.current;
-      const isBotActive = selectedBot.id in (currentUser.bots || {}) 
-        ? currentUser.bots[selectedBot.id as keyof typeof currentUser.bots] 
-        : (currentUser.activeCustomBotIds || []).includes(selectedBot.id);
-
-      if (isBotActive) {
-        console.log(`[Polling] Refreshing data for active bot: ${selectedBot.id}`);
-        refreshData();
-      }
-    }, 4000); // 4 seconds is more stable and still feels real-time
-
-    return () => clearInterval(interval);
-  }, [selectedBot.id, refreshData]); 
+    // No-op: Realtime handles updates
+    return () => {};
+  }, []); 
   
   const [botSettings, setBotSettings] = useState<Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }>>(() => {
     const initial: Record<string, { coin: string, timeframe: string, stake: number, targetProfit: number, isConfigured?: boolean }> = {};

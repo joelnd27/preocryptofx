@@ -104,6 +104,7 @@ export function useStore() {
   const closingTrades = useRef<Set<string>>(new Set());
   const serverTimeOffset = useRef<number>(0);
   const serverTimeSynced = useRef<boolean>(false);
+  const lastTradersFetch = useRef<number>(0);
   
   useEffect(() => {
     userRef.current = user;
@@ -190,7 +191,7 @@ export function useStore() {
       }
     };
 
-    const interval = setInterval(checkVerification, 30000);
+    const interval = setInterval(checkVerification, 120000); // Check every 2 minutes instead of 30s
     checkVerification();
     return () => clearInterval(interval);
   }, [user?.id, user?.verificationStatus, user?.verificationSubmittedAt, user?.verificationDocuments]);
@@ -377,11 +378,23 @@ export function useStore() {
         return;
       }
 
-      // 2. Fetch User Profile
+      // 2. Fetch User Profile - Optimized to limit egress by fetching only recent trades/transactions
       const { data: userData, error } = await supabase
         .from('users')
-        .select('*, transactions(*), trades(*), bot_settings(*)')
+        .select(`
+          *,
+          transactions(*),
+          trades(
+            id, coin, amount, type, price, status, profit, target_profit, 
+            timestamp, created_at, account_type, duration, source
+          ),
+          bot_settings(*)
+        `)
         .eq('id', session.user.id)
+        .order('created_at', { foreignTable: 'trades', ascending: false })
+        .limit(50, { foreignTable: 'trades' })
+        .order('created_at', { foreignTable: 'transactions', ascending: false })
+        .limit(50, { foreignTable: 'transactions' })
         .maybeSingle();
 
       if (error) {
@@ -562,88 +575,95 @@ export function useStore() {
         hasSyncedRef.current = true;
         console.log('[Sync] User sync complete');
 
-        // Fetch Global Copy Traders
-        try {
-          const { data: tradersData, error: tradersError } = await supabase
-            .from('copy_traders')
-            .select('*')
-            .order('total_profit', { ascending: false });
+        // Fetch Global Copy Traders with cache (5 mins)
+        const tradersFetchNow = Date.now();
+        const tradersCacheAge = tradersFetchNow - lastTradersFetch.current;
+        
+        if (isSupabaseConfigured() && tradersCacheAge > 300000) {
+          try {
+            console.log('[Sync] Fetching fresh copy traders...');
+            const { data: tradersData, error: tradersError } = await supabase
+              .from('copy_traders')
+              .select('*')
+              .order('total_profit', { ascending: false });
 
-          if (tradersError) {
-            const tMsg = String(tradersError.message || tradersError || '').toLowerCase();
-            const isNetworkErr = 
-              tMsg.includes('failed to fetch') || 
-              tMsg.includes('network error') || 
-              tMsg.includes('load failed') ||
-              tMsg.includes('fetch') ||
-              tMsg.includes('typeerror') ||
-              tMsg.includes('connection');
+            if (tradersError) {
+              const tMsg = String(tradersError.message || tradersError || '').toLowerCase();
+              const isNetworkErr = 
+                tMsg.includes('failed to fetch') || 
+                tMsg.includes('network error') || 
+                tMsg.includes('load failed') ||
+                tMsg.includes('fetch') ||
+                tMsg.includes('typeerror') ||
+                tMsg.includes('connection');
 
-            if (isNetworkErr) {
-              console.warn('[Sync] Supabase connection unavailable for copy traders. Using local/simulated traders.');
-            } else {
-              console.error('[Sync] Error fetching copy traders:', tradersError.message);
-            }
-          } else if (tradersData && tradersData.length > 0) {
-            // Retrieve roles for creators of these copy trading profiles
-            const creatorIds = Array.from(new Set(tradersData.map(t => t.created_by).filter(Boolean)));
-            const creatorRolesMap: Record<string, 'user' | 'marketer' | 'admin'> = {};
-            
-            if (creatorIds.length > 0) {
-              const { data: creatorsData } = await supabase
-                .from('users')
-                .select('id, role')
-                .in('id', creatorIds);
-              
-              if (creatorsData) {
-                creatorsData.forEach((c: any) => {
-                  creatorRolesMap[c.id] = c.role;
-                });
+              if (isNetworkErr) {
+                console.warn('[Sync] Supabase connection unavailable for copy traders. Using local/simulated traders.');
+              } else {
+                console.error('[Sync] Error fetching copy traders:', tradersError.message);
               }
+            } else if (tradersData && tradersData.length > 0) {
+              lastTradersFetch.current = tradersFetchNow;
+              // Retrieve roles for creators of these copy trading profiles
+              const creatorIds = Array.from(new Set(tradersData.map(t => t.created_by).filter(Boolean)));
+              const creatorRolesMap: Record<string, 'user' | 'marketer' | 'admin'> = {};
+              
+              if (creatorIds.length > 0) {
+                const { data: creatorsData } = await supabase
+                  .from('users')
+                  .select('id, role')
+                  .in('id', creatorIds);
+                
+                if (creatorsData) {
+                  creatorsData.forEach((c: any) => {
+                    creatorRolesMap[c.id] = c.role;
+                  });
+                }
+              }
+
+              const dbTraders = tradersData.map(t => ({
+                id: t.id,
+                name: t.name,
+                avatar: t.avatar,
+                winRate: Number(t.win_rate || 0),
+                totalProfit: Number(t.total_profit || 0),
+                followers: Number(t.followers || 0),
+                password: t.password,
+                minInvestment: Number(t.min_investment || 0),
+                description: t.description,
+                status: t.status,
+                isSimulated: t.is_simulated,
+                createdBy: t.created_by,
+                createdAt: new Date(t.created_at).getTime(),
+                creatorRole: creatorRolesMap[t.created_by] || 'user'
+              }));
+
+              // Merge logic: DB traders take priority, then defaults, then current state (to preserve un-synced locals)
+              setCopyTraders(prev => {
+                const merged: CopyTrader[] = [...dbTraders];
+                
+                // Add default traders not in DB
+                DEFAULT_TRADERS.forEach(def => {
+                  if (!merged.some(m => m.id === def.id)) {
+                    merged.push(def);
+                  }
+                });
+                
+                // Add existing state traders not in DB and not default
+                // This preserves locally added traders that haven't been fetched from DB yet
+                prev.forEach(p => {
+                  if (!merged.some(m => m.id === p.id)) {
+                    merged.push(p);
+                  }
+                });
+                
+                return merged;
+              });
+              console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase. Merged with defaults and local state.`);
             }
-
-            const dbTraders = tradersData.map(t => ({
-              id: t.id,
-              name: t.name,
-              avatar: t.avatar,
-              winRate: Number(t.win_rate || 0),
-              totalProfit: Number(t.total_profit || 0),
-              followers: Number(t.followers || 0),
-              password: t.password,
-              minInvestment: Number(t.min_investment || 0),
-              description: t.description,
-              status: t.status,
-              isSimulated: t.is_simulated,
-              createdBy: t.created_by,
-              createdAt: new Date(t.created_at).getTime(),
-              creatorRole: creatorRolesMap[t.created_by] || 'user'
-            }));
-
-            // Merge logic: DB traders take priority, then defaults, then current state (to preserve un-synced locals)
-            setCopyTraders(prev => {
-              const merged: CopyTrader[] = [...dbTraders];
-              
-              // Add default traders not in DB
-              DEFAULT_TRADERS.forEach(def => {
-                if (!merged.some(m => m.id === def.id)) {
-                  merged.push(def);
-                }
-              });
-              
-              // Add existing state traders not in DB and not default
-              // This preserves locally added traders that haven't been fetched from DB yet
-              prev.forEach(p => {
-                if (!merged.some(m => m.id === p.id)) {
-                  merged.push(p);
-                }
-              });
-              
-              return merged;
-            });
-            console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase. Merged with defaults and local state.`);
+          } catch (fetchErr: any) {
+            console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);
           }
-        } catch (fetchErr: any) {
-          console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);
         }
       } else {
         console.warn('[Sync] No user DB record found for ID:', session.user.id);
@@ -702,25 +722,16 @@ export function useStore() {
 
     window.addEventListener('unhandledrejection', handleRejection);
 
-    // Periodically process pending transactions (Global admin task)
-    const processInterval = setInterval(async () => {
-      if (isSupabaseConfigured()) {
-        try {
-          await supabase.rpc('auto_process_pending');
-        } catch (err) {
-          // Quietly fail as this is a background maintenance task
-        }
-      }
-    }, 60000);
+    // Remove the redundant auto_process_pending interval as it is a no-op placeholder
+    // and is contributing to unnecessary network traffic.
 
     return () => {
       subscription.unsubscribe();
-      clearInterval(processInterval);
       window.removeEventListener('unhandledrejection', handleRejection);
     };
   }, [syncWithSupabase]);
 
-  // 2. User-Specific Heartbeat
+  // 2. User-Specific Heartbeat - Increased to 2 minutes as Realtime handles most updates
   useEffect(() => {
     if (!user?.id) return;
 
@@ -729,7 +740,7 @@ export function useStore() {
       if (document.visibilityState === 'visible' && !isSyncing.current) {
         syncWithSupabase();
       }
-    }, 30000);
+    }, 120000);
 
     return () => clearInterval(interval);
   }, [user?.id, syncWithSupabase]);
@@ -2362,7 +2373,7 @@ export function useStore() {
         // Use a more robust OR query that handles missing relations gracefully if possible
         query = query.or(`username.ilike.${s},email.ilike.${s}`, { foreignTable: 'users' });
       } else {
-        query = query.limit(3000);
+        query = query.limit(500); // Reduced from 3000 to 500
       }
       
       const { data, error } = await query;
