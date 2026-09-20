@@ -19,9 +19,14 @@ import { cn } from '../lib/utils';
 import { MIN_DEPOSIT_USD } from '../types.ts';
 
 export default function Referrals() {
-  const { user, isDarkMode } = useStore();
+  const { user, isDarkMode, fetchReferrals } = useStore();
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Fetch detailed referrals on mount
+  React.useEffect(() => {
+    fetchReferrals();
+  }, [fetchReferrals]);
 
   // Generate real referral link
   const referralLink = `https://preocryptofx.com/register?ref=${user?.referralCode || ''}`;

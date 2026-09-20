@@ -354,16 +354,26 @@ export function useStore() {
     return sessionPromise.current;
   }, []);
 
-  const isAuthInitialized = useRef(false);
   const isSyncing = useRef(false);
+  const lastSyncTime = useRef(0);
+  const syncTimeout = useRef<any>(null);
 
   // Sync with Supabase if configured
-  const syncWithSupabase = useCallback(async (providedSession?: any) => {
+  const syncWithSupabase = useCallback(async (providedSession?: any, force = false) => {
     if (!isSupabaseConfigured()) return;
     
+    // Throttle syncs to prevent "request storms" (max once every 5 seconds unless forced)
+    const now = Date.now();
+    if (!force && now - lastSyncTime.current < 5000) {
+      if (syncTimeout.current) clearTimeout(syncTimeout.current);
+      syncTimeout.current = setTimeout(() => syncWithSupabase(providedSession), 5000);
+      return;
+    }
+
     if (isSyncing.current) return;
 
     isSyncing.current = true;
+    lastSyncTime.current = now;
     const syncStartTime = Date.now();
     try {
       // 1. Get current session (prefer provided from event)
@@ -378,23 +388,24 @@ export function useStore() {
         return;
       }
 
-      // 2. Fetch User Profile - Optimized to limit egress by fetching only recent trades/transactions
+      // 2. Fetch User Profile - Optimized to limit egress
+      // We fetch fewer records by default and rely on Realtime for updates
       const { data: userData, error } = await supabase
         .from('users')
         .select(`
           *,
-          transactions(*),
+          transactions(id, type, amount, status, created_at, method),
           trades(
             id, coin, amount, type, price, status, profit, target_profit, 
             timestamp, created_at, account_type, duration, source
           ),
-          bot_settings(*)
+          bot_settings(scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, bot_stake, target_profit_percentage)
         `)
         .eq('id', session.user.id)
         .order('created_at', { foreignTable: 'trades', ascending: false })
-        .limit(50, { foreignTable: 'trades' })
+        .limit(20, { foreignTable: 'trades' }) // Reduced from 50 to 20
         .order('created_at', { foreignTable: 'transactions', ascending: false })
-        .limit(50, { foreignTable: 'transactions' })
+        .limit(10, { foreignTable: 'transactions' }) // Reduced from 50 to 10
         .maybeSingle();
 
       if (error) {
@@ -409,17 +420,12 @@ export function useStore() {
         if (userData.server_time_iso) {
           const serverTime = new Date(userData.server_time_iso).getTime();
           serverTimeOffset.current = serverTime - Date.now();
-          console.log(`[Sync] Calculated server time offset: ${serverTimeOffset.current}ms`);
         }
         
-        // ... (formatted user logic)
         const sortedTransactions = (userData.transactions || [])
-          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 50);
+          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        // Preserve very recent local trades to prevent "vanishing" due to Supabase join lag
         const currentOpenTrades = (userRef.current?.trades || []).filter(t => t.status === 'OPEN');
-        const now = Date.now();
         const incomingTrades = (userData.trades || []).map((t: any) => ({
           id: t.id,
           coin: t.coin,
@@ -435,19 +441,16 @@ export function useStore() {
           source: t.source
         }));
 
-        // Merging logic: Keep local open trades if they are missing from incoming but were created recently (< 60s)
         const mergedTrades = [...incomingTrades];
         currentOpenTrades.forEach(localTrade => {
           const isMissing = !incomingTrades.some(t => t.id === localTrade.id);
           const isRecent = (now - localTrade.timestamp) < 60000;
           if (isMissing && isRecent) {
-            console.log(`[Sync] Preserving recent local trade ${localTrade.id} missing from server response.`);
             mergedTrades.push(localTrade);
           }
         });
 
         const finalTrades = mergedTrades.sort((a, b) => b.timestamp - a.timestamp);
-
         const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
         const isHardcodedAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((userData.email || '').toLowerCase());
 
@@ -456,38 +459,8 @@ export function useStore() {
           active_states: botSettingsData?.bot_stats?.active_states || {}
         };
 
-        // Fetch Referrals
-        let fetchedReferrals: any[] = [];
-        if (userData.referral_code) {
-          const { data: refData } = await supabase
-            .from('users')
-            .select('id, username, email, created_at, transactions(type, status, amount)')
-            .or(`referred_by.eq.${userData.referral_code},referred_by.eq.${userData.id},referred_by.eq.${userData.email}`);
-          
-          if (refData) {
-            fetchedReferrals = refData.map((r: any) => {
-              const userTransactions = r.transactions || [];
-              const successfulDeposits = userTransactions.filter((t: any) => 
-                t.type === 'DEPOSIT' && 
-                ['completed', 'success', 'successful'].includes(t.status?.toLowerCase())
-              );
-              
-              const hasDeposited = successfulDeposits.length > 0;
-              const totalDeposited = successfulDeposits.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-
-              return {
-                userId: r.id,
-                username: r.username,
-                email: r.email,
-                joinedAt: new Date(r.created_at).getTime(),
-                status: hasDeposited ? 'confirmed' : 'pending',
-                hasDeposited,
-                totalDeposited
-              };
-            });
-          }
-        }
-
+        // Note: Referrals transaction fetching is now handled separately to reduce egress
+        
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
@@ -536,19 +509,9 @@ export function useStore() {
             wizard2: botStats.active_states?.wizard2 || false,
             custom: botSettingsData.custom_active || false,
           } : (userRef.current?.bots || {
-            scalping: false,
-            trend: false,
-            ai: false,
-            vortex: false,
-            orbit: false,
-            starlight: false,
-            galaxy: false,
-            nova: false,
-            wizard1: false,
-            wizard2: false,
-            custom: false,
+            scalping: false, trend: false, ai: false, vortex: false, orbit: false, starlight: false, galaxy: false, nova: false, wizard1: false, wizard2: false, custom: false,
           }),
-          botConfigs: botSettingsData?.bot_stats?.configs || {},
+          botConfigs: botStats.configs || {},
           botStats: botStats,
           customBots: botStats.custom_bots || [],
           activeCustomBotIds: botStats.active_states?.active_custom_ids || [],
@@ -556,7 +519,7 @@ export function useStore() {
           botLogs: botSettingsData?.bot_logs || [],
           botStake: Number(botSettingsData?.bot_stake || 10),
           targetProfitPercentage: Number(botSettingsData?.target_profit_percentage || 0),
-          referrals: fetchedReferrals,
+          referrals: userRef.current?.referrals || [], // Preserve existing referrals
           referralBonusClaimed: userData.referral_bonus_claimed || false,
           copyingTraderId: userData.copying_trader_id,
           wizardPassword: userData.wizard_password,
@@ -564,131 +527,101 @@ export function useStore() {
           trades: finalTrades
         };
 
-
-        // Safety: If sync took too long and user interacted in between, skip applying to avoid flicker
-        if (isInternalUpdate.current || (Date.now() - syncStartTime > 10000)) {
-          console.log('[Sync] Discarding stale sync results to preserve local interactions.');
+        if (isInternalUpdate.current || (Date.now() - syncStartTime > 15000)) {
           return;
         }
 
         setUser(formattedUser);
         hasSyncedRef.current = true;
-        console.log('[Sync] User sync complete');
 
-        // Fetch Global Copy Traders with cache (5 mins)
+        // Optimized Trader Fetching
         const tradersFetchNow = Date.now();
-        const tradersCacheAge = tradersFetchNow - lastTradersFetch.current;
-        
-        if (isSupabaseConfigured() && tradersCacheAge > 300000) {
-          try {
-            console.log('[Sync] Fetching fresh copy traders...');
-            const { data: tradersData, error: tradersError } = await supabase
-              .from('copy_traders')
-              .select('*')
-              .order('total_profit', { ascending: false });
-
-            if (tradersError) {
-              const tMsg = String(tradersError.message || tradersError || '').toLowerCase();
-              const isNetworkErr = 
-                tMsg.includes('failed to fetch') || 
-                tMsg.includes('network error') || 
-                tMsg.includes('load failed') ||
-                tMsg.includes('fetch') ||
-                tMsg.includes('typeerror') ||
-                tMsg.includes('connection');
-
-              if (isNetworkErr) {
-                console.warn('[Sync] Supabase connection unavailable for copy traders. Using local/simulated traders.');
-              } else {
-                console.error('[Sync] Error fetching copy traders:', tradersError.message);
-              }
-            } else if (tradersData && tradersData.length > 0) {
-              lastTradersFetch.current = tradersFetchNow;
-              // Retrieve roles for creators of these copy trading profiles
-              const creatorIds = Array.from(new Set(tradersData.map(t => t.created_by).filter(Boolean)));
-              const creatorRolesMap: Record<string, 'user' | 'marketer' | 'admin'> = {};
-              
-              if (creatorIds.length > 0) {
-                const { data: creatorsData } = await supabase
-                  .from('users')
-                  .select('id, role')
-                  .in('id', creatorIds);
-                
-                if (creatorsData) {
-                  creatorsData.forEach((c: any) => {
-                    creatorRolesMap[c.id] = c.role;
-                  });
-                }
-              }
-
-              const dbTraders = tradersData.map(t => ({
-                id: t.id,
-                name: t.name,
-                avatar: t.avatar,
-                winRate: Number(t.win_rate || 0),
-                totalProfit: Number(t.total_profit || 0),
-                followers: Number(t.followers || 0),
-                password: t.password,
-                minInvestment: Number(t.min_investment || 0),
-                description: t.description,
-                status: t.status,
-                isSimulated: t.is_simulated,
-                createdBy: t.created_by,
-                createdAt: new Date(t.created_at).getTime(),
-                creatorRole: creatorRolesMap[t.created_by] || 'user'
-              }));
-
-              // Merge logic: DB traders take priority, then defaults, then current state (to preserve un-synced locals)
-              setCopyTraders(prev => {
-                const merged: CopyTrader[] = [...dbTraders];
-                
-                // Add default traders not in DB
-                DEFAULT_TRADERS.forEach(def => {
-                  if (!merged.some(m => m.id === def.id)) {
-                    merged.push(def);
-                  }
-                });
-                
-                // Add existing state traders not in DB and not default
-                // This preserves locally added traders that haven't been fetched from DB yet
-                prev.forEach(p => {
-                  if (!merged.some(m => m.id === p.id)) {
-                    merged.push(p);
-                  }
-                });
-                
-                return merged;
-              });
-              console.log(`[Sync] Loaded ${tradersData.length} copy traders from Supabase. Merged with defaults and local state.`);
-            }
-          } catch (fetchErr: any) {
-            console.warn('[Sync] Connection issue while fetching copy traders. Retaining local/simulated copy traders:', fetchErr?.message || fetchErr);
-          }
+        if (isSupabaseConfigured() && (tradersFetchNow - lastTradersFetch.current > 600000)) {
+          lastTradersFetch.current = tradersFetchNow;
+          fetchCopyTraders();
         }
-      } else {
-        console.warn('[Sync] No user DB record found for ID:', session.user.id);
-        // Minimal user state to allow UI to work even if DB row is missing (unlikely if trigger works)
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          username: session.user.email?.split('@')[0] || 'User',
-          role: (session.user.email || '').toLowerCase() === 'wren20688@gmail.com' && session.user.id === '304020c9-3695-4f8f-85fe-9ee12eda8152' ? 'admin' : 'user',
-          demoBalance: 10000,
-          realBalance: 0,
-          activeAccount: 'DEMO',
-          verificationStatus: 'unverified',
-          botStake: 10,
-          targetProfitPercentage: 50,
-          trades: [],
-          transactions: []
-        });
       }
     } catch (error) {
       console.error('[Sync] Sync Exception:', error);
     } finally {
       isSyncing.current = false;
     }
-  }, [ADMIN_EMAILS, ADMIN_IDS, setUser]);
+  }, [getSafeSession]);
+
+  const fetchCopyTraders = async () => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const { data: tradersData, error: tradersError } = await supabase
+        .from('copy_traders')
+        .select('*')
+        .limit(20)
+        .order('total_profit', { ascending: false });
+
+      if (tradersData) {
+        const dbTraders = tradersData.map(t => ({
+          id: t.id,
+          name: t.name,
+          avatar: t.avatar,
+          winRate: Number(t.win_rate || 0),
+          totalProfit: Number(t.total_profit || 0),
+          followers: Number(t.followers || 0),
+          password: t.password,
+          minInvestment: Number(t.min_investment || 0),
+          description: t.description,
+          status: t.status,
+          isSimulated: t.is_simulated,
+          createdBy: t.created_by,
+          createdAt: new Date(t.created_at).getTime()
+        }));
+
+        setCopyTraders(prev => {
+          const merged = [...dbTraders];
+          DEFAULT_TRADERS.forEach(def => {
+            if (!merged.some(m => m.id === def.id)) merged.push(def);
+          });
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.error('[Sync] Traders fetch error:', err);
+    }
+  };
+
+  const fetchReferrals = async () => {
+    const currentUser = userRef.current;
+    if (!currentUser || !currentUser.referralCode || !isSupabaseConfigured()) return;
+
+    try {
+      console.log('[Referrals] Fetching detailed referral data...');
+      const { data: refData } = await supabase
+        .from('users')
+        .select('id, username, email, created_at, transactions(type, status, amount)')
+        .or(`referred_by.eq.${currentUser.referralCode},referred_by.eq.${currentUser.id},referred_by.eq.${currentUser.email}`);
+      
+      if (refData) {
+        const fetchedReferrals = refData.map((r: any) => {
+          const userTransactions = r.transactions || [];
+          const successfulDeposits = userTransactions.filter((t: any) => 
+            t.type === 'DEPOSIT' && ['completed', 'success', 'successful'].includes(t.status?.toLowerCase())
+          );
+          return {
+            userId: r.id,
+            username: r.username,
+            email: r.email,
+            joinedAt: new Date(r.created_at).getTime(),
+            status: successfulDeposits.length > 0 ? 'confirmed' : 'pending',
+            hasDeposited: successfulDeposits.length > 0,
+            totalDeposited: successfulDeposits.reduce((sum: number, t: any) => sum + Number(t.amount), 0)
+          };
+        });
+
+        setUser(prev => prev ? { ...prev, referrals: fetchedReferrals } : null);
+      }
+    } catch (err) {
+      console.error('[Referrals] Fetch error:', err);
+    }
+  };
+
 
   // 1. Global Initialization (Auth Listener & Heartbeat)
   useEffect(() => {
@@ -749,24 +682,27 @@ export function useStore() {
   useEffect(() => {
     if (!user?.id) return;
 
-    const userChannel = supabase.channel(`user-profile-${user.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, () => syncWithSupabase())
-      .subscribe();
-
-    const botChannel = supabase.channel(`user-bots-${user.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bot_settings', filter: `user_id=eq.${user.id}` }, () => syncWithSupabase())
-      .subscribe();
-
-    const transChannel = supabase.channel(`user-transactions-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` }, () => syncWithSupabase())
+    // Combined channel to reduce connection overhead
+    const profileChannel = supabase.channel(`user-sync-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, () => {
+        console.log('[Realtime] User update detected');
+        syncWithSupabase();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bot_settings', filter: `user_id=eq.${user.id}` }, () => {
+        console.log('[Realtime] Bot update detected');
+        syncWithSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` }, () => {
+        console.log('[Realtime] Transaction update detected');
+        syncWithSupabase();
+      })
       .subscribe();
 
     return () => {
-      userChannel.unsubscribe();
-      botChannel.unsubscribe();
-      transChannel.unsubscribe();
+      profileChannel.unsubscribe();
     };
   }, [user?.id, syncWithSupabase]);
+
 
   useEffect(() => {
     if (user) {
