@@ -311,50 +311,53 @@ export default function Dashboard() {
                       return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
                     })
                     .slice(0, 5)
-                    .map((trade) => (
-                    <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center font-bold text-[9px]">
-                            {trade.coin[0]}
+                    .map((trade) => {
+                      const assetName = trade.coin || trade.symbol || 'Unknown';
+                      return (
+                      <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center font-bold text-[9px]">
+                              {assetName[0]}
+                            </div>
+                            <span className="font-bold text-slate-900 dark:text-white text-[10px]">{assetName}</span>
                           </div>
-                          <span className="font-bold text-slate-900 dark:text-white text-[10px]">{trade.coin}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn(
-                          "px-1 py-0.5 rounded-[4px] text-[7px] font-bold",
-                          trade.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
-                        )}>
-                          {trade.type}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 font-bold text-[10px] text-slate-900 dark:text-white tabular-nums">${trade.amount.toLocaleString()}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn(
-                          "font-bold text-[10px] tabular-nums",
-                          trade.profit >= 0 ? "text-green-500" : "text-red-500"
-                        )}>
-                          {trade.profit >= 0 ? '+' : ''}{formatCurrency(trade.profit)}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn(
-                          "px-1 py-0.5 rounded text-[7px] font-bold uppercase",
-                          trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-500" : 
-                          trade.source === 'BOT' ? "bg-blue-500/10 text-blue-500" : 
-                          "bg-slate-500/10 text-slate-500"
-                        )}>
-                          {trade.source || 'MANUAL'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[7px] font-bold">
-                          {trade.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={cn(
+                            "px-1 py-0.5 rounded-[4px] text-[7px] font-bold",
+                            trade.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+                          )}>
+                            {trade.type}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 font-bold text-[10px] text-slate-900 dark:text-white tabular-nums">${trade.amount.toLocaleString()}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={cn(
+                            "font-bold text-[10px] tabular-nums",
+                            trade.profit >= 0 ? "text-green-500" : "text-red-500"
+                          )}>
+                            {trade.profit >= 0 ? '+' : ''}{formatCurrency(trade.profit)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={cn(
+                            "px-1 py-0.5 rounded text-[7px] font-bold uppercase",
+                            trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-500" : 
+                            trade.source === 'BOT' ? "bg-blue-500/10 text-blue-500" : 
+                            "bg-slate-500/10 text-slate-500"
+                          )}>
+                            {trade.source || 'MANUAL'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[7px] font-bold">
+                            {trade.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

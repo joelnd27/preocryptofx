@@ -141,9 +141,9 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-  // 30-second interval loop for high responsiveness
-  console.log('[Bot-Sim] Initializing 30-second interval loop...');
-  setInterval(runBotSimulation, 30000);
+  // 10-second interval loop for extreme responsiveness
+  console.log('[Bot-Sim] Initializing 10-second interval loop...');
+  setInterval(runBotSimulation, 10000);
 }
 
 // BOT SIMULATION LOGIC (Backend authoritative)
@@ -232,9 +232,8 @@ console.log('[App] Environment Check:', {
         const { data, error } = await supabaseAdmin
           .from('bot_settings')
           .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
-          .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true')
           .order('updated_at', { ascending: false })
-          .limit(500); // Increased limit to 500 active bots
+          .limit(1000); // Fetch more settings to check for active bots in JSON stats
         
         if (!error) {
           allSettings = data;
@@ -499,7 +498,7 @@ console.log('[App] Environment Check:', {
             } else {
               // Heartbeat log - use bot_stats.last_log_at for efficient throttling without fetching logs array
               const lastLogAt = updatedBotStats.last_log_at || 0;
-              if (Date.now() - lastLogAt > 15000) {
+              if (Date.now() - lastLogAt > 7000) {
                 userPendingLogs.unshift({
                   botId,
                   message: `[${pair}] Analyzing market patterns for high-probability signals...`,
@@ -514,8 +513,9 @@ console.log('[App] Environment Check:', {
           if (userChanged) {
             bulkUserUpdates.push({
               id: user.id,
-              // Note: We avoid sending username/email/role to bypass potential NOT NULL constraint errors
-              // and reduce the payload size, as these are not modified by the simulation.
+              username: user.username || 'User', // Required: Fixed NOT NULL constraint error
+              email: user.email,               // Required: Preserving for safety
+              role: user.role || 'user',      // Required: Preserving for safety
               real_balance: user.real_balance,
               demo_balance: user.demo_balance,
               total_profit_real: user.total_profit_real,
@@ -523,7 +523,9 @@ console.log('[App] Environment Check:', {
               daily_profit_real: user.daily_profit_real,
               daily_profit_demo: user.daily_profit_demo,
               daily_trades_real: user.daily_trades_real,
-              daily_trades_demo: user.daily_trades_demo
+              daily_trades_demo: user.daily_trades_demo,
+              active_account: user.active_account,
+              verification_status: user.verification_status
             });
           }
 

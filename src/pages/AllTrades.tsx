@@ -36,7 +36,8 @@ export default function AllTrades() {
 
   const filteredTrades = (user?.trades || [])
     .filter(t => {
-      const matchesSearch = t.coin.toLowerCase().includes(search.toLowerCase());
+      const assetName = t.coin || t.symbol || 'Unknown';
+      const matchesSearch = assetName.toLowerCase().includes(search.toLowerCase());
       const matchesFilter = filter === 'ALL' || t.status === filter;
       const matchesAccount = accountFilter === 'ALL' || String(t.accountType).toUpperCase() === accountFilter;
       return matchesSearch && matchesFilter && matchesAccount;
@@ -128,7 +129,9 @@ export default function AllTrades() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {filteredTrades.map((trade, i) => (
+              {filteredTrades.map((trade, i) => {
+                const assetName = trade.coin || trade.symbol || 'Unknown';
+                return (
                 <motion.tr 
                   key={trade.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -145,9 +148,9 @@ export default function AllTrades() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 bg-blue-500/10 rounded flex items-center justify-center font-bold text-blue-500 text-[9px]">
-                        {trade.coin[0]}
+                        {assetName[0]}
                       </div>
-                      <span className="font-bold text-[11px] text-slate-900 dark:text-white uppercase">{trade.coin}</span>
+                      <span className="font-bold text-[11px] text-slate-900 dark:text-white uppercase">{assetName}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -200,7 +203,8 @@ export default function AllTrades() {
                     </span>
                   </td>
                 </motion.tr>
-              ))}
+              );
+            })}
               {filteredTrades.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-6 py-20 text-center">

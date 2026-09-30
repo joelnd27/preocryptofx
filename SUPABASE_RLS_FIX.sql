@@ -15,10 +15,13 @@ BEGIN
     CREATE TABLE IF NOT EXISTS public.bot_settings (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id uuid REFERENCES public.users(id) ON DELETE CASCADE,
+        bot_type text DEFAULT 'multi',
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         UNIQUE(user_id)
     );
+
+    ALTER TABLE public.bot_settings ADD COLUMN IF NOT EXISTS bot_type text DEFAULT 'multi';
 
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bot_settings' AND column_name='bot_type') THEN
         ALTER TABLE public.bot_settings ALTER COLUMN bot_type DROP NOT NULL;
@@ -50,11 +53,13 @@ BEGIN
         ALTER TABLE public.trades ALTER COLUMN symbol DROP NOT NULL;
     END IF;
 
+    -- Ensure coin and price exist as these are preferred by the simulation
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS coin text;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS price float8;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS timestamp text;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS source text DEFAULT 'MANUAL';
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS account_type text DEFAULT 'DEMO';
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
 
     -- Ensure bot_stop_logs table exists
     CREATE TABLE IF NOT EXISTS public.bot_stop_logs (

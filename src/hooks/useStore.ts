@@ -698,6 +698,10 @@ export function useStore() {
         console.log('[Realtime] Transaction update detected');
         syncWithSupabase();
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trades', filter: `user_id=eq.${user.id}` }, () => {
+        console.log('[Realtime] New trade detected');
+        syncWithSupabase();
+      })
       .subscribe();
 
     return () => {
