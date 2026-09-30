@@ -396,13 +396,13 @@ export function useStore() {
           *,
           transactions(id, type, amount, status, created_at, method),
           trades(
-            id, coin, amount, type, price, status, profit, target_profit, 
-            timestamp, created_at, account_type, duration, source
+            id, coin, amount, type, price, status, profit, 
+            timestamp, account_type, source
           ),
           bot_settings(scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, bot_stake, target_profit_percentage)
         `)
         .eq('id', session.user.id)
-        .order('created_at', { foreignTable: 'trades', ascending: false })
+        .order('timestamp', { foreignTable: 'trades', ascending: false })
         .limit(20, { foreignTable: 'trades' }) // Reduced from 50 to 20
         .order('created_at', { foreignTable: 'transactions', ascending: false })
         .limit(10, { foreignTable: 'transactions' }) // Reduced from 50 to 10
@@ -428,16 +428,16 @@ export function useStore() {
         const currentOpenTrades = (userRef.current?.trades || []).filter(t => t.status === 'OPEN');
         const incomingTrades = (userData.trades || []).map((t: any) => ({
           id: t.id,
-          coin: t.coin,
+          coin: t.coin || t.symbol,
           amount: Number(t.amount),
           type: t.type,
-          price: Number(t.price),
+          price: Number(t.price || t.entry_price),
           status: t.status,
           profit: Number(t.profit),
-          targetProfit: Number(t.target_profit),
+          targetProfit: Number(t.target_profit || 0),
           timestamp: new Date(t.timestamp || t.created_at).getTime(),
           accountType: t.account_type,
-          duration: t.duration,
+          duration: t.duration || 0,
           source: t.source
         }));
 
