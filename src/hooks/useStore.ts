@@ -558,7 +558,7 @@ export function useStore() {
         .order('total_profit', { ascending: false });
 
       if (tradersData) {
-        const dbTraders = tradersData.map(t => ({
+        const dbTraders: CopyTrader[] = tradersData.map(t => ({
           id: t.id,
           name: t.name,
           avatar: t.avatar,

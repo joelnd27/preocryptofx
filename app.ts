@@ -267,15 +267,45 @@ console.log('[App] Environment Check:', {
       const userIds = activeSettings.map(s => s.user_id);
       const usersData: any[] = [];
       
-      for (let i = 0; i < userIds.length; i += 50) { // Smaller chunk size (50) for better reliability
+      for (let i = 0; i < userIds.length; i += 50) { 
         const chunk = userIds.slice(i, i + 50);
-        const { data: chunkData, error: usersError } = await supabaseAdmin
-          .from('users')
-          .select('id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account, is_suspended')
-          .in('id', chunk);
+        let chunkData: any[] | null = null;
+        let usersError: any = null;
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const { data, error } = await supabaseAdmin
+            .from('users')
+            .select('id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account, is_suspended')
+            .in('id', chunk);
+
+          if (!error) {
+            chunkData = data;
+            break;
+          }
+
+          usersError = error;
+          const isTransient = error.message?.includes('timeout') || 
+                             error.message?.includes('522') ||
+                             error.code === '504' ||
+                             error.code === 'PGRST002';
+
+          if (isTransient && attempt === 1) {
+            console.warn(`[Bot-Sim] [Cycle #${simulationCycleCount}] User chunk fetch busy (Attempt 1), retrying in 3s...`);
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            break;
+          }
+        }
 
         if (usersError) {
-          console.error('[Bot-Sim] Error fetching users chunk for simulation:', usersError);
+          console.error(`[Bot-Sim] [Cycle #${simulationCycleCount}] Error fetching users chunk (${i}-${i+50}):`, 
+            JSON.stringify({
+              code: usersError.code,
+              message: usersError.message,
+              details: usersError.details,
+              hint: usersError.hint
+            })
+          );
           continue; 
         }
         if (chunkData) usersData.push(...chunkData);
@@ -509,24 +539,56 @@ console.log('[App] Environment Check:', {
 
       // 5. Execution Phase: Batch Database Writes
       if (bulkTrades.length > 0) {
-        const { error } = await supabaseAdmin.from('trades').insert(bulkTrades);
-        if (error) console.error('[Bot-Sim] Bulk Trades Error:', error.message);
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const { error } = await supabaseAdmin.from('trades').insert(bulkTrades);
+          if (!error) break;
+          
+          const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
+          if (isTransient && attempt === 1) {
+            console.warn(`[Bot-Sim] Bulk Trades failed (Attempt 1), retrying in 3s...`);
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            console.error('[Bot-Sim] Bulk Trades Error:', error.message);
+            break;
+          }
+        }
       }
 
       if (bulkUserUpdates.length > 0) {
-        // Chunk user upserts to stay under URL/body limits if needed
         for (let i = 0; i < bulkUserUpdates.length; i += 50) {
           const chunk = bulkUserUpdates.slice(i, i + 50);
-          const { error } = await supabaseAdmin.from('users').upsert(chunk);
-          if (error) console.error('[Bot-Sim] Bulk User Error:', error.message);
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            const { error } = await supabaseAdmin.from('users').upsert(chunk);
+            if (!error) break;
+
+            const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
+            if (isTransient && attempt === 1) {
+              console.warn(`[Bot-Sim] Bulk User Upsert chunk failed (Attempt 1), retrying in 3s...`);
+              await new Promise(r => setTimeout(r, 3000));
+            } else {
+              console.error('[Bot-Sim] Bulk User Error:', error.message);
+              break;
+            }
+          }
         }
       }
 
       if (bulkSettingsUpdates.length > 0) {
         for (let i = 0; i < bulkSettingsUpdates.length; i += 50) {
           const chunk = bulkSettingsUpdates.slice(i, i + 50);
-          const { error } = await supabaseAdmin.from('bot_settings').upsert(chunk, { onConflict: 'user_id' });
-          if (error) console.error('[Bot-Sim] Bulk Settings Error:', error.message);
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            const { error } = await supabaseAdmin.from('bot_settings').upsert(chunk, { onConflict: 'user_id' });
+            if (!error) break;
+
+            const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
+            if (isTransient && attempt === 1) {
+              console.warn(`[Bot-Sim] Bulk Settings Upsert chunk failed (Attempt 1), retrying in 3s...`);
+              await new Promise(r => setTimeout(r, 3000));
+            } else {
+              console.error('[Bot-Sim] Bulk Settings Error:', error.message);
+              break;
+            }
+          }
         }
       }
 
@@ -552,9 +614,22 @@ console.log('[App] Environment Check:', {
     console.log(`[Bot-Sim] BOT_STOPPED: ${botId} for user ${userId}. Reason: ${reason}`);
     
     // 1. Fetch current stats to preserve other bots' states
-    const { data: currentSettings } = await supabaseAdmin.from('bot_settings').select('bot_stats, bot_session_start_profits').eq('user_id', userId).single();
+    let currentSettings: any = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { data, error } = await supabaseAdmin.from('bot_settings').select('bot_stats, bot_session_start_profits').eq('user_id', userId).single();
+      if (!error) {
+        currentSettings = data;
+        break;
+      }
+      const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
+      if (isTransient && attempt === 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        break;
+      }
+    }
+    
     if (!currentSettings) return;
-
 
     const botStats = currentSettings.bot_stats || {};
     const activeStates = botStats.active_states || {};
@@ -595,28 +670,47 @@ console.log('[App] Environment Check:', {
     if (botId === 'custom') updatePayload.custom_active = false;
 
     // 3. Atomically deactivate in DB
-    const { error: stopErr } = await supabaseAdmin.from('bot_settings').update(updatePayload).eq('user_id', userId);
-    if (stopErr) {
-      console.error(`[Bot-Sim] Error during atomic stop update:`, stopErr);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { error: stopErr } = await supabaseAdmin.from('bot_settings').update(updatePayload).eq('user_id', userId);
+      if (!stopErr) break;
+      
+      const isTransient = stopErr.message?.includes('timeout') || stopErr.message?.includes('522');
+      if (isTransient && attempt === 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        console.error(`[Bot-Sim] Error during atomic stop update:`, stopErr);
+        break;
+      }
     }
 
     // 4. Log the stop event
     try {
-      await supabaseAdmin.from('bot_stop_logs').insert({
-        user_id: userId,
-        bot_id: botId,
-        bot_name: botId,
-        stop_reason: reason,
-        previous_status: 'ACTIVE',
-        profit_goal: goal,
-        actual_profit: currentProfit,
-        actual_balance: balance,
-        min_required_balance: stake,
-        is_user_initiated: false,
-        timestamp: new Date().toISOString()
-      });
-    } catch (logErr) {
-      console.error(`[Bot-Sim] Error logging bot stop:`, logErr);
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const { error: logErr } = await supabaseAdmin.from('bot_stop_logs').insert({
+          user_id: userId,
+          bot_id: botId,
+          bot_name: botId,
+          stop_reason: reason,
+          previous_status: 'ACTIVE',
+          profit_goal: goal,
+          actual_profit: currentProfit,
+          actual_balance: balance,
+          min_required_balance: stake,
+          is_user_initiated: false,
+          timestamp: new Date().toISOString()
+        });
+        if (!logErr) break;
+
+        const isTransient = logErr.message?.includes('timeout') || logErr.message?.includes('522');
+        if (isTransient && attempt === 1) {
+          await new Promise(r => setTimeout(r, 2000));
+        } else {
+          console.error(`[Bot-Sim] Error logging bot stop:`, logErr);
+          break;
+        }
+      }
+    } catch (err) {
+      console.error(`[Bot-Sim] Exception logging bot stop:`, err);
     }
   }
 
