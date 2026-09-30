@@ -82,9 +82,15 @@ router.post('/bot/toggle', async (req, res) => {
 
     if (error) {
       console.error('[API] Toggle Bot DB Error:', error);
-      // We return 200 even on DB error for inbuilt bots to avoid blocking the UI, 
-      // as the simulation loop will handle them anyway if they are active in the local state
       return res.json({ success: true, warning: 'Database sync failed, but bot is active' });
+    }
+
+    // Trigger immediate simulation run to provide instant feedback to the user
+    if (active) {
+      console.log(`[API] Triggering immediate simulation for user ${userId} after bot start.`);
+      setTimeout(() => {
+        runBotSimulation().catch(e => console.error('[API] Immediate simulation error:', e));
+      }, 1000);
     }
 
     res.json({ success: true });
@@ -215,9 +221,9 @@ console.log('[App] Environment Check:', {
         return;
       }
 
-      // 1. Get bot_settings records - Fetch only the most recently updated ones
-      // We use a small limit (150) and a retry mechanism for transient 522/timeouts.
-      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Fetching recent bot settings...`);
+      // 1. Get bot_settings records - Fetch all active bots
+      // We filter by any active flag being true to ensure we process everyone who is active.
+      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Fetching active bot settings...`);
       
       let allSettings: any[] | null = null;
       let fetchError: any = null;
@@ -226,8 +232,9 @@ console.log('[App] Environment Check:', {
         const { data, error } = await supabaseAdmin
           .from('bot_settings')
           .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
+          .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true')
           .order('updated_at', { ascending: false })
-          .limit(150);
+          .limit(500); // Increased limit to 500 active bots
         
         if (!error) {
           allSettings = data;
@@ -298,7 +305,7 @@ console.log('[App] Environment Check:', {
         for (let attempt = 1; attempt <= 2; attempt++) {
           const { data, error } = await supabaseAdmin
             .from('users')
-            .select('id, email, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account, is_suspended')
+            .select('id, email, username, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account')
             .in('id', chunk);
 
           if (!error) {
@@ -385,10 +392,6 @@ console.log('[App] Environment Check:', {
           }
 
           if (activeBots.length === 0) return;
-          if (user.is_suspended) {
-            console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] User ${user.email} is suspended. Skipping bots.`);
-            return;
-          }
 
           currentActiveUsersInCycle.push(user.email || user.id);
           console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] User ${user.email} has ${activeBots.length} active bots: ${activeBots.map(b => b.id).join(', ')}`);
@@ -511,6 +514,8 @@ console.log('[App] Environment Check:', {
           if (userChanged) {
             bulkUserUpdates.push({
               id: user.id,
+              // Note: We avoid sending username/email/role to bypass potential NOT NULL constraint errors
+              // and reduce the payload size, as these are not modified by the simulation.
               real_balance: user.real_balance,
               demo_balance: user.demo_balance,
               total_profit_real: user.total_profit_real,
