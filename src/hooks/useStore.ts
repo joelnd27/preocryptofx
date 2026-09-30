@@ -664,19 +664,21 @@ export function useStore() {
     };
   }, [syncWithSupabase]);
 
-  // 2. User-Specific Heartbeat - Increased to 2 minutes as Realtime handles most updates
+  // 2. User-Specific Heartbeat - Increased frequency when bots are active
   useEffect(() => {
     if (!user?.id) return;
+    
+    const hasActiveBot = Object.values(user.bots).some(v => v === true) || (user.activeCustomBotIds && user.activeCustomBotIds.length > 0);
 
-    // Heartbeat sync
+    // Heartbeat sync - 30 seconds if active bot, 2 minutes otherwise
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && !isSyncing.current) {
         syncWithSupabase();
       }
-    }, 120000);
+    }, hasActiveBot ? 30000 : 120000);
 
     return () => clearInterval(interval);
-  }, [user?.id, syncWithSupabase]);
+  }, [user?.id, user?.bots, user?.activeCustomBotIds, syncWithSupabase]);
 
   // 3. User-Specific Realtime Subscriptions
   useEffect(() => {
@@ -1860,6 +1862,24 @@ export function useStore() {
 
         console.log(`[Bot-Flow] BOT_START_REQUEST_RESULT: SUCCESS for ${botId}`);
         console.log(`[Bot-Flow] BOT_EXECUTION_INITIALIZATION_STARTED: ${botId}`);
+        
+        // Trigger manual simulation run to start the bot immediately
+        if (isActivating) {
+          fetch('/api/bot/simulate-now', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            }
+          })
+          .then(() => {
+            // Force a sync shortly after triggering simulation to pick up the first logs
+            setTimeout(() => syncWithSupabase(undefined, true), 3000);
+            setTimeout(() => syncWithSupabase(undefined, true), 8000);
+          })
+          .catch(err => console.warn('[Bot-Flow] Manual simulation trigger failed:', err));
+        }
+
         console.log(`[Bot-Flow] BOT_EXECUTION_STARTED: ${botId}`);
         console.log(`[Bot-Flow] BOT_EXECUTION_CYCLE_STARTED: ${botId}`);
       } catch (err) {

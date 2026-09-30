@@ -45,10 +45,17 @@ router.post('/bot/toggle', async (req, res) => {
   try {
     console.log(`[API] Toggle Bot Request: User ${userId}, Bot ${botId}, Active ${active}`);
     
-    // Extract only the fields we know the table should have
+    // Fetch existing settings to preserve fields like bot_logs
+    const { data: existing } = await supabaseAdmin
+      .from('bot_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
     const cleanPayload: any = {
       user_id: userId,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      bot_logs: existing?.bot_logs || []
     };
 
     if (updatePayload) {
@@ -56,7 +63,17 @@ router.post('/bot/toggle', async (req, res) => {
       if (updatePayload.trend_active !== undefined) cleanPayload.trend_active = updatePayload.trend_active;
       if (updatePayload.ai_active !== undefined) cleanPayload.ai_active = updatePayload.ai_active;
       if (updatePayload.custom_active !== undefined) cleanPayload.custom_active = updatePayload.custom_active;
-      if (updatePayload.bot_stats !== undefined) cleanPayload.bot_stats = updatePayload.bot_stats;
+      
+      // Merge bot_stats to preserve internal fields like unlocked_bot_ids
+      cleanPayload.bot_stats = {
+        ...(existing?.bot_stats || {}),
+        ...(updatePayload.bot_stats || {})
+      };
+      
+      // Specifically preserve bot_logs if they were passed in updatePayload (though currently not)
+      if (updatePayload.bot_logs !== undefined) cleanPayload.bot_logs = updatePayload.bot_logs;
+    } else {
+      cleanPayload.bot_stats = existing?.bot_stats || {};
     }
 
     const { error } = await supabaseAdmin
@@ -118,9 +135,9 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-  // Ultra-conservative 2-minute interval
-  console.log('[Bot-Sim] Initializing 2-minute interval loop...');
-  setInterval(runBotSimulation, 120000);
+  // 30-second interval loop for high responsiveness
+  console.log('[Bot-Sim] Initializing 30-second interval loop...');
+  setInterval(runBotSimulation, 30000);
 }
 
 // BOT SIMULATION LOGIC (Backend authoritative)
@@ -252,7 +269,13 @@ console.log('[App] Environment Check:', {
         const stats = s.bot_stats || {};
         const activeStates = stats.active_states || {};
         const hasActiveExtended = Object.values(activeStates).some(v => v === true || v === 'true');
-        return s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
+        const isActive = s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
+        
+        if (isActive) {
+          // console.log(`[Bot-Sim] User ${s.user_id} has active bots. Extended: ${hasActiveExtended}`);
+        }
+        
+        return isActive;
       });
 
       if (activeSettings.length === 0) {
@@ -411,7 +434,8 @@ console.log('[App] Environment Check:', {
             const chance = Math.random();
             const pair = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT'][Math.floor(Math.random() * 5)];
             
-            if (chance < 0.8) { 
+            // Increase chance to 95% for high responsiveness
+            if (chance < 0.95) { 
               let winChance = 0.65; 
               if (user.active_account === 'DEMO') winChance = 0.96;
               else if (user.role === 'admin' || user.email === 'josphatndungu1022@gmail.com') winChance = 0.98;
@@ -440,6 +464,7 @@ console.log('[App] Environment Check:', {
 
               console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] GENERATING_TRADE: User=${user.email}, Bot=${botId}, Profit=${profitAmount}`);
 
+              // Immediately update bot_stats in memory for next iteration/logs
               updatedBotStats[botId] = {
                 profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
                 trades: (updatedBotStats[botId]?.trades || 0) + 1
@@ -471,7 +496,7 @@ console.log('[App] Environment Check:', {
             } else {
               // Heartbeat log - use bot_stats.last_log_at for efficient throttling without fetching logs array
               const lastLogAt = updatedBotStats.last_log_at || 0;
-              if (Date.now() - lastLogAt > 25000) {
+              if (Date.now() - lastLogAt > 15000) {
                 userPendingLogs.unshift({
                   botId,
                   message: `[${pair}] Analyzing market patterns for high-probability signals...`,
