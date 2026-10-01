@@ -247,7 +247,7 @@ export default function Bots() {
       return log.includes(selectedBot.name);
     }
     return log.botId === selectedBot.id;
-  }).slice(0, 20);
+  });
 
   const stats = (() => {
     const s: Record<string, { profit: number, trades: number }> = {};
@@ -925,7 +925,7 @@ export default function Bots() {
               </button>
               <div className="flex items-center gap-2 px-2 py-1 rounded-full border bg-blue-500/10 border-blue-500/20">
                 <span className="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">
-                  {logs.length} entries
+                  {stats[selectedBot.id].trades} entries
                 </span>
               </div>
             </div>

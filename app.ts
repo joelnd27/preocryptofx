@@ -141,9 +141,152 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-  // 10-second interval loop for extreme responsiveness
-  console.log('[Bot-Sim] Initializing 10-second interval loop...');
-  setInterval(runBotSimulation, 10000);
+  // Randomized average ~5s loop for extreme responsiveness (Range 3-7s total cycle)
+  console.log('[Bot-Sim] Initializing randomized simulation loop...');
+  
+  const scheduleNextSimulation = async () => {
+    try {
+      // Random interval between 2 and 5 seconds (Execution takes ~1-2s, total ~3-7s)
+      const nextInterval = 2000 + Math.random() * 3000;
+      setTimeout(async () => {
+        try {
+          await runBotSimulation();
+        } catch (err) {
+          console.error('[Bot-Sim] Loop Error:', err);
+        } finally {
+          scheduleNextSimulation();
+        }
+      }, nextInterval);
+    } catch (err) {
+      console.error('[Bot-Sim] Scheduler Error:', err);
+      setTimeout(scheduleNextSimulation, 5000);
+    }
+  };
+  
+  scheduleNextSimulation();
+
+  // Initialize Manual Trade Reconciler (Runs every 3 seconds to ensure no trade gets stuck)
+  console.log('[Trade-Reconciler] Initializing manual trade monitor...');
+  setInterval(async () => {
+    try {
+      await reconcileManualTrades();
+    } catch (err) {
+      console.error('[Trade-Reconciler] Loop Error:', err);
+    }
+  }, 3000);
+}
+
+// TRADE RECONCILER LOGIC
+async function reconcileManualTrades() {
+  if (!supabaseAdmin) return;
+
+  try {
+    // 1. Fetch only essential columns for OPEN trades with a duration
+    // We omit the users join here to keep the query light and prevent timeouts
+    const { data: openTrades, error: fetchError } = await supabaseAdmin
+      .from('trades')
+      .select('id, user_id, amount, price, target_profit, account_type, timestamp, duration')
+      .eq('status', 'OPEN')
+      .not('duration', 'is', null)
+      .limit(200); // Safety limit
+
+    if (fetchError) {
+      if (fetchError.message?.includes('timeout') || fetchError.code === 'PGRST002') {
+        console.warn('[Trade-Reconciler] Supabase busy, will retry next cycle.');
+      } else {
+        console.error('[Trade-Reconciler] Error fetching open trades:', fetchError.message);
+      }
+      return;
+    }
+
+    if (!openTrades || openTrades.length === 0) return;
+
+    const now = Date.now();
+    const expiredTrades = openTrades.filter(trade => {
+      const startTime = new Date(trade.timestamp).getTime();
+      const durationMs = (trade.duration || 0) * 1000;
+      return now >= (startTime + durationMs);
+    });
+
+    if (expiredTrades.length === 0) return;
+
+    console.log(`[Trade-Reconciler] Found ${expiredTrades.length} trades requiring closure.`);
+
+    // 2. Fetch users for only the expired trades (much more efficient than a join on all open trades)
+    const uniqueUserIds = [...new Set(expiredTrades.map(t => t.user_id))];
+    const { data: usersData, error: usersError } = await supabaseAdmin
+      .from('users')
+      .select('id, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo')
+      .in('id', uniqueUserIds);
+
+    if (usersError || !usersData) {
+      console.error('[Trade-Reconciler] Error fetching users for closure:', usersError?.message);
+      return;
+    }
+
+    const usersMap = new Map(usersData.map(u => [u.id, u]));
+
+    // 3. Process closures
+    let successfullyClosed = 0;
+    for (const trade of expiredTrades) {
+      try {
+        const user = usersMap.get(trade.user_id);
+        if (!user) continue;
+
+        const profit = Number(trade.target_profit || 0);
+        const stake = Number(trade.amount);
+        const isReal = trade.account_type === 'REAL';
+        
+        const balanceField = isReal ? 'real_balance' : 'demo_balance';
+        const totalProfitField = isReal ? 'total_profit_real' : 'total_profit_demo';
+        const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
+        const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
+
+        const currentBalance = Number(user[balanceField]);
+        const newBalance = Number((currentBalance + stake + profit).toFixed(2));
+        const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
+        const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+        const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
+
+        // Execute Updates (Sequence: Trade then User to avoid double credit if trade update fails)
+        const { error: tradeErr } = await supabaseAdmin
+          .from('trades')
+          .update({
+            status: 'CLOSED',
+            profit: profit,
+            exit_price: trade.price,
+            exit_time: new Date().toISOString()
+          })
+          .eq('id', trade.id)
+          .eq('status', 'OPEN'); // Safety: ensure not closed by client already
+
+        if (tradeErr || !trade.id) continue;
+
+        // Update user object in map to handle multiple trades for same user in one cycle accurately
+        user[balanceField] = newBalance;
+        user[totalProfitField] = newTotalProfit;
+        user[dailyProfitField] = newDailyProfit;
+        user[dailyTradesField] = newDailyTrades;
+
+        const { error: userErr } = await supabaseAdmin.from('users').update({
+          [balanceField]: newBalance,
+          [totalProfitField]: newTotalProfit,
+          [dailyProfitField]: newDailyProfit,
+          [dailyTradesField]: newDailyTrades
+        }).eq('id', trade.user_id);
+
+        if (!userErr) successfullyClosed++;
+      } catch (err: any) {
+        console.error(`[Trade-Reconciler] Error processing trade ${trade.id}:`, err.message);
+      }
+    }
+    
+    if (successfullyClosed > 0) {
+      console.log(`[Trade-Reconciler] Successfully auto-closed ${successfullyClosed} trades.`);
+    }
+  } catch (err: any) {
+    console.error('[Trade-Reconciler] Exception:', err.message);
+  }
 }
 
 // BOT SIMULATION LOGIC (Backend authoritative)
@@ -232,8 +375,9 @@ console.log('[App] Environment Check:', {
         const { data, error } = await supabaseAdmin
           .from('bot_settings')
           .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
+          .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true')
           .order('updated_at', { ascending: false })
-          .limit(1000); // Fetch more settings to check for active bots in JSON stats
+          .limit(500); // Filtered fetch for performance
         
         if (!error) {
           allSettings = data;

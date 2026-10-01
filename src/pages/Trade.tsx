@@ -20,7 +20,8 @@ import {
   Lightbulb,
   Layers,
   Settings,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { 
@@ -84,6 +85,29 @@ export default function Trade() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-close manual trades when duration expires
+  useEffect(() => {
+    const activeTrades = (user?.trades || []).filter(t => t.status === 'OPEN' && t.duration);
+    if (activeTrades.length === 0) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      activeTrades.forEach(trade => {
+        const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
+        const durationMs = (trade.duration || 0) * 1000;
+        const expiryTime = startTime + durationMs;
+
+        if (now >= expiryTime) {
+          console.log(`[Auto-Close] Closing expired trade: ${trade.id}`);
+          const liveProfit = calculateLiveProfit(trade);
+          closeTrade(trade.id, liveProfit);
+        }
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [user?.trades, closeTrade]);
 
   // AI Signal Generation
   useEffect(() => {
@@ -816,8 +840,10 @@ export default function Trade() {
           {activeTrades.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {activeTrades.map(trade => {
+                const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
+                const timeLeft = Math.max(0, Math.ceil((startTime + (trade.duration || 0) * 1000 - Date.now()) / 1000));
+                const isExpired = timeLeft === 0;
                 const liveProfit = calculateLiveProfit(trade);
-                const timeLeft = Math.max(0, Math.ceil((trade.timestamp + (trade.duration || 0) * 1000 - Date.now()) / 1000));
                 
                 return (
                   <div key={trade.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
@@ -825,23 +851,28 @@ export default function Trade() {
                       <div className="flex items-center gap-1.5">
                         <span className={cn(
                           "text-[8px] font-black px-1.5 py-0.5 rounded",
-                          trade.type === 'BUY' ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+                          trade.type === 'BUY' ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
                         )}>
                           {trade.type}
                         </span>
                         <span className={cn(
                           "text-[7px] font-bold px-1.5 py-0.5 rounded uppercase",
-                          trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-500" : 
-                          trade.source === 'BOT' ? "bg-blue-500/10 text-blue-500" : 
-                          "bg-slate-500/10 text-slate-500"
+                          trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-600" : 
+                          trade.source === 'BOT' ? "bg-blue-500/10 text-blue-600" : 
+                          "bg-slate-500/10 text-slate-600"
                         )}>
                           {trade.source || 'MANUAL'}
                         </span>
                         <span className="text-xs font-black">{trade.coin}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-slate-400">
-                        <Activity size={12} />
-                        <span className="text-[10px] font-mono font-bold">{timeLeft}s</span>
+                      <div className={cn(
+                        "flex items-center gap-1.5 transition-colors",
+                        isExpired ? "text-primary animate-pulse" : "text-slate-400"
+                      )}>
+                        {isExpired ? <RefreshCw size={12} className="animate-spin-slow" /> : <Activity size={12} />}
+                        <span className="text-[10px] font-mono font-bold">
+                          {isExpired ? 'CLOSING' : `${timeLeft}s`}
+                        </span>
                       </div>
                     </div>
                     

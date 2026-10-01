@@ -1316,6 +1316,14 @@ export function useStore() {
     // Mark as closing
     closingTrades.current.add(tradeId);
     
+    // Safety: ensure it gets removed from closing set even if something goes wrong
+    setTimeout(() => {
+        if (closingTrades.current.has(tradeId)) {
+            closingTrades.current.delete(tradeId);
+            console.warn(`closeTrade: Force cleared ${tradeId} from closing set after timeout.`);
+        }
+    }, 10000);
+    
     console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
     
     const isReal = trade.accountType === 'REAL';
