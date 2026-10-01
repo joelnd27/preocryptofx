@@ -85,12 +85,13 @@ router.post('/bot/toggle', async (req, res) => {
       return res.json({ success: true, warning: 'Database sync failed, but bot is active' });
     }
 
-    // Trigger immediate simulation run to provide instant feedback to the user
+    // Trigger immediate randomized simulation run to provide instant feedback
     if (active) {
-      console.log(`[API] Triggering immediate simulation for user ${userId} after bot start.`);
+      const initialDelay = 500 + Math.random() * 2000; // Random 0.5s - 2.5s start
+      console.log(`[API] Triggering randomized immediate simulation for user ${userId} in ${initialDelay}ms.`);
       setTimeout(() => {
         runBotSimulation().catch(e => console.error('[API] Immediate simulation error:', e));
-      }, 1000);
+      }, initialDelay);
     }
 
     res.json({ success: true });
@@ -141,27 +142,27 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-  // Randomized average ~5s loop for extreme responsiveness (Range 3-7s total cycle)
-  console.log('[Bot-Sim] Initializing randomized simulation loop...');
-  
-  const scheduleNextSimulation = async () => {
-    try {
-      // Random interval between 2 and 5 seconds (Execution takes ~1-2s, total ~3-7s)
-      const nextInterval = 2000 + Math.random() * 3000;
-      setTimeout(async () => {
-        try {
-          await runBotSimulation();
-        } catch (err) {
-          console.error('[Bot-Sim] Loop Error:', err);
-        } finally {
-          scheduleNextSimulation();
-        }
-      }, nextInterval);
-    } catch (err) {
-      console.error('[Bot-Sim] Scheduler Error:', err);
-      setTimeout(scheduleNextSimulation, 5000);
-    }
-  };
+    // Randomized average ~4s loop for extreme responsiveness (Range 2-6s total cycle)
+    console.log('[Bot-Sim] Initializing randomized simulation loop...');
+    
+    const scheduleNextSimulation = async () => {
+      try {
+        // Random interval between 1.5 and 4.5 seconds
+        const nextInterval = 1500 + Math.random() * 3000;
+        setTimeout(async () => {
+          try {
+            await runBotSimulation();
+          } catch (err) {
+            console.error('[Bot-Sim] Loop Error:', err);
+          } finally {
+            scheduleNextSimulation();
+          }
+        }, nextInterval);
+      } catch (err) {
+        console.error('[Bot-Sim] Scheduler Error:', err);
+        setTimeout(scheduleNextSimulation, 5000);
+      }
+    };
   
   scheduleNextSimulation();
 

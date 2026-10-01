@@ -362,11 +362,11 @@ export function useStore() {
   const syncWithSupabase = useCallback(async (providedSession?: any, force = false) => {
     if (!isSupabaseConfigured()) return;
     
-    // Throttle syncs to prevent "request storms" (max once every 5 seconds unless forced)
+    // Throttle syncs to prevent "request storms" (max once every 1 second unless forced)
     const now = Date.now();
-    if (!force && now - lastSyncTime.current < 5000) {
+    if (!force && now - lastSyncTime.current < 1000) {
       if (syncTimeout.current) clearTimeout(syncTimeout.current);
-      syncTimeout.current = setTimeout(() => syncWithSupabase(providedSession), 5000);
+      syncTimeout.current = setTimeout(() => syncWithSupabase(providedSession), 1000);
       return;
     }
 
