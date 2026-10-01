@@ -578,11 +578,8 @@ console.log('[App] Environment Check:', {
               continue;
             }
 
-            const chance = Math.random();
-            const pair = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT'][Math.floor(Math.random() * 5)];
-            
-            // Increase chance to 95% for high responsiveness
-            if (chance < 0.95) { 
+            // 100% chance to generate trade every cycle for perfect responsiveness and consistency
+            if (true) { 
               let winChance = 0.65; 
               if (user.active_account === 'DEMO') winChance = 0.96;
               else if (user.role === 'admin' || user.email === 'josphatndungu1022@gmail.com') winChance = 0.98;
@@ -640,18 +637,6 @@ console.log('[App] Environment Check:', {
               userChanged = true;
               settingsChanged = true;
               totalTradesInCycle++;
-            } else {
-              // Heartbeat log - use bot_stats.last_log_at for efficient throttling without fetching logs array
-              const lastLogAt = updatedBotStats.last_log_at || 0;
-              if (Date.now() - lastLogAt > 7000) {
-                userPendingLogs.unshift({
-                  botId,
-                  message: `[${pair}] Analyzing market patterns for high-probability signals...`,
-                  timestamp: new Date().toISOString()
-                });
-                settingsChanged = true;
-                updatedBotStats.last_log_at = Date.now();
-              }
             }
           }
 
