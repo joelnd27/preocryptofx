@@ -397,7 +397,7 @@ export function useStore() {
           transactions(id, type, amount, status, created_at, method),
           trades(
             id, coin, amount, type, price, status, profit, 
-            timestamp, account_type, source
+            timestamp, account_type, source, target_profit, duration
           ),
           bot_settings(scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, bot_stake, target_profit_percentage, updated_at)
         `)
@@ -435,7 +435,7 @@ export function useStore() {
           profit: Number(t.profit),
           targetProfit: Number(t.target_profit || 0),
           timestamp: new Date(t.timestamp || t.created_at).getTime(),
-          accountType: t.account_type,
+          accountType: (t.account_type || 'DEMO').toUpperCase(),
           duration: t.duration || 0,
           source: t.source
         }));
@@ -1620,46 +1620,70 @@ export function useStore() {
       }
     }
 
-    // Deduct balance immediately for withdrawals
+    // Deduct balance immediately for withdrawals - Optimistic UI
     let newBalance = user[balanceKey];
     if (transaction.type === 'WITHDRAW') {
       newBalance = Number((user[balanceKey] - transaction.amount).toFixed(2));
       isInternalUpdate.current = true;
-      // Auto-reset flag to allow sync updates to resume
       setTimeout(() => { isInternalUpdate.current = false; }, 5000);
     }
 
     if (isSupabaseConfigured()) {
-      const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
-        user_id: user.id,
-        type: transaction.type,
-        amount: transaction.amount,
-        status: 'pending',
-        account_type: transaction.accountType,
-        method: transaction.method,
-        timestamp: new Date(newTransaction.timestamp).toISOString()
-      }).select().single();
+      try {
+        const session = await getSafeSession();
+        
+        if (transaction.type === 'WITHDRAW') {
+          const response = await axios.post('/api/withdraw/request', {
+            amount: transaction.amount,
+            accountType: transaction.accountType,
+            method: transaction.method
+          }, {
+            headers: { Authorization: `Bearer ${session?.access_token}` }
+          });
+          
+          if (response.status === 200) {
+            const { newBalance: serverBalance, transaction: insertedTrans } = response.data;
+            newTransaction.id = insertedTrans.id;
+            newBalance = serverBalance;
+          } else {
+            throw new Error(response.data.error || 'Withdrawal request failed');
+          }
+        } else {
+          // Handle Deposit/other transactions via standard Supabase (Legacy or direct)
+          const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
+            user_id: user.id,
+            type: transaction.type,
+            amount: transaction.amount,
+            status: 'pending',
+            account_type: transaction.accountType,
+            method: transaction.method,
+            timestamp: new Date(newTransaction.timestamp).toISOString()
+          }).select().single();
 
-      if (transError) throw transError;
-      newTransaction.id = insertedTrans.id;
+          if (transError) throw transError;
+          newTransaction.id = insertedTrans.id;
+        }
 
-      if (transaction.type === 'WITHDRAW') {
-        await supabase.from('users').update({
-          [isReal ? 'real_balance' : 'demo_balance']: newBalance
-        }).eq('id', user.id);
-      }
+        // Cleanup old transactions (Keep latest 50) - Only for client consistency
+        try {
+          const { data: oldTrans } = await supabase
+            .from('transactions')
+            .select('id')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .range(50, 1000);
+          
+          if (oldTrans && oldTrans.length > 0) {
+            const idsToDelete = oldTrans.map(t => t.id);
+            await supabase.from('transactions').delete().in('id', idsToDelete);
+          }
+        } catch (cleanupErr) {
+          console.warn('[Sync] Cleanup failed, skipping:', cleanupErr);
+        }
 
-      // Cleanup old transactions (Keep latest 50)
-      const { data: oldTrans } = await supabase
-        .from('transactions')
-        .select('id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .range(50, 1000);
-      
-      if (oldTrans && oldTrans.length > 0) {
-        const idsToDelete = oldTrans.map(t => t.id);
-        await supabase.from('transactions').delete().in('id', idsToDelete);
+      } catch (err: any) {
+        console.error('SECURE TRANSACTION FAILED:', err.response?.data?.error || err.message);
+        throw new Error(err.response?.data?.error || 'Failed to process transaction securely');
       }
     }
 
@@ -1667,7 +1691,7 @@ export function useStore() {
       if (!prev) return null;
       let updatedUser = {
         ...prev,
-        transactions: [newTransaction, ...prev.transactions]
+        transactions: [newTransaction, ...(prev.transactions || [])]
       };
       if (transaction.type === 'WITHDRAW') {
         updatedUser[balanceKey] = newBalance;

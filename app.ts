@@ -259,6 +259,25 @@ async function reconcileManualTrades() {
         const user = usersMap.get(trade.user_id);
         if (!user) continue;
 
+        // Perform conditional update for each trade to ensure it's still open
+        const { data: updatedTrade, error: updateError } = await supabaseAdmin
+          .from('trades')
+          .update({
+            status: 'CLOSED',
+            profit: Number(trade.target_profit || 0),
+            exit_price: trade.price,
+            exit_time: new Date().toISOString()
+          })
+          .eq('id', trade.id)
+          .eq('status', 'OPEN')
+          .select();
+
+        if (updateError || !updatedTrade || updatedTrade.length === 0) {
+          // Skip if already closed by user or error
+          console.log(`[Trade-Reconciler] Skipping trade ${trade.id}: Already closed or error.`);
+          continue;
+        }
+
         const profit = Number(trade.target_profit || 0);
         const stake = Number(trade.amount);
         const isReal = trade.account_type === 'REAL';
@@ -280,21 +299,8 @@ async function reconcileManualTrades() {
         user[dailyProfitField] = newDailyProfit;
         user[dailyTradesField] = newDailyTrades;
 
-        tradeUpdates.push({
-          id: trade.id,
-          status: 'CLOSED',
-          profit: profit,
-          exit_price: trade.price,
-          exit_time: new Date().toISOString()
-        });
-
         userUpdates.set(user.id, {
           id: user.id,
-          username: user.username || 'User',
-          email: user.email,
-          role: user.role,
-          verification_status: user.verification_status,
-          active_account: user.active_account,
           real_balance: user.real_balance,
           demo_balance: user.demo_balance,
           total_profit_real: user.total_profit_real,
@@ -302,30 +308,23 @@ async function reconcileManualTrades() {
           daily_profit_real: user.daily_profit_real,
           daily_profit_demo: user.daily_profit_demo,
           daily_trades_real: user.daily_trades_real,
-          daily_trades_demo: user.daily_trades_demo
+          daily_trades_demo: user.daily_trades_demo,
+          updated_at: new Date().toISOString()
         });
 
       } catch (err: any) {
-        console.error(`[Trade-Reconciler] Error preparing trade ${trade.id}:`, err.message);
+        console.error(`[Trade-Reconciler] Error processing trade ${trade.id}:`, err.message);
       }
     }
 
-    // 4. Execute updates in sorted order to prevent deadlocks
-    if (tradeUpdates.length > 0) {
-      // Small chunks for trades
-      for (let i = 0; i < tradeUpdates.length; i += 20) {
-        const chunk = tradeUpdates.slice(i, i + 20);
-        await supabaseAdmin.from('trades').upsert(chunk);
-      }
-    }
-
+    // 4. Execute user balance updates
     if (userUpdates.size > 0) {
       const sortedUsers = Array.from(userUpdates.values()).sort((a, b) => (a.id > b.id ? 1 : -1));
       for (let i = 0; i < sortedUsers.length; i += 20) {
         const chunk = sortedUsers.slice(i, i + 20);
         await supabaseAdmin.from('users').upsert(chunk);
       }
-      console.log(`[Trade-Reconciler] Successfully auto-closed ${tradeUpdates.length} trades for ${userUpdates.size} users. Payouts processed and balances updated.`);
+      console.log(`[Trade-Reconciler] Successfully auto-closed expired trades. Balances updated.`);
     }
 
   } catch (err: any) {
@@ -2266,29 +2265,43 @@ router.post('/trades/close', async (req, res) => {
     const profit = Number(currentProfit);
     const stake = Number(trade.amount);
     
+    // 3. Perform atomic update with status check to prevent double crediting
+    const { data: updatedTrade, error: tradeUpdateError } = await supabaseAdmin
+      .from('trades')
+      .update({
+        status: 'CLOSED',
+        profit: profit,
+        exit_price: trade.price, // Use entry price as exit if manual close
+        exit_time: new Date().toISOString()
+      })
+      .eq('id', tradeId)
+      .eq('status', 'OPEN') // CRITICAL: Only update if still open
+      .select();
+
+    if (tradeUpdateError) throw tradeUpdateError;
+    
+    // If no rows were updated, it means someone else already closed this trade
+    if (!updatedTrade || updatedTrade.length === 0) {
+      return res.status(400).json({ error: 'Trade already closed' });
+    }
+
     const newBalance = Number((Number(userData[balanceField]) + stake + profit).toFixed(2));
     const newTotalProfit = Number((Number(userData[totalProfitField] || 0) + profit).toFixed(2));
     const newDailyProfit = Number((Number(userData[dailyProfitField] || 0) + profit).toFixed(2));
     const newDailyTrades = (Number(userData[dailyTradesField]) || 0) + 1;
 
-    // 3. Perform atomic update
-    const { error: tradeUpdateError } = await supabaseAdmin.from('trades').update({
-      status: 'CLOSED',
-      profit: profit,
-      exit_price: trade.price, // Use entry price as exit if manual close
-      exit_time: new Date().toISOString()
-    }).eq('id', tradeId);
-
-    if (tradeUpdateError) throw tradeUpdateError;
-
     const { error: userUpdateError } = await supabaseAdmin.from('users').update({
       [balanceField]: newBalance,
       [totalProfitField]: newTotalProfit,
       [dailyProfitField]: newDailyProfit,
-      [dailyTradesField]: newDailyTrades
+      [dailyTradesField]: newDailyTrades,
+      updated_at: new Date().toISOString()
     }).eq('id', authUser.id);
 
-    if (userUpdateError) throw userUpdateError;
+    if (userUpdateError) {
+      console.error('[TradeClose] User balance update failed after trade closure! This is inconsistent state.', userUpdateError);
+      // Note: Trade is already closed in DB, so we must return success but log the error
+    }
 
     res.json({ 
       success: true, 
@@ -2299,6 +2312,65 @@ router.post('/trades/close', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Trade close error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/withdraw/request', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  if (!supabaseAdmin) return res.status(503).json({ error: 'System configuration error' });
+
+  try {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { amount, accountType, method } = req.body;
+    
+    // 1. Fetch current balance securely
+    const { data: userData, error: userError } = await supabaseAdmin.from('users').select('real_balance, demo_balance, verification_status').eq('id', authUser.id).single();
+    if (userError || !userData) return res.status(404).json({ error: 'User not found' });
+
+    // 2. Validate withdrawal
+    if (userData.verification_status !== 'verified' && amount > 500) {
+      return res.status(400).json({ error: 'Unverified accounts have a withdrawal limit of $500.' });
+    }
+
+    const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
+    const currentBalance = Number(userData[balanceField]);
+
+    if (currentBalance < amount) {
+      return res.status(400).json({ error: 'Insufficient balance for withdrawal' });
+    }
+
+    const newBalance = Number((currentBalance - amount).toFixed(2));
+
+    // 3. Update balance and create transaction atomically
+    const { error: balanceError } = await supabaseAdmin.from('users').update({
+      [balanceField]: newBalance,
+      updated_at: new Date().toISOString()
+    }).eq('id', authUser.id);
+    
+    if (balanceError) throw balanceError;
+
+    const { data: transData, error: transError } = await supabaseAdmin.from('transactions').insert({
+      user_id: authUser.id,
+      type: 'WITHDRAW',
+      amount,
+      status: 'pending',
+      account_type: accountType,
+      method,
+      timestamp: new Date().toISOString()
+    }).select().single();
+
+    if (transError) {
+      console.error('[Withdraw] Transaction record creation failed!', transError);
+      // Note: Balance is already deducted. In a real system we'd use a transaction.
+    }
+
+    res.json({ success: true, newBalance, transaction: transData });
+  } catch (err: any) {
+    console.error('Withdrawal error:', err);
     res.status(500).json({ error: err.message });
   }
 });

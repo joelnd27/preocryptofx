@@ -417,38 +417,28 @@ export default function Trade() {
   const calculateLiveProfit = (trade: TradeType) => {
     if (!trade) return 0;
     
-    // If we have a pre-calculated target profit, we should trend towards it smoothly
-    if (trade.targetProfit !== undefined && trade.timestamp) {
-      const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
-      const durationMs = (trade.duration || 60) * 1000;
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / durationMs);
-      
-      // We want the profit to move toward the target but with some "market noise"
-      // Seed for unique character per trade
-      const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      
-      // Interpolate profit toward targetProfit based on progress
-      // Use a non-linear ease-in-out for more "natural" feel
-      const easedProgress = progress < 0.5 
-        ? 2 * progress * progress 
-        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    // For fixed-duration trades (Binary Options style), the profit is binary:
+    // Either you are in-the-money (full target profit) or out-of-the-money (loss).
+    // We show a slightly dynamic value based on price to keep it "live" but anchored to reality.
+    
+    const currentPrice = prices[trade.coin];
+    if (!currentPrice || !trade.price) return 0;
 
-      let currentInterpolatedProfit = trade.targetProfit * easedProgress;
-      
-      // Add some "volatility" that decreases as we approach expiry
-      const volatility = (1 - progress) * (trade.amount * 0.15) * Math.sin(elapsed / 800 + seed);
-      
-      const result = currentInterpolatedProfit + volatility;
-      return Number(result.toFixed(2));
+    const isBuy = trade.type === 'BUY';
+    const isInTheMoney = isBuy ? (currentPrice >= trade.price) : (currentPrice <= trade.price);
+    
+    if (trade.targetProfit !== undefined) {
+      if (isInTheMoney) {
+        // We are winning. Show target profit clearly.
+        return Number(trade.targetProfit.toFixed(2));
+      } else {
+        // We are losing. Show current loss (stake).
+        return Number((-trade.amount).toFixed(2));
+      }
     }
 
-    const currentPrice = prices[trade.coin];
-    if (!currentPrice) return 0;
-    const diff = trade.type === 'BUY' 
-      ? (currentPrice - trade.price) 
-      : (trade.price - currentPrice);
-    
+    // Fallback for non-target trades
+    const diff = isBuy ? (currentPrice - trade.price) : (trade.price - currentPrice);
     const percentChange = diff / trade.price;
     return Number((trade.amount * percentChange * 2.0).toFixed(2));
   };

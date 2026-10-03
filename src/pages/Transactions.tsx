@@ -339,26 +339,38 @@ export default function Transactions() {
         return;
       }
 
-      addTransaction({
-        id: Math.random().toString(36).substr(2, 9).toUpperCase(),
-        type: 'WITHDRAW',
-        amount: val,
-        status: 'pending',
-        timestamp: Date.now(),
-        accountType: 'REAL',
-        method: withdrawalMethod,
-        bankName: withdrawalMethod === 'BANK' ? bankName : undefined,
-        accountNumber: withdrawalMethod === 'BANK' ? accountNumber : phone
-      });
-      
-      setAlertConfig({
-        isOpen: true,
-        title: 'Request Submitted',
-        message: 'Your withdrawal request has been submitted successfully.',
-        type: 'success'
-      });
-      setIsModalOpen(false);
-      setAmount('');
+      setIsProcessing(true);
+      try {
+        await addTransaction({
+          id: Math.random().toString(36).substr(2, 9).toUpperCase(),
+          type: 'WITHDRAW',
+          amount: val,
+          status: 'pending',
+          timestamp: Date.now(),
+          accountType: 'REAL',
+          method: withdrawalMethod,
+          bankName: withdrawalMethod === 'BANK' ? bankName : undefined,
+          accountNumber: withdrawalMethod === 'BANK' ? accountNumber : phone
+        });
+        
+        setAlertConfig({
+          isOpen: true,
+          title: 'Request Submitted',
+          message: 'Your withdrawal request has been submitted successfully.',
+          type: 'success'
+        });
+        setIsModalOpen(false);
+        setAmount('');
+      } catch (err: any) {
+        setAlertConfig({
+          isOpen: true,
+          title: 'Withdrawal Failed',
+          message: err.message || 'An error occurred while processing your withdrawal.',
+          type: 'error'
+        });
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -1004,7 +1016,10 @@ export default function Transactions() {
                         )}
                       >
                         {isProcessing ? (
-                          <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                            <span>Processing...</span>
+                          </div>
                         ) : (
                           <div className="flex items-center justify-center gap-2">
                             {modalType === 'DEPOSIT' 
