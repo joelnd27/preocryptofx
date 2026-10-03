@@ -7,6 +7,30 @@ import cors from 'cors';
 
 dotenv.config();
 
+// Move constants to the top to avoid temporal dead zone issues
+const CRYPTO_LIST = [
+  { symbol: 'BTC', name: 'Bitcoin', basePrice: 65000 },
+  { symbol: 'ETH', name: 'Ethereum', basePrice: 3500 },
+  { symbol: 'USDT', name: 'Tether', basePrice: 1 },
+  { symbol: 'BNB', name: 'BNB', basePrice: 580 },
+  { symbol: 'SOL', name: 'Solana', basePrice: 145 },
+  { symbol: 'XRP', name: 'XRP', basePrice: 0.62 },
+  { symbol: 'ADA', name: 'Cardano', basePrice: 0.45 },
+  { symbol: 'DOGE', name: 'Dogecoin', basePrice: 0.16 },
+  { symbol: 'LTC', name: 'Litecoin', basePrice: 85 },
+  { symbol: 'TRX', name: 'TRON', basePrice: 0.12 },
+  { symbol: 'MATIC', name: 'Polygon', basePrice: 0.72 },
+  { symbol: 'DOT', name: 'Polkadot', basePrice: 7.20 },
+  { symbol: 'AVAX', name: 'Avalanche', basePrice: 38 },
+  { symbol: 'SHIB', name: 'Shiba Inu', basePrice: 0.000027 },
+  { symbol: 'LINK', name: 'Chainlink', basePrice: 18 },
+  { symbol: 'ATOM', name: 'Cosmos', basePrice: 9.50 },
+  { symbol: 'XMR', name: 'Monero', basePrice: 130 },
+  { symbol: 'BCH', name: 'Bitcoin Cash', basePrice: 480 },
+  { symbol: 'ETC', name: 'Ethereum Classic', basePrice: 32 },
+  { symbol: 'FIL', name: 'Filecoin', basePrice: 9 },
+];
+
 const app = express();
 app.use(cors());
 app.use(express.json({
@@ -85,13 +109,10 @@ router.post('/bot/toggle', async (req, res) => {
       return res.json({ success: true, warning: 'Database sync failed, but bot is active' });
     }
 
-    // Trigger immediate randomized simulation run to provide instant feedback
+    // Trigger immediate trade execution to provide instant feedback
     if (active) {
-      const initialDelay = 500 + Math.random() * 2000; // Random 0.5s - 2.5s start
-      console.log(`[API] Triggering randomized immediate simulation for user ${userId} in ${initialDelay}ms.`);
-      setTimeout(() => {
-        runBotSimulation().catch(e => console.error('[API] Immediate simulation error:', e));
-      }, initialDelay);
+      console.log(`[API] Triggering immediate bot trade for user ${userId} after activation.`);
+      executeInstantBotTrade(userId, botId).catch(e => console.error('[API] Instant trade error:', e));
     }
 
     res.json({ success: true });
@@ -142,13 +163,13 @@ if (!supabaseAdmin) {
 } else {
   console.log('[Supabase] Admin client initialized successfully.');
   
-    // Randomized average ~4s loop for extreme responsiveness (Range 2-6s total cycle)
+    // Randomized loop for extreme responsiveness (Range 2-7s total cycle)
     console.log('[Bot-Sim] Initializing randomized simulation loop...');
     
     const scheduleNextSimulation = async () => {
       try {
-        // Random interval between 1.5 and 4.5 seconds
-        const nextInterval = 1500 + Math.random() * 3000;
+        // Random interval between 2 and 7 seconds as requested
+        const nextInterval = 2000 + Math.random() * 5000;
         setTimeout(async () => {
           try {
             await runBotSimulation();
@@ -183,17 +204,16 @@ async function reconcileManualTrades() {
 
   try {
     // 1. Fetch only essential columns for OPEN trades with a duration
-    // We omit the users join here to keep the query light and prevent timeouts
     const { data: openTrades, error: fetchError } = await supabaseAdmin
       .from('trades')
       .select('id, user_id, amount, price, target_profit, account_type, timestamp, duration')
       .eq('status', 'OPEN')
       .not('duration', 'is', null)
-      .limit(200); // Safety limit
+      .limit(100); 
 
     if (fetchError) {
-      if (fetchError.message?.includes('timeout') || fetchError.code === 'PGRST002') {
-        console.warn('[Trade-Reconciler] Supabase busy, will retry next cycle.');
+      if (fetchError.message?.includes('timeout') || fetchError.code === 'PGRST002' || fetchError.code === '57014') {
+        console.warn('[Trade-Reconciler] Supabase query timed out, retrying next cycle.');
       } else {
         console.error('[Trade-Reconciler] Error fetching open trades:', fetchError.message);
       }
@@ -204,20 +224,23 @@ async function reconcileManualTrades() {
 
     const now = Date.now();
     const expiredTrades = openTrades.filter(trade => {
-      const startTime = new Date(trade.timestamp).getTime();
+      const startTime = isNaN(Number(trade.timestamp)) 
+        ? new Date(trade.timestamp).getTime() 
+        : Number(trade.timestamp);
+      
       const durationMs = (trade.duration || 0) * 1000;
       return now >= (startTime + durationMs);
     });
 
     if (expiredTrades.length === 0) return;
 
-    console.log(`[Trade-Reconciler] Found ${expiredTrades.length} trades requiring closure.`);
+    console.log(`[Trade-Reconciler] ${expiredTrades.length} trades reached expiry.`);
 
-    // 2. Fetch users for only the expired trades (much more efficient than a join on all open trades)
+    // 2. Fetch users for the expired trades
     const uniqueUserIds = [...new Set(expiredTrades.map(t => t.user_id))];
     const { data: usersData, error: usersError } = await supabaseAdmin
       .from('users')
-      .select('id, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo')
+      .select('id, username, email, role, verification_status, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo')
       .in('id', uniqueUserIds);
 
     if (usersError || !usersData) {
@@ -225,10 +248,11 @@ async function reconcileManualTrades() {
       return;
     }
 
-    const usersMap = new Map(usersData.map(u => [u.id, u]));
+    const usersMap = new Map(usersData.map(u => [u.id, { ...u }]));
+    const tradeUpdates: any[] = [];
+    const userUpdates: Map<string, any> = new Map();
 
-    // 3. Process closures
-    let successfullyClosed = 0;
+    // 3. Prepare updates
     for (const trade of expiredTrades) {
       try {
         const user = usersMap.get(trade.user_id);
@@ -249,42 +273,60 @@ async function reconcileManualTrades() {
         const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
         const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
 
-        // Execute Updates (Sequence: Trade then User to avoid double credit if trade update fails)
-        const { error: tradeErr } = await supabaseAdmin
-          .from('trades')
-          .update({
-            status: 'CLOSED',
-            profit: profit,
-            exit_price: trade.price,
-            exit_time: new Date().toISOString()
-          })
-          .eq('id', trade.id)
-          .eq('status', 'OPEN'); // Safety: ensure not closed by client already
-
-        if (tradeErr || !trade.id) continue;
-
-        // Update user object in map to handle multiple trades for same user in one cycle accurately
+        // Update in-memory user for consecutive trades
         user[balanceField] = newBalance;
         user[totalProfitField] = newTotalProfit;
         user[dailyProfitField] = newDailyProfit;
         user[dailyTradesField] = newDailyTrades;
 
-        const { error: userErr } = await supabaseAdmin.from('users').update({
-          [balanceField]: newBalance,
-          [totalProfitField]: newTotalProfit,
-          [dailyProfitField]: newDailyProfit,
-          [dailyTradesField]: newDailyTrades
-        }).eq('id', trade.user_id);
+        tradeUpdates.push({
+          id: trade.id,
+          status: 'CLOSED',
+          profit: profit,
+          exit_price: trade.price,
+          exit_time: new Date().toISOString()
+        });
 
-        if (!userErr) successfullyClosed++;
+        userUpdates.set(user.id, {
+          id: user.id,
+          username: user.username || 'User',
+          email: user.email,
+          role: user.role,
+          verification_status: user.verification_status,
+          active_account: user.active_account,
+          real_balance: user.real_balance,
+          demo_balance: user.demo_balance,
+          total_profit_real: user.total_profit_real,
+          total_profit_demo: user.total_profit_demo,
+          daily_profit_real: user.daily_profit_real,
+          daily_profit_demo: user.daily_profit_demo,
+          daily_trades_real: user.daily_trades_real,
+          daily_trades_demo: user.daily_trades_demo
+        });
+
       } catch (err: any) {
-        console.error(`[Trade-Reconciler] Error processing trade ${trade.id}:`, err.message);
+        console.error(`[Trade-Reconciler] Error preparing trade ${trade.id}:`, err.message);
       }
     }
-    
-    if (successfullyClosed > 0) {
-      console.log(`[Trade-Reconciler] Successfully auto-closed ${successfullyClosed} trades.`);
+
+    // 4. Execute updates in sorted order to prevent deadlocks
+    if (tradeUpdates.length > 0) {
+      // Small chunks for trades
+      for (let i = 0; i < tradeUpdates.length; i += 20) {
+        const chunk = tradeUpdates.slice(i, i + 20);
+        await supabaseAdmin.from('trades').upsert(chunk);
+      }
     }
+
+    if (userUpdates.size > 0) {
+      const sortedUsers = Array.from(userUpdates.values()).sort((a, b) => (a.id > b.id ? 1 : -1));
+      for (let i = 0; i < sortedUsers.length; i += 20) {
+        const chunk = sortedUsers.slice(i, i + 20);
+        await supabaseAdmin.from('users').upsert(chunk);
+      }
+      console.log(`[Trade-Reconciler] Successfully auto-closed ${tradeUpdates.length} trades for ${userUpdates.size} users.`);
+    }
+
   } catch (err: any) {
     console.error('[Trade-Reconciler] Exception:', err.message);
   }
@@ -295,6 +337,112 @@ let isSimulationRunning = false;
 let lastSimulationTime: string | null = null;
 let simulationCycleCount = 0;
 let activeUserIds: string[] = [];
+
+// Helper for immediate bot execution (used when user clicks "Run")
+async function executeInstantBotTrade(userId: string, targetBotId: string) {
+  if (!supabaseAdmin) return;
+  
+  try {
+    // 1. Fetch current user and bot settings
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, username, role, verification_status, real_balance, demo_balance, daily_profit_real, daily_profit_demo, total_profit_real, total_profit_demo, daily_trades_real, daily_trades_demo, active_account')
+      .eq('id', userId)
+      .single();
+
+    const { data: settingsData, error: settingsError } = await supabaseAdmin
+      .from('bot_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (userError || settingsError || !userData || !settingsData) {
+      console.error(`[Bot-Sim] Instant trade failed to fetch data for user ${userId}`);
+      return;
+    }
+
+    // 2. Perform the trade logic (Simplified version of simulation loop for 1 user/bot)
+    const botId = targetBotId;
+    const botStats = settingsData.bot_stats || {};
+    const botConfigs = botStats.configs || {};
+    const botConfig = botConfigs[botId] || {};
+    const botStake = Number(botConfig.stake || settingsData.bot_stake || 10);
+    
+    const isReal = userData.active_account === 'REAL';
+    const currentBalance = isReal ? Number(userData.real_balance) : Number(userData.demo_balance);
+    const currentDailyProfit = isReal ? Number(userData.daily_profit_real) : Number(userData.daily_profit_demo);
+
+    if (currentBalance < botStake) return;
+
+    let winChance = 0.65;
+    if (userData.active_account === 'DEMO') winChance = 0.96;
+    else if (userData.role === 'admin' || userData.email === 'josphatndungu1022@gmail.com') winChance = 0.98;
+    else if (userData.role === 'marketer') winChance = 0.86;
+
+    const isWin = Math.random() < winChance;
+    const baseProfitPercent = 0.02 + Math.random() * 0.08;
+    const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
+
+    const newBalance = Number((currentBalance + profitAmount).toFixed(2));
+    const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
+    const newTotalProfit = Number(((isReal ? (Number(userData.total_profit_real) || 0) : (Number(userData.total_profit_demo) || 0)) + profitAmount).toFixed(2));
+    const newDailyTrades = (isReal ? (Number(userData.daily_trades_real) || 0) : (Number(userData.daily_trades_demo) || 0)) + 1;
+
+    // Prepare Updates
+    const userUpdates: any = {
+      real_balance: isReal ? newBalance : userData.real_balance,
+      demo_balance: !isReal ? newBalance : userData.demo_balance,
+      total_profit_real: isReal ? newTotalProfit : userData.total_profit_real,
+      total_profit_demo: !isReal ? newTotalProfit : userData.total_profit_demo,
+      daily_profit_real: isReal ? newDailyProfit : userData.daily_profit_real,
+      daily_profit_demo: !isReal ? newDailyProfit : userData.daily_profit_demo,
+      daily_trades_real: isReal ? newDailyTrades : userData.daily_trades_real,
+      daily_trades_demo: !isReal ? newDailyTrades : userData.daily_trades_demo
+    };
+
+    const updatedBotStats = { ...botStats };
+    updatedBotStats[botId] = {
+      profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
+      trades: (updatedBotStats[botId]?.trades || 0) + 1
+    };
+
+    const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
+    const logEntry = {
+      botId,
+      message: `Bot executed ${profitAmount >= 0 ? 'profitable' : 'defensive'} trade on ${randomCoin.symbol}: ${profitAmount >= 0 ? '+' : ''}${profitAmount.toFixed(2)} USDT`,
+      timestamp: new Date().toISOString()
+    };
+
+    const mergedLogs = [logEntry, ...(settingsData.bot_logs || [])].slice(0, 50);
+
+    // 3. Save to Database
+    await supabaseAdmin.from('users').update(userUpdates).eq('id', userId);
+    await supabaseAdmin.from('bot_settings').update({
+      bot_type: 'multi', // Required field
+      bot_stats: updatedBotStats,
+      bot_logs: mergedLogs,
+      updated_at: new Date().toISOString()
+    }).eq('user_id', userId);
+
+    await supabaseAdmin.from('trades').insert({
+      user_id: userId,
+      symbol: randomCoin.symbol, // Required field
+      coin: randomCoin.symbol,
+      amount: botStake,
+      type: profitAmount >= 0 ? 'BUY' : 'SELL',
+      account_type: userData.active_account.toUpperCase(),
+      price: randomCoin.basePrice,
+      profit: profitAmount,
+      status: 'CLOSED',
+      timestamp: new Date().toISOString(),
+      source: 'BOT'
+    });
+
+    console.log(`[Bot-Sim] Instant trade executed for user ${userData.email}. Profit: ${profitAmount}`);
+  } catch (err: any) {
+    console.error(`[Bot-Sim] Instant trade error:`, err.message);
+  }
+}
 
 // Auto-reject stale transactions (older than 10 minutes)
 console.log('[App] Environment Check:', {
@@ -372,13 +520,12 @@ console.log('[App] Environment Check:', {
       let allSettings: any[] | null = null;
       let fetchError: any = null;
       
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
         const { data, error } = await supabaseAdmin
           .from('bot_settings')
           .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
-          .or('scalping_active.eq.true,trend_active.eq.true,ai_active.eq.true,custom_active.eq.true')
           .order('updated_at', { ascending: false })
-          .limit(500); // Filtered fetch for performance
+          .limit(500); // Increased limit for better coverage
         
         if (!error) {
           allSettings = data;
@@ -389,11 +536,12 @@ console.log('[App] Environment Check:', {
         const isTransient = error.message?.includes('timeout') || 
                            error.message?.includes('PGRST002') || 
                            error.code === '504' ||
+                           error.code === '57014' ||
                            error.message?.includes('522');
 
-        if (isTransient && attempt === 1) {
-          console.warn(`[Bot-Sim] [Cycle #${simulationCycleCount}] Supabase busy (Attempt 1), retrying in 5s...`);
-          await new Promise(r => setTimeout(r, 5000));
+        if (isTransient && attempt < 3) {
+          console.warn(`[Bot-Sim] [Cycle #${simulationCycleCount}] Supabase busy (Attempt ${attempt}), retrying in ${attempt * 3}s...`);
+          await new Promise(r => setTimeout(r, attempt * 3000));
         } else {
           break; 
         }
@@ -623,6 +771,7 @@ console.log('[App] Environment Check:', {
 
               bulkTrades.push({
                 user_id: user.id,
+                symbol: randomCoin.symbol, // Required field
                 coin: randomCoin.symbol,
                 amount: botStake,
                 type: profitAmount >= 0 ? 'BUY' : 'SELL',
@@ -693,37 +842,50 @@ console.log('[App] Environment Check:', {
         
         bulkSettingsUpdates.push({
           user_id: update.user_id,
+          bot_type: 'multi', // Required field
           bot_stats: update.updatedBotStats,
           bot_logs: mergedLogs,
           updated_at: new Date().toISOString()
         });
       });
 
-      // 5. Execution Phase: Batch Database Writes
+      // 5. Execution Phase: Batch Database Writes with sorting to prevent deadlocks
       if (bulkTrades.length > 0) {
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          const { error } = await supabaseAdmin.from('trades').insert(bulkTrades);
-          if (!error) break;
-          
-          const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
-          if (isTransient && attempt === 1) {
-            console.warn(`[Bot-Sim] Bulk Trades failed (Attempt 1), retrying in 3s...`);
-            await new Promise(r => setTimeout(r, 3000));
-          } else {
-            console.error('[Bot-Sim] Bulk Trades Error:', error.message);
-            break;
+        // Sort by user_id for consistent locking order
+        bulkTrades.sort((a, b) => (a.user_id > b.user_id ? 1 : -1));
+        
+        for (let i = 0; i < bulkTrades.length; i += 50) {
+          const chunk = bulkTrades.slice(i, i + 50);
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            const { error } = await supabaseAdmin.from('trades').insert(chunk);
+            if (!error) {
+              console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Successfully inserted ${chunk.length} trades.`);
+              break;
+            }
+            
+            const isTransient = error.message?.includes('timeout') || error.message?.includes('522') || error.code === '57014' || error.message?.includes('deadlock');
+            if (isTransient && attempt === 1) {
+              console.warn(`[Bot-Sim] Bulk Trades chunk failed (Attempt 1), retrying in 3s...`);
+              await new Promise(r => setTimeout(r, 3000));
+            } else {
+              console.error(`[Bot-Sim] Bulk Trades Error (Chunk ${i}):`, error.message);
+              break;
+            }
           }
         }
       }
 
       if (bulkUserUpdates.length > 0) {
+        // Sort by id for consistent locking order
+        bulkUserUpdates.sort((a, b) => (a.id > b.id ? 1 : -1));
+        
         for (let i = 0; i < bulkUserUpdates.length; i += 50) {
           const chunk = bulkUserUpdates.slice(i, i + 50);
           for (let attempt = 1; attempt <= 2; attempt++) {
             const { error } = await supabaseAdmin.from('users').upsert(chunk);
             if (!error) break;
 
-            const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
+            const isTransient = error.message?.includes('timeout') || error.message?.includes('522') || error.message?.includes('deadlock');
             if (isTransient && attempt === 1) {
               console.warn(`[Bot-Sim] Bulk User Upsert chunk failed (Attempt 1), retrying in 3s...`);
               await new Promise(r => setTimeout(r, 3000));
@@ -736,13 +898,16 @@ console.log('[App] Environment Check:', {
       }
 
       if (bulkSettingsUpdates.length > 0) {
+        // Sort by user_id for consistent locking order
+        bulkSettingsUpdates.sort((a, b) => (a.user_id > b.user_id ? 1 : -1));
+        
         for (let i = 0; i < bulkSettingsUpdates.length; i += 50) {
           const chunk = bulkSettingsUpdates.slice(i, i + 50);
           for (let attempt = 1; attempt <= 2; attempt++) {
             const { error } = await supabaseAdmin.from('bot_settings').upsert(chunk, { onConflict: 'user_id' });
             if (!error) break;
 
-            const isTransient = error.message?.includes('timeout') || error.message?.includes('522');
+            const isTransient = error.message?.includes('timeout') || error.message?.includes('522') || error.message?.includes('deadlock');
             if (isTransient && attempt === 1) {
               console.warn(`[Bot-Sim] Bulk Settings Upsert chunk failed (Attempt 1), retrying in 3s...`);
               await new Promise(r => setTimeout(r, 3000));
@@ -885,31 +1050,6 @@ const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
 // FinAPI Config
 const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY || process.env.VITE_FINAPI_SECRET_KEY;
 const FINAPI_BASE_URL = 'https://stkpush.co.ke/api';
-
-// Bot Simulation Constants
-const MIN_BOT_STOP_BALANCE = 10;
-const CRYPTO_LIST = [
-  { symbol: 'BTC', name: 'Bitcoin', basePrice: 65000 },
-  { symbol: 'ETH', name: 'Ethereum', basePrice: 3500 },
-  { symbol: 'USDT', name: 'Tether', basePrice: 1 },
-  { symbol: 'BNB', name: 'BNB', basePrice: 580 },
-  { symbol: 'SOL', name: 'Solana', basePrice: 145 },
-  { symbol: 'XRP', name: 'XRP', basePrice: 0.62 },
-  { symbol: 'ADA', name: 'Cardano', basePrice: 0.45 },
-  { symbol: 'DOGE', name: 'Dogecoin', basePrice: 0.16 },
-  { symbol: 'LTC', name: 'Litecoin', basePrice: 85 },
-  { symbol: 'TRX', name: 'TRON', basePrice: 0.12 },
-  { symbol: 'MATIC', name: 'Polygon', basePrice: 0.72 },
-  { symbol: 'DOT', name: 'Polkadot', basePrice: 7.20 },
-  { symbol: 'AVAX', name: 'Avalanche', basePrice: 38 },
-  { symbol: 'SHIB', name: 'Shiba Inu', basePrice: 0.000027 },
-  { symbol: 'LINK', name: 'Chainlink', basePrice: 18 },
-  { symbol: 'ATOM', name: 'Cosmos', basePrice: 9.50 },
-  { symbol: 'XMR', name: 'Monero', basePrice: 130 },
-  { symbol: 'BCH', name: 'Bitcoin Cash', basePrice: 480 },
-  { symbol: 'ETC', name: 'Ethereum Classic', basePrice: 32 },
-  { symbol: 'FIL', name: 'Filecoin', basePrice: 9 },
-];
 
 // PreoCryptoFX Webhook Config
 const PREOCRYPTOFX_WEBHOOK_SECRET = process.env.PREOCRYPTOFX_WEBHOOK_SECRET || process.env.VITE_PREOCRYPTOFX_WEBHOOK_SECRET;

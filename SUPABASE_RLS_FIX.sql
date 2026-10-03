@@ -56,10 +56,12 @@ BEGIN
     -- Ensure coin and price exist as these are preferred by the simulation
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS coin text;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS price float8;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS exit_price float8;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS timestamp text;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS source text DEFAULT 'MANUAL';
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS account_type text DEFAULT 'DEMO';
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS exit_time timestamptz;
 
     -- Ensure bot_stop_logs table exists
     CREATE TABLE IF NOT EXISTS public.bot_stop_logs (
@@ -93,6 +95,13 @@ BEGIN
         password text,
         created_at timestamptz DEFAULT now()
     );
+
+    -- Performance Indexes
+    CREATE INDEX IF NOT EXISTS idx_trades_status_timestamp ON public.trades(status, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_trades_user_id ON public.trades(user_id);
+    CREATE INDEX IF NOT EXISTS idx_bot_settings_active_lookup ON public.bot_settings(scalping_active, trend_active, ai_active, custom_active);
+    CREATE INDEX IF NOT EXISTS idx_bot_settings_updated_at ON public.bot_settings(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON public.transactions(user_id, status);
 
 END $$;
 
