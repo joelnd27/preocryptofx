@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -21,7 +21,8 @@ import {
   Layers,
   Settings,
   Check,
-  RefreshCw
+  RefreshCw,
+  Clock
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { 
@@ -51,6 +52,12 @@ export default function Trade() {
     timeframe,
     setTimeframe 
   } = useStore();
+  
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   const [selectedCoin, setSelectedCoin] = useState(CRYPTO_LIST[0]);
   const [amount, setAmount] = useState('');
   const [duration, setDuration] = useState('30');
@@ -420,13 +427,17 @@ export default function Trade() {
       // We want the profit to move toward the target but with some "market noise"
       // Seed for unique character per trade
       const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const noise = (Math.sin(elapsed / 1000 + seed) * 0.05); // +/- 5% noise
       
       // Interpolate profit toward targetProfit based on progress
-      let currentInterpolatedProfit = trade.targetProfit * progress;
+      // Use a non-linear ease-in-out for more "natural" feel
+      const easedProgress = progress < 0.5 
+        ? 2 * progress * progress 
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+      let currentInterpolatedProfit = trade.targetProfit * easedProgress;
       
       // Add some "volatility" that decreases as we approach expiry
-      const volatility = (1 - progress) * (trade.amount * 0.1) * Math.sin(elapsed / 500 + seed);
+      const volatility = (1 - progress) * (trade.amount * 0.15) * Math.sin(elapsed / 800 + seed);
       
       const result = currentInterpolatedProfit + volatility;
       return Number(result.toFixed(2));

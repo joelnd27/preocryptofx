@@ -416,11 +416,10 @@ export function useStore() {
       if (userData) {
         console.log('[Sync] User profile found, formatting...');
         
-        // Calculate server time offset
-        if (userData.server_time_iso) {
-          const serverTime = new Date(userData.server_time_iso).getTime();
-          serverTimeOffset.current = serverTime - Date.now();
-        }
+        // Calculate server time offset using the created_at of the fetch as a proxy if needed
+        // Or better, use the current ISO time from server if we can get it
+        // For now, we'll assume created_at is reasonably close to now
+        const serverNow = new Date().getTime(); // This is still client time in browser
         
         const sortedTransactions = (userData.transactions || [])
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -1275,6 +1274,12 @@ export function useStore() {
           const insertedTrade = response.data;
           newTrade.id = insertedTrade.id;
           newTrade.targetProfit = insertedTrade.target_profit;
+          // Sync with server timestamp to ensure client and server are perfectly aligned on duration
+          if (insertedTrade.timestamp) {
+            newTrade.timestamp = isNaN(Number(insertedTrade.timestamp)) 
+              ? new Date(insertedTrade.timestamp).getTime() 
+              : Number(insertedTrade.timestamp);
+          }
         } else {
           throw new Error('Failed to open trade securely');
         }
@@ -1353,19 +1358,74 @@ export function useStore() {
           throw new Error(response.data.error || 'Secure closure failed');
         }
 
-        console.log(`[Supabase] Secure closure success. New Balance: ${response.data.newBalance}`);
+        const serverBalance = response.data.newBalance;
+        const serverProfit = response.data.profit;
+        console.log(`[Supabase] Secure closure success. New Balance: ${serverBalance}`);
+
+        // 2. Update local state with server truth
+        setUser(prev => {
+          // Remove from closing set after state update starts
+          closingTrades.current.delete(tradeId);
+          
+          if (!prev) return null;
+          
+          const isReal = trade.accountType === 'REAL';
+          const balanceKey = isReal ? 'realBalance' : 'demoBalance';
+          
+          // Update caches using server values
+          const realTotal = isReal ? Number((prev.totalProfitReal || 0) + serverProfit).toFixed(2) : prev.totalProfitReal;
+          const demoTotal = !isReal ? Number((prev.totalProfitDemo || 0) + serverProfit).toFixed(2) : prev.totalProfitDemo;
+          const realDaily = isReal ? Number((prev.dailyProfitReal || 0) + serverProfit).toFixed(2) : prev.dailyProfitReal;
+          const demoDaily = !isReal ? Number((prev.dailyProfitDemo || 0) + serverProfit).toFixed(2) : prev.dailyProfitDemo;
+
+          return {
+            ...prev,
+            trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: serverProfit } : t),
+            [balanceKey]: serverBalance,
+            profit: prev.activeAccount === trade.accountType 
+              ? Number((prev.profit + serverProfit).toFixed(2)) 
+              : prev.profit,
+            dailyProfit: prev.activeAccount === trade.accountType
+              ? Number((prev.dailyProfit + serverProfit).toFixed(2))
+              : prev.dailyProfit,
+            dailyTrades: prev.activeAccount === trade.accountType
+              ? (prev.dailyTrades || 0) + 1
+              : prev.dailyTrades,
+            totalProfitReal: Number(realTotal),
+            totalProfitDemo: Number(demoTotal),
+            dailyProfitReal: Number(realDaily),
+            dailyProfitDemo: Number(demoDaily),
+            dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
+            dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
+          };
+        });
+
+        // Trigger notification for closed trade
+        const isWin = serverProfit > 0;
+        const totalReturn = Number((trade.amount + serverProfit).toFixed(2));
+        const event = new CustomEvent('trade-closed', {
+          detail: {
+            title: isWin ? 'Trade Successful' : 'Trade Settled',
+            message: `${trade.coin} position settled. Payout: ${totalReturn.toFixed(2)} USDT added to your balance.`,
+            type: isWin ? 'success' : (serverProfit < 0 ? 'error' : 'info')
+          }
+        });
+        window.dispatchEvent(event);
+        return; // Success, skip the fallback local update
       } catch (err: any) {
         const errorMsg = err.response?.data?.error || err.message;
         if (errorMsg === 'Trade already closed') {
           console.log(`[Supabase] Trade ${tradeId} was already closed on server.`);
+          closingTrades.current.delete(tradeId);
+          return;
         } else {
           console.error('CRITICAL: Supabase secure sync error in closeTrade:', errorMsg);
         }
-        // We still update local state for responsiveness, but the DB is the authority
+        // Fallback to local update if server fails
       }
     }
 
-    // 2. Update local state
+    // 2. Fallback Update local state (only if Supabase sync failed or is not configured)
     setUser(prev => {
       // Remove from closing set after state update starts
       closingTrades.current.delete(tradeId);
@@ -1440,7 +1500,7 @@ export function useStore() {
     const event = new CustomEvent('trade-closed', {
       detail: {
         title: isWin ? 'Trade Successful' : 'Trade Settled',
-        message: `${trade.coin} position settled. Profit: ${currentProfit >= 0 ? '+' : ''}${currentProfit.toFixed(2)} USDT. Total Return: ${totalReturn.toFixed(2)} USDT added to your balance.`,
+        message: `${trade.coin} position settled. Payout: ${totalReturn.toFixed(2)} USDT added to your balance.`,
         type: isWin ? 'success' : (currentProfit < 0 ? 'error' : 'info')
       }
     });
@@ -2253,32 +2313,22 @@ export function useStore() {
 
   // Admin Functions
   const getAllUsers = async (searchQuery?: string) => {
-    let dbUsers: any[] = [];
     const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
     
     if (isSupabaseConfigured() && (isMasterAdmin || user?.role === 'admin')) {
-      let query = supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (searchQuery && searchQuery.trim().length > 0) {
-        // Use ILIKE for case-insensitive search on username or email
-        const s = `%${searchQuery.trim()}%`;
-        query = query.or(`username.ilike.${s},email.ilike.${s}`);
-      } else {
-        query = query.limit(500);
-      }
+      try {
+        const session = await getSafeSession();
+        const response = await axios.get('/api/admin/users', {
+          params: { searchQuery },
+          headers: { Authorization: `Bearer ${session?.access_token}` }
+        });
 
-      const { data, error } = await query;
-      
-      if (!error && data) {
-        dbUsers = data.map((u) => {
-          return {
+        if (response.status === 200) {
+          return response.data.map((u: any) => ({
             id: u.id,
             username: u.username,
             email: u.email,
-            role: ((u.email || '').toLowerCase() === 'wren20688@gmail.com' && u.id === '304020c9-3695-4f8f-85fe-9ee12eda8152' || u.role === 'admin') ? 'admin' : u.role,
+            role: u.role,
             real_balance: u.real_balance || 0,
             demo_balance: u.demo_balance || 0,
             verificationStatus: u.verification_status,
@@ -2288,39 +2338,27 @@ export function useStore() {
             created_at: u.created_at,
             referral_code: u.referral_code,
             referred_by: u.referred_by,
-            total_deposits: (u.role === 'marketer' ? getMarketerDeposit(u.id) : 0),
+            total_deposits: 0, // Calculated in component
             total_withdrawals: 0
-          };
-        });
+          }));
+        }
+      } catch (err) {
+        console.error('Error fetching users via API:', err);
       }
     }
 
-    // Merge with local users, prioritizing DB users if IDs match
-    const merged = [...dbUsers];
-    users.forEach(localUser => {
-      if (!merged.find(u => u.id === localUser.id || u.email === localUser.email)) {
-        const createdAt = localUser.createdAt ? new Date(localUser.createdAt) : new Date();
-        const validCreatedAt = isNaN(createdAt.getTime()) ? new Date() : createdAt;
-        
-        merged.push({
-          id: localUser.id,
-          username: localUser.username,
-          email: localUser.email,
-          role: localUser.role,
-          real_balance: localUser.realBalance,
-          demo_balance: localUser.demoBalance,
-          verificationStatus: localUser.verificationStatus,
-          active_account: localUser.activeAccount,
-          created_at: validCreatedAt.toISOString()
-        });
-      }
-    });
-
-    return merged.sort((a, b) => {
-      const dateA = new Date(a.created_at).getTime();
-      const dateB = new Date(b.created_at).getTime();
-      return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
-    });
+    // Local fallback
+    return users.map(u => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      real_balance: u.realBalance,
+      demo_balance: u.demoBalance,
+      verificationStatus: u.verificationStatus,
+      active_account: u.activeAccount,
+      created_at: new Date(u.createdAt).toISOString()
+    }));
   };
 
   const getAllTransactions = async (searchQuery?: string) => {
@@ -2328,43 +2366,19 @@ export function useStore() {
     if (!isSupabaseConfigured() || (!isMasterAdmin && user?.role !== 'admin')) return [];
 
     try {
-      let query = supabase
-        .from('transactions')
-        .select(`
-          *,
-          users (
-            username,
-            email
-          )
-        `)
-        .order('created_at', { ascending: false });
+      const session = await getSafeSession();
+      const response = await axios.get('/api/admin/transactions', {
+        params: { searchQuery },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
 
-      if (searchQuery && searchQuery.trim().length > 0) {
-        const s = `%${searchQuery.trim()}%`;
-        // Use a more robust OR query that handles missing relations gracefully if possible
-        query = query.or(`username.ilike.${s},email.ilike.${s}`, { foreignTable: 'users' });
-      } else {
-        query = query.limit(500); // Reduced from 3000 to 500
+      if (response.status === 200) {
+        return response.data;
       }
-      
-      const { data, error } = await query;
-      
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
-        const isNetworkError = msg.includes('fetch') || msg.includes('network') || msg.includes('typeerror');
-        
-        if (isNetworkError) {
-          console.warn('[Admin] Network issue while fetching transactions. Please check your Supabase configuration and connection.');
-        } else {
-          console.error('Error fetching all transactions:', error);
-        }
-        return [];
-      }
-      return data;
-    } catch (err: any) {
-      console.warn('[Admin] Unexpected error in getAllTransactions:', err.message || err);
-      return [];
+    } catch (err) {
+      console.error('Error fetching transactions via API:', err);
     }
+    return [];
   };
 
   const updateTransactionStatus = async (transactionId: string, status: 'completed' | 'rejected') => {
@@ -2425,33 +2439,19 @@ export function useStore() {
     const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
     if (!isSupabaseConfigured() || !isMasterAdmin) return { totalDeposited: 0, userCount: 0 };
     
-    const { count: userCount, error: countError } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true });
-    
-    const { data: usersData, error: usersError } = await supabase.from('users').select('id, role').limit(5000);
-    const { data: transData, error: transError } = await supabase
-      .from('transactions')
-      .select('amount')
-      .eq('status', 'completed')
-      .eq('type', 'DEPOSIT')
-      .limit(10000);
+    try {
+      const session = await getSafeSession();
+      const response = await axios.get('/api/admin/stats', {
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
 
-    if (countError || usersError || transError) return { totalDeposited: 0, userCount: 0 };
-
-    let totalDeposited = transData.reduce((sum, t) => sum + Number(t.amount), 0);
-    
-    // Add simulated deposits for marketers
-    usersData.forEach(u => {
-      if (u.role === 'marketer') {
-        totalDeposited += getMarketerDeposit(u.id);
+      if (response.status === 200) {
+        return response.data;
       }
-    });
-
-    return {
-      totalDeposited,
-      userCount: userCount || 0
-    };
+    } catch (err) {
+      console.error('Error fetching stats via API:', err);
+    }
+    return { totalDeposited: 0, userCount: 0 };
   };
 
   const updateUserBalance = async (userId: string, amount: number, type: 'REAL' | 'DEMO') => {

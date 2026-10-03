@@ -210,7 +210,7 @@ async function reconcileManualTrades() {
       .select('id, user_id, amount, price, target_profit, account_type, timestamp, duration')
       .eq('status', 'OPEN')
       .not('duration', 'is', null)
-      .limit(100); 
+      .limit(500); 
 
     if (fetchError) {
       if (fetchError.message?.includes('timeout') || fetchError.code === 'PGRST002' || fetchError.code === '57014') {
@@ -2178,7 +2178,7 @@ router.post('/trades/open', async (req, res) => {
     // 2. Calculate target profit server-side to prevent "forced win" hacks
     const isDemo = accountType === 'DEMO';
     const isMarketer = userData.role === 'marketer';
-    const isMasterAdmin = (authUser.email || '').toLowerCase() === 'wren20688@gmail.com' && authUser.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((authUser.email || '').toLowerCase());
     
     let winChance = 0.5;
     if (isDemo) winChance = 0.92;
@@ -2274,7 +2274,9 @@ router.post('/trades/close', async (req, res) => {
     // 3. Perform atomic update
     const { error: tradeUpdateError } = await supabaseAdmin.from('trades').update({
       status: 'CLOSED',
-      profit: profit
+      profit: profit,
+      exit_price: trade.price, // Use entry price as exit if manual close
+      exit_time: new Date().toISOString()
     }).eq('id', tradeId);
 
     if (tradeUpdateError) throw tradeUpdateError;
@@ -2288,7 +2290,13 @@ router.post('/trades/close', async (req, res) => {
 
     if (userUpdateError) throw userUpdateError;
 
-    res.json({ success: true, newBalance, profit });
+    res.json({ 
+      success: true, 
+      newBalance, 
+      profit,
+      stake,
+      totalPayout: Number((stake + profit).toFixed(2))
+    });
   } catch (err: any) {
     console.error('Trade close error:', err);
     res.status(500).json({ error: err.message });
@@ -2356,6 +2364,108 @@ router.post('/admin/update-user', async (req, res) => {
     
     if (error) throw error;
     res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/admin/users', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user.email || '').toLowerCase());
+    if (!isMasterAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+    if (!supabaseAdmin) return res.status(500).json({ error: 'Admin client not configured' });
+
+    const { searchQuery } = req.query;
+    let query = supabaseAdmin.from('users').select('*').order('created_at', { ascending: false });
+
+    if (searchQuery && typeof searchQuery === 'string' && searchQuery.trim().length > 0) {
+      const s = `%${searchQuery.trim()}%`;
+      query = query.or(`username.ilike.${s},email.ilike.${s}`);
+    } else {
+      query = query.limit(500);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/admin/transactions', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user.email || '').toLowerCase());
+    if (!isMasterAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+    if (!supabaseAdmin) return res.status(500).json({ error: 'Admin client not configured' });
+
+    const { searchQuery } = req.query;
+    let query = supabaseAdmin
+      .from('transactions')
+      .select(`
+        *,
+        users (
+          username,
+          email
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (searchQuery && typeof searchQuery === 'string' && searchQuery.trim().length > 0) {
+      const s = `%${searchQuery.trim()}%`;
+      query = query.or(`username.ilike.${s},email.ilike.${s}`, { foreignTable: 'users' });
+    } else {
+      query = query.limit(500);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/admin/stats', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user.email || '').toLowerCase());
+    if (!isMasterAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+    if (!supabaseAdmin) return res.status(500).json({ error: 'Admin client not configured' });
+
+    const { count: userCount } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true });
+    const { data: transData } = await supabaseAdmin
+      .from('transactions')
+      .select('amount')
+      .eq('status', 'completed')
+      .eq('type', 'DEPOSIT');
+
+    const totalDeposited = (transData || []).reduce((sum, t) => sum + Number(t.amount), 0);
+
+    res.json({
+      totalDeposited,
+      userCount: userCount || 0
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

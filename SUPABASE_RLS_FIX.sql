@@ -56,6 +56,8 @@ BEGIN
     -- Ensure coin and price exist as these are preferred by the simulation
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS coin text;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS price float8;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS target_profit float8 DEFAULT 0;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS duration integer DEFAULT 60;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS exit_price float8;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS timestamp text;
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS source text DEFAULT 'MANUAL';

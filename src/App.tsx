@@ -28,7 +28,7 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
   
   if (!user) return <Navigate to="/login" />;
   
-  const isAdmin = user?.email === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+  const isAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
   
   if (adminOnly && !isAdmin) return <Navigate to="/dashboard" />;
   
@@ -41,7 +41,7 @@ function AdminRedirector({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    const isAdmin = user?.email === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+    const isAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
     if (isAdmin && location.pathname === '/dashboard') {
       navigate('/admin', { replace: true });
     }
@@ -54,7 +54,7 @@ import PWAInstallBanner from './components/PWAInstallBanner.tsx';
 
 export default function App() {
   const { user, resetDemoBalance } = useStore();
-  const isAdmin = user?.email === 'wren20688@gmail.com' && user?.id === '304020c9-3695-4f8f-85fe-9ee12eda8152';
+  const isAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
   const [alertConfig, setAlertConfig] = React.useState({
     isOpen: false,
     title: '',

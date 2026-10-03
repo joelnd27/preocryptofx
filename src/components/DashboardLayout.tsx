@@ -35,12 +35,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((user?.email || '').toLowerCase());
 
-  const menuItems = isAdmin ? [
-    { icon: ShieldCheck, label: 'Admin', path: '/admin' },
-    { icon: UserIcon, label: 'Profile', path: '/profile' },
-  ] : [
+  const menuItems = [
     { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
     { icon: TrendingUp, label: 'Trade', path: '/trade' },
     { icon: Bot, label: 'Bots', path: '/bots' },
@@ -48,6 +45,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { icon: Wallet, label: 'Finances', path: '/transactions' },
     { icon: History, label: 'History', path: '/trades' },
     { icon: UserIcon, label: 'Profile', path: '/profile' },
+    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin Panel', path: '/admin' }] : []),
   ];
 
   const bottomItems = [
