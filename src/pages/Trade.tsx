@@ -88,10 +88,13 @@ export default function Trade() {
 
   // Auto-close manual trades when duration expires
   useEffect(() => {
-    const activeTrades = (user?.trades || []).filter(t => t.status === 'OPEN' && t.duration);
-    if (activeTrades.length === 0) return;
+    const checkExpirations = () => {
+      const currentUser = userRef.current;
+      if (!currentUser) return;
+      
+      const activeTrades = (currentUser.trades || []).filter(t => t.status === 'OPEN' && t.duration);
+      if (activeTrades.length === 0) return;
 
-    const timer = setInterval(() => {
       const now = Date.now();
       activeTrades.forEach(trade => {
         const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
@@ -104,10 +107,11 @@ export default function Trade() {
           closeTrade(trade.id, liveProfit);
         }
       });
-    }, 1000);
+    };
 
+    const timer = setInterval(checkExpirations, 1000);
     return () => clearInterval(timer);
-  }, [user?.trades, closeTrade]);
+  }, [closeTrade]); // Removed user?.trades to prevent interval jitter
 
   // AI Signal Generation
   useEffect(() => {
@@ -405,52 +409,37 @@ export default function Trade() {
 
   const calculateLiveProfit = (trade: TradeType) => {
     if (!trade) return 0;
-    const currentPrice = prices[trade.coin];
-    if (!currentPrice) return 0;
     
-    // If we have a pre-calculated target profit, we should trend towards it
+    // If we have a pre-calculated target profit, we should trend towards it smoothly
     if (trade.targetProfit !== undefined && trade.timestamp) {
-      const startTime = trade.timestamp;
+      const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
       const durationMs = (trade.duration || 60) * 1000;
       const elapsed = Date.now() - startTime;
-      const rawProgress = Math.min(1, elapsed / durationMs);
+      const progress = Math.min(1, elapsed / durationMs);
       
-      // Seed for unique character per trade to make the "mid-steps" consistent
+      // We want the profit to move toward the target but with some "market noise"
+      // Seed for unique character per trade
       const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const noise = (Math.sin(elapsed / 1000 + seed) * 0.05); // +/- 5% noise
       
-      // Quantize progress to "shift only twice" as requested
-      // We'll also make the "intermediate" values static so they don't jitter
-      let displayProfit = 0;
+      // Interpolate profit toward targetProfit based on progress
+      let currentInterpolatedProfit = trade.targetProfit * progress;
       
-      if (rawProgress >= 0.85) {
-        // Final stage: Show close to full profit/loss
-        displayProfit = trade.targetProfit;
-      } else if (rawProgress >= 0.45) {
-        // Second shift: Show about 60% of the movement
-        displayProfit = trade.targetProfit * 0.6;
-      } else if (rawProgress >= 0.15) {
-        // First shift: Show about 25% of the movement
-        displayProfit = trade.targetProfit * 0.25;
-      } else {
-        // Start: Almost zero movement
-        displayProfit = trade.targetProfit * 0.05;
-      }
+      // Add some "volatility" that decreases as we approach expiry
+      const volatility = (1 - progress) * (trade.amount * 0.1) * Math.sin(elapsed / 500 + seed);
       
-      // Add a tiny bit of STATIC variation based on the trade ID (not time) 
-      // so different trades don't look identical even if amounts are same
-      const staticVariation = (seed % 10) * 0.01; 
-      
-      return Number((displayProfit + staticVariation).toFixed(2));
+      const result = currentInterpolatedProfit + volatility;
+      return Number(result.toFixed(2));
     }
 
+    const currentPrice = prices[trade.coin];
+    if (!currentPrice) return 0;
     const diff = trade.type === 'BUY' 
       ? (currentPrice - trade.price) 
       : (trade.price - currentPrice);
     
     const percentChange = diff / trade.price;
-    
-    // Normal movement (no target profit) - reduced leverage to 1.5x for realism
-    return Number((trade.amount * percentChange * 1.5).toFixed(2));
+    return Number((trade.amount * percentChange * 2.0).toFixed(2));
   };
 
   const handleUseSignal = async () => {
@@ -830,82 +819,104 @@ export default function Trade() {
 
         {/* Active Trades Section */}
         <div id="active-trades" className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold text-slate-900 dark:text-white">Active Positions</h3>
-            <span className="bg-primary/10 text-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold">
-              {activeTrades.length}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Activity size={16} className="text-primary" />
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Positions</h3>
+            </div>
+            <span className="bg-primary/10 text-primary text-[9px] px-2 py-0.5 rounded-full font-black">
+              {activeTrades.length} RUNNING
             </span>
           </div>
           
           {activeTrades.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {activeTrades.map(trade => {
                 const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
                 const timeLeft = Math.max(0, Math.ceil((startTime + (trade.duration || 0) * 1000 - Date.now()) / 1000));
                 const isExpired = timeLeft === 0;
                 const liveProfit = calculateLiveProfit(trade);
+                const payout = Number((trade.amount + liveProfit).toFixed(2));
+                const progress = Math.min(100, (1 - timeLeft / (trade.duration || 1)) * 100);
                 
                 return (
-                  <div key={trade.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn(
-                          "text-[8px] font-black px-1.5 py-0.5 rounded",
-                          trade.type === 'BUY' ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
+                  <div key={trade.id} className="relative p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden group">
+                    {/* Progress Bar Background */}
+                    <div className="absolute bottom-0 left-0 h-1 bg-primary/20 w-full" />
+                    <motion.div 
+                      className="absolute bottom-0 left-0 h-1 bg-primary" 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progress}%` }}
+                      transition={{ ease: "linear" }}
+                    />
+
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs text-white shadow-sm",
+                          trade.type === 'BUY' ? "bg-green-500" : "bg-red-500"
                         )}>
-                          {trade.type}
-                        </span>
-                        <span className={cn(
-                          "text-[7px] font-bold px-1.5 py-0.5 rounded uppercase",
-                          trade.source === 'SIGNAL' ? "bg-purple-500/10 text-purple-600" : 
-                          trade.source === 'BOT' ? "bg-blue-500/10 text-blue-600" : 
-                          "bg-slate-500/10 text-slate-600"
-                        )}>
-                          {trade.source || 'MANUAL'}
-                        </span>
-                        <span className="text-xs font-black">{trade.coin}</span>
+                          {trade.type === 'BUY' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-black">{trade.coin}/USDT</p>
+                          <p className="text-[8px] text-slate-500 font-bold uppercase tracking-tighter">
+                            {trade.source || 'MANUAL'} • {trade.type}
+                          </p>
+                        </div>
                       </div>
-                      <div className={cn(
-                        "flex items-center gap-1.5 transition-colors",
-                        isExpired ? "text-primary animate-pulse" : "text-slate-400"
-                      )}>
-                        {isExpired ? <RefreshCw size={12} className="animate-spin-slow" /> : <Activity size={12} />}
-                        <span className="text-[10px] font-mono font-bold">
-                          {isExpired ? 'CLOSING' : `${timeLeft}s`}
-                        </span>
+                      <div className="text-right">
+                        <div className={cn(
+                          "flex items-center gap-1.5 justify-end",
+                          isExpired ? "text-primary animate-pulse" : "text-slate-400"
+                        )}>
+                          {isExpired ? <RefreshCw size={12} className="animate-spin-slow" /> : <Clock size={12} />}
+                          <span className="text-[11px] font-mono font-black tabular-nums">
+                            {isExpired ? 'SETTLING' : `${timeLeft}s`}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-wider">Total Profit</p>
+                    <div className="grid grid-cols-2 gap-4 mb-5">
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <p className="text-[8px] text-slate-500 font-black uppercase mb-1 tracking-widest">Profit/Loss</p>
                         <p className={cn(
-                          "text-base font-bold tabular-nums",
+                          "text-base font-black tabular-nums leading-none",
                           liveProfit >= 0 ? "text-green-500" : "text-red-500"
                         )}>
                           {liveProfit >= 0 ? '+' : ''}{liveProfit.toFixed(2)}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-wider">Stake</p>
-                        <p className="text-base font-mono font-bold tabular-nums">{trade.amount}</p>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <p className="text-[8px] text-slate-500 font-black uppercase mb-1 tracking-widest">Payout</p>
+                        <p className="text-base font-black tabular-nums leading-none text-blue-500">
+                          ${payout.toFixed(2)}
+                        </p>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => closeTrade(trade.id, liveProfit)}
-                      className="w-full py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all"
-                    >
-                      Close Early
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => closeTrade(trade.id, liveProfit)}
+                        className={cn(
+                          "flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                          isExpired 
+                            ? "bg-primary text-white" 
+                            : "bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200"
+                        )}
+                      >
+                        {isExpired ? 'Collect Payout' : 'Close Early'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="py-8 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
-              <Activity size={20} className="mx-auto mb-2 text-slate-300" />
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">No Active Positions</p>
+            <div className="py-12 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-900/30">
+              <Activity size={32} className="mx-auto mb-3 text-slate-300 opacity-50" />
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Waiting for market entry...</p>
             </div>
           )}
         </div>

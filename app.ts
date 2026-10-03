@@ -78,6 +78,7 @@ router.post('/bot/toggle', async (req, res) => {
 
     const cleanPayload: any = {
       user_id: userId,
+      bot_type: 'multi', // Required field: ensuring database constraint is met
       updated_at: new Date().toISOString(),
       bot_logs: existing?.bot_logs || []
     };
@@ -324,7 +325,7 @@ async function reconcileManualTrades() {
         const chunk = sortedUsers.slice(i, i + 20);
         await supabaseAdmin.from('users').upsert(chunk);
       }
-      console.log(`[Trade-Reconciler] Successfully auto-closed ${tradeUpdates.length} trades for ${userUpdates.size} users.`);
+      console.log(`[Trade-Reconciler] Successfully auto-closed ${tradeUpdates.length} trades for ${userUpdates.size} users. Payouts processed and balances updated.`);
     }
 
   } catch (err: any) {
@@ -415,18 +416,20 @@ async function executeInstantBotTrade(userId: string, targetBotId: string) {
 
     const mergedLogs = [logEntry, ...(settingsData.bot_logs || [])].slice(0, 50);
 
-    // 3. Save to Database
+    // 3. Save to Database - Use upsert for bot_settings to be safe
     await supabaseAdmin.from('users').update(userUpdates).eq('id', userId);
-    await supabaseAdmin.from('bot_settings').update({
-      bot_type: 'multi', // Required field
+    
+    await supabaseAdmin.from('bot_settings').upsert({
+      user_id: userId,
+      bot_type: 'multi', 
       bot_stats: updatedBotStats,
       bot_logs: mergedLogs,
       updated_at: new Date().toISOString()
-    }).eq('user_id', userId);
+    }, { onConflict: 'user_id' });
 
     await supabaseAdmin.from('trades').insert({
       user_id: userId,
-      symbol: randomCoin.symbol, // Required field
+      symbol: randomCoin.symbol, 
       coin: randomCoin.symbol,
       amount: botStake,
       type: profitAmount >= 0 ? 'BUY' : 'SELL',
@@ -513,9 +516,8 @@ console.log('[App] Environment Check:', {
         return;
       }
 
-      // 1. Get bot_settings records - Fetch all active bots
-      // We filter by any active flag being true to ensure we process everyone who is active.
-      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Fetching active bot settings...`);
+      // 1. Get bot_settings records - Fetch ALL to ensure no one is missed
+      if (simulationCycleCount % 10 === 0) console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Fetching all bot settings...`);
       
       let allSettings: any[] | null = null;
       let fetchError: any = null;
@@ -524,8 +526,7 @@ console.log('[App] Environment Check:', {
         const { data, error } = await supabaseAdmin
           .from('bot_settings')
           .select('user_id, scalping_active, trend_active, ai_active, custom_active, bot_stats, updated_at')
-          .order('updated_at', { ascending: false })
-          .limit(500); // Increased limit for better coverage
+          .order('updated_at', { ascending: false }); 
         
         if (!error) {
           allSettings = data;
@@ -568,22 +569,25 @@ console.log('[App] Environment Check:', {
         const stats = s.bot_stats || {};
         const activeStates = stats.active_states || {};
         const hasActiveExtended = Object.values(activeStates).some(v => v === true || v === 'true');
-        const isActive = s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
-        
-        if (isActive) {
-          // console.log(`[Bot-Sim] User ${s.user_id} has active bots. Extended: ${hasActiveExtended}`);
+          const isActive = s.scalping_active || s.trend_active || s.ai_active || s.custom_active || hasActiveExtended;
+          
+          // Enhanced debug logging for specific user
+          if (s.user_id === '304020c9-3695-4f8f-85fe-9ee12eda8152' || s.user_id === 'josphatndungu1022@gmail.com') {
+            console.log(`[Bot-Sim] User ${s.user_id} Status: active=${isActive}, scalping=${s.scalping_active}, extended=${hasActiveExtended}, stats_keys=${Object.keys(stats).join(',')}`);
+          }
+          
+          return isActive;
+        });
+
+        if (activeSettings.length === 0) {
+          if (simulationCycleCount % 10 === 0) console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] IDLE: No active bots found.`);
+          isSimulationRunning = false;
+          return;
         }
-        
-        return isActive;
-      });
 
-      if (activeSettings.length === 0) {
-        if (simulationCycleCount % 5 === 0) console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] IDLE: No active bots found in filtered set.`);
-        isSimulationRunning = false;
-        return;
-      }
-
-      console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Found ${activeSettings.length} active bot settings records.`);
+        if (simulationCycleCount % 5 === 0) {
+          console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] Processing ${activeSettings.length} truly active bot records.`);
+        }
 
       // 3. Fetch Users only for active settings
       const userIds = activeSettings.map(s => s.user_id);
@@ -691,6 +695,7 @@ console.log('[App] Environment Check:', {
           let userChanged = false;
           let settingsChanged = false;
           let updatedBotStats = { ...botStats };
+          let cycleResults: Record<string, {profit: number, trades: number}> = {};
           let userPendingLogs: any[] = [];
 
           for (const botToSimulate of activeBots) {
@@ -717,11 +722,13 @@ console.log('[App] Environment Check:', {
             const targetProfitAmount = (botStake * botTargetPercentage) / 100;
 
             if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
+              console.log(`[Bot-Sim] User ${user.email} bot ${botId} stopped: Goal reached (${sessionProfit} >= ${targetProfitAmount})`);
               usersToStop.push({ userId: user.id, botId, type: botToSimulate.type, reason: 'PROFIT_GOAL_REACHED', sessionProfit, goal: targetProfitAmount, balance: currentBalance, stake: botStake });
               continue;
             }
 
             if (currentBalance < botStake) {
+              console.log(`[Bot-Sim] User ${user.email} bot ${botId} stopped: Low balance (${currentBalance} < ${botStake})`);
               usersToStop.push({ userId: user.id, botId, type: botToSimulate.type, reason: 'INSUFFICIENT_BALANCE', sessionProfit, goal: targetProfitAmount, balance: currentBalance, stake: botStake });
               continue;
             }
@@ -754,13 +761,17 @@ console.log('[App] Environment Check:', {
                 user.daily_trades_demo = newDailyTrades;
               }
 
-              console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] GENERATING_TRADE: User=${user.email}, Bot=${botId}, Profit=${profitAmount}`);
+              console.log(`[Bot-Sim] [Cycle #${simulationCycleCount}] GENERATING_TRADE: User=${user.email || user.id}, Bot=${botId}, Profit=${profitAmount}`);
 
               // Immediately update bot_stats in memory for next iteration/logs
+              const currentBotStat = updatedBotStats[botId] || { profit: 0, trades: 0 };
               updatedBotStats[botId] = {
-                profit: Number(((updatedBotStats[botId]?.profit || 0) + profitAmount).toFixed(2)),
-                trades: (updatedBotStats[botId]?.trades || 0) + 1
+                profit: Number(((currentBotStat.profit || 0) + profitAmount).toFixed(2)),
+                trades: (currentBotStat.trades || 0) + 1
               };
+
+              // Track results for this specific bot in this cycle
+              cycleResults[botId] = { profit: profitAmount, trades: 1 };
 
               const randomCoin = CRYPTO_LIST[Math.floor(Math.random() * CRYPTO_LIST.length)];
               userPendingLogs.unshift({
@@ -808,11 +819,16 @@ console.log('[App] Environment Check:', {
             });
           }
 
-          if (settingsChanged) {
+           if (settingsChanged) {
             pendingUpdates.push({
               user_id: user.id,
               updatedBotStats,
-              userPendingLogs
+              cycleResults, // Track what was added this specific cycle for perfect merging
+              userPendingLogs,
+              scalping_active: settings.scalping_active,
+              trend_active: settings.trend_active,
+              ai_active: settings.ai_active,
+              custom_active: settings.custom_active
             });
             usersNeedingLogs.push(user.id);
           }
@@ -821,30 +837,60 @@ console.log('[App] Environment Check:', {
         }
       });
 
-      // 3. Just-in-time Log Fetching for only the users that will be updated
-      const logMap = new Map();
+      // 3. Just-in-time Log and Stats Fetching for only the users that will be updated
+      // This prevents race conditions where the simulation overwrites user-initiated settings changes
+      const latestDataMap = new Map();
       if (usersNeedingLogs.length > 0) {
         for (let i = 0; i < usersNeedingLogs.length; i += 100) {
           const chunk = usersNeedingLogs.slice(i, i + 100);
-          const { data: logsData } = await supabaseAdmin
+          const { data: dbData } = await supabaseAdmin
             .from('bot_settings')
-            .select('user_id, bot_logs')
+            .select('user_id, bot_logs, bot_stats, scalping_active, trend_active, ai_active, custom_active')
             .in('user_id', chunk);
           
-          logsData?.forEach(ld => logMap.set(ld.user_id, ld.bot_logs || []));
+          dbData?.forEach(d => latestDataMap.set(d.user_id, d));
         }
       }
 
       // 4. Combine and prepare Bulk Settings Updates
       pendingUpdates.forEach(update => {
-        const currentLogs = logMap.get(update.user_id) || [];
+        const latest = latestDataMap.get(update.user_id);
+        const currentLogs = latest?.bot_logs || [];
         const mergedLogs = [...update.userPendingLogs, ...currentLogs].slice(0, 50);
         
+        // Use the latest database stats as the base to prevent "losing" counts or overwriting UI changes
+        const currentDbStats = latest?.bot_stats || {};
+        const finalBotStats = { ...currentDbStats };
+        
+        // Add only the profit/trades generated in THIS cycle to the latest DB values
+        // update.cycleResults contains { [botId]: { profit, trades } }
+        Object.entries(update.cycleResults || {}).forEach(([botId, res]: [string, any]) => {
+          const prev = finalBotStats[botId] || { profit: 0, trades: 0 };
+          finalBotStats[botId] = {
+            profit: Number(((prev.profit || 0) + res.profit).toFixed(2)),
+            trades: (prev.trades || 0) + res.trades
+          };
+        });
+
+        // Always sync active_states and session_start_profits to match what the simulation is currently using
+        finalBotStats.active_states = {
+          ...(currentDbStats.active_states || {}),
+          ...(update.updatedBotStats.active_states || {})
+        };
+        finalBotStats.session_start_profits = {
+          ...(currentDbStats.session_start_profits || {}),
+          ...(update.updatedBotStats.session_start_profits || {})
+        };
+
         bulkSettingsUpdates.push({
           user_id: update.user_id,
-          bot_type: 'multi', // Required field
-          bot_stats: update.updatedBotStats,
+          bot_type: 'multi', 
+          bot_stats: finalBotStats,
           bot_logs: mergedLogs,
+          scalping_active: latest?.scalping_active ?? update.scalping_active,
+          trend_active: latest?.trend_active ?? update.trend_active,
+          ai_active: latest?.ai_active ?? update.ai_active,
+          custom_active: latest?.custom_active ?? update.custom_active,
           updated_at: new Date().toISOString()
         });
       });
@@ -2145,9 +2191,14 @@ router.post('/trades/open', async (req, res) => {
     
     const isWin = Math.random() < winChance;
     let targetProfit = 0;
-    const profitMultiplier = 0.02 + Math.random() * 0.28;
-    if (isWin) targetProfit = Number((amount * profitMultiplier).toFixed(2));
-    else targetProfit = Number((-amount * profitMultiplier).toFixed(2));
+    if (isWin) {
+      // 75% to 95% profit on win for "Ideal Platform" feel
+      const profitMultiplier = 0.75 + Math.random() * 0.20;
+      targetProfit = Number((amount * profitMultiplier).toFixed(2));
+    } else {
+      // 100% loss of stake
+      targetProfit = Number((-amount).toFixed(2));
+    }
 
     // 3. Update balance and create trade atomically
     const { error: balanceError } = await supabaseAdmin.from('users').update({

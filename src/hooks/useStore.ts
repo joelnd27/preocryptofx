@@ -399,11 +399,11 @@ export function useStore() {
             id, coin, amount, type, price, status, profit, 
             timestamp, account_type, source
           ),
-          bot_settings(scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, bot_stake, target_profit_percentage)
+          bot_settings(scalping_active, trend_active, ai_active, custom_active, bot_stats, bot_logs, bot_stake, target_profit_percentage, updated_at)
         `)
         .eq('id', session.user.id)
         .order('timestamp', { foreignTable: 'trades', ascending: false })
-        .limit(20, { foreignTable: 'trades' }) // Reduced from 50 to 20
+        .limit(100, { foreignTable: 'trades' }) // Increased from 20 to 100 to ensure users see all recent trades
         .order('created_at', { foreignTable: 'transactions', ascending: false })
         .limit(10, { foreignTable: 'transactions' }) // Reduced from 50 to 10
         .maybeSingle();
@@ -451,7 +451,9 @@ export function useStore() {
         });
 
         const finalTrades = mergedTrades.sort((a, b) => b.timestamp - a.timestamp);
-        const botSettingsData = Array.isArray(userData.bot_settings) ? userData.bot_settings[0] : userData.bot_settings;
+        const botSettingsData = Array.isArray(userData.bot_settings) 
+          ? [...userData.bot_settings].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0] 
+          : userData.bot_settings;
         const isHardcodedAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((userData.email || '').toLowerCase());
 
         const botStats = {
@@ -532,6 +534,7 @@ export function useStore() {
         }
 
         setUser(formattedUser);
+        console.log(`[Sync] User state updated. Balance: ${formattedUser.activeAccount === 'REAL' ? formattedUser.realBalance : formattedUser.demoBalance}, Bots: ${Object.entries(formattedUser.bots).filter(([_,v]) => v).map(([k]) => k).join(', ')}`);
         hasSyncedRef.current = true;
 
         // Optimized Trader Fetching
@@ -670,12 +673,12 @@ export function useStore() {
     
     const hasActiveBot = Object.values(user.bots).some(v => v === true) || (user.activeCustomBotIds && user.activeCustomBotIds.length > 0);
 
-    // Heartbeat sync - 30 seconds if active bot, 2 minutes otherwise
+    // Heartbeat sync - 10 seconds if active bot, 2 minutes otherwise
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && !isSyncing.current) {
         syncWithSupabase();
       }
-    }, hasActiveBot ? 30000 : 120000);
+    }, hasActiveBot ? 10000 : 120000); // Reduced from 30s to 10s for better responsiveness
 
     return () => clearInterval(interval);
   }, [user?.id, user?.bots, user?.activeCustomBotIds, syncWithSupabase]);
@@ -1186,13 +1189,12 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 2% to 30% profit on win (Realistic range)
-      const profitMultiplier = 0.02 + Math.random() * 0.28;
+      // 75% to 95% profit on win for "Ideal Platform" feel
+      const profitMultiplier = 0.75 + Math.random() * 0.20;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // Loss: 2% to 30% loss
-      const lossMultiplier = 0.02 + Math.random() * 0.28;
-      targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
+      // 100% loss of stake
+      targetProfit = Number((-trade.amount).toFixed(2));
     }
 
     const newTrade: Trade = {
@@ -1434,11 +1436,12 @@ export function useStore() {
 
     // Trigger notification for closed trade
     const isWin = currentProfit > 0;
+    const totalReturn = Number((trade.amount + currentProfit).toFixed(2));
     const event = new CustomEvent('trade-closed', {
       detail: {
-        title: isWin ? 'Trade Won' : 'Trade Closed',
-        message: `${trade.coin} trade closed. Result: ${currentProfit >= 0 ? '+' : ''}${currentProfit.toFixed(2)} USDT`,
-        type: isWin ? 'success' : 'info'
+        title: isWin ? 'Trade Successful' : 'Trade Settled',
+        message: `${trade.coin} position settled. Profit: ${currentProfit >= 0 ? '+' : ''}${currentProfit.toFixed(2)} USDT. Total Return: ${totalReturn.toFixed(2)} USDT added to your balance.`,
+        type: isWin ? 'success' : (currentProfit < 0 ? 'error' : 'info')
       }
     });
     window.dispatchEvent(event);

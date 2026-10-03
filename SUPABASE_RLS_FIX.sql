@@ -103,6 +103,12 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_bot_settings_updated_at ON public.bot_settings(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON public.transactions(user_id, status);
 
+    -- Cleanup duplicate bot settings to ensure unique constraint can be applied
+    DELETE FROM public.bot_settings a
+    USING public.bot_settings b
+    WHERE a.user_id = b.user_id 
+      AND a.updated_at < b.updated_at;
+
 END $$;
 
 -- 2. CLEANUP (Remove all existing policies to start fresh)
