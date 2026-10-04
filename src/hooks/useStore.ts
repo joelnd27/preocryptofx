@@ -394,7 +394,7 @@ export function useStore() {
         .from('users')
         .select(`
           *,
-          transactions(id, type, amount, status, created_at, method, external_id, timestamp),
+          transactions(id, user_id, type, amount, status, created_at, method, external_id, timestamp, account_type),
           trades(
             id, coin, amount, type, price, status, profit, 
             timestamp, account_type, source, target_profit, duration
@@ -1634,14 +1634,14 @@ export function useStore() {
           });
         }
 
-        // Cleanup old transactions (Keep latest 50)
+        // Cleanup old transactions (Keep latest 200)
         try {
           const { data: oldTrans } = await supabase
             .from('transactions')
             .select('id')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false })
-            .range(50, 1000);
+            .range(200, 1000);
           
           if (oldTrans && oldTrans.length > 0) {
             const idsToDelete = oldTrans.map(t => t.id);

@@ -381,8 +381,15 @@ export default function Transactions() {
           <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white">Financial Ledger</h2>
           <p className="text-[9px] text-slate-500 dark:text-slate-400">Transaction History & Asset Management</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative group flex-1 sm:flex-none">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={refreshData}
+              className="p-1.5 text-slate-500 hover:text-blue-500 transition-colors"
+              title="Refresh Ledger"
+            >
+              <RefreshCw size={16} />
+            </button>
+            <div className="relative group flex-1 sm:flex-none">
             <button
               onClick={() => { setModalType('DEPOSIT'); setIsModalOpen(true); }}
               disabled={user?.activeAccount === 'DEMO'}
