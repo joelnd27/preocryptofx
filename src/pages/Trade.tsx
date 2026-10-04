@@ -419,34 +419,34 @@ export default function Trade() {
     
     const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
     const durationMs = (trade.duration || 1) * 1000;
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(1, elapsed / durationMs);
+    const now = Date.now();
+    const elapsed = now - startTime;
+
+    // STEPPED UPDATES: Instead of smooth movement, we "jump" every 3 seconds as requested
+    const updateStepMs = 3000; 
+    const steppedElapsed = Math.floor(elapsed / updateStepMs) * updateStepMs;
+    const progress = Math.min(1, steppedElapsed / durationMs);
 
     const targetProfit = trade.targetProfit || 0;
     const stake = trade.amount;
 
-    if (progress >= 1) return targetProfit;
+    // If actual time is over, show final result
+    if (now >= startTime + durationMs) return targetProfit;
 
-    // Use a deterministic seed based on the trade ID to keep fluctuations consistent for a specific trade
+    // Use a deterministic seed based on the trade ID to keep fluctuations consistent
     const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     
-    // Base trend (smooth transition)
-    // We use a non-linear trend to make it feel more "market-like"
+    // Base trend using quantized progress
     const baseTrend = targetProfit * Math.pow(progress, 1.2);
 
-    // Fluctuations: 
-    // We add "noise" that decreases as we approach 100% progress
-    const fluctuationScale = stake * 0.25; // Significant noise scale (25% of stake)
+    // Fluctuations using quantized progress
+    const fluctuationScale = stake * 0.25; 
     
-    // Use multiple sine waves with different frequencies to simulate market noise
     const wave1 = Math.sin(progress * 12 + seed);
     const wave2 = Math.cos(progress * 30 + seed * 1.3);
     const wave3 = Math.sin(progress * 60 + seed * 1.7);
     
-    // Combine waves and scale by (1 - progress) so it converges to 0 noise at the end
     const noise = (wave1 * 0.5 + wave2 * 0.3 + wave3 * 0.2) * fluctuationScale * (1 - progress);
-    
-    // Add an initial "spread" offset that fades out
     const initialSpread = -stake * 0.02 * (1 - progress); 
 
     const liveProfit = baseTrend + noise + initialSpread;
