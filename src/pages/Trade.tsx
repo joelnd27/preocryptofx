@@ -881,18 +881,26 @@ export default function Trade() {
                     
                     <div className="grid grid-cols-2 gap-4 mb-5">
                       <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                        <p className="text-[8px] text-slate-500 font-black uppercase mb-1 tracking-widest">Profit/Loss</p>
-                        <p className={cn(
-                          "text-base font-black tabular-nums leading-none",
-                          liveProfit >= 0 ? "text-green-500" : "text-red-500"
-                        )}>
-                          {liveProfit >= 0 ? '+' : ''}{liveProfit.toFixed(2)}
-                        </p>
+                        <p className="text-[8px] text-slate-500 font-black uppercase mb-1 tracking-widest">Profit/Loss (%)</p>
+                        <div className="flex items-baseline gap-1">
+                          <p className={cn(
+                            "text-base font-black tabular-nums leading-none",
+                            liveProfit >= 0 ? "text-green-500" : "text-red-500"
+                          )}>
+                            {liveProfit >= 0 ? '+' : ''}{((liveProfit / trade.amount) * 100).toFixed(1)}%
+                          </p>
+                          <span className={cn(
+                            "text-[10px] font-bold opacity-60",
+                            liveProfit >= 0 ? "text-green-500" : "text-red-500"
+                          )}>
+                            ({liveProfit >= 0 ? '+' : ''}{liveProfit.toFixed(2)})
+                          </span>
+                        </div>
                       </div>
                       <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                        <p className="text-[8px] text-slate-500 font-black uppercase mb-1 tracking-widest">Payout</p>
+                        <p className="text-[8px] text-slate-500 font-black uppercase mb-1 tracking-widest">Net Payout</p>
                         <p className="text-base font-black tabular-nums leading-none text-blue-500">
-                          ${payout.toFixed(2)}
+                          ${Math.max(0, payout).toFixed(2)}
                         </p>
                       </div>
                     </div>

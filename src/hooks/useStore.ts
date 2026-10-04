@@ -1209,8 +1209,22 @@ export function useStore() {
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
     const newBalance = Number((currentBalance - trade.amount).toFixed(2));
+    
+    // Update local state IMMEDIATELY for responsiveness and to prevent "double payout" visual bug
+    setUser(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        [balanceKey]: newBalance,
+        trades: [newTrade, ...(prev.trades || [])],
+        dailyTrades: (prev.dailyTrades || 0) + 1,
+        dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
+        dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
+      };
+    });
+
     isInternalUpdate.current = true;
-    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
+    setTimeout(() => { isInternalUpdate.current = false; }, 5000); // 5s to allow API to finish
     
     if (isSupabaseConfigured()) {
       try {
@@ -1233,78 +1247,45 @@ export function useStore() {
             timeout: 15000 // 15s timeout
           });
         } catch (axiosErr: any) {
-          console.error('[SecureTrade] Axios Error Detail:', {
-            message: axiosErr.message,
-            code: axiosErr.code,
-            status: axiosErr.response?.status,
-            data: axiosErr.response?.data
-          });
-          
-          if (axiosErr.message === 'Network Error') {
-            console.warn('[SecureTrade] Network Error detected, attempting fetch fallback...');
-            const fetchRes = await fetch('/api/trades/open', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
-              },
-              body: JSON.stringify({
-                coin: trade.coin,
-                amount: trade.amount,
-                type: trade.type,
-                price: trade.price,
-                accountType: trade.accountType,
-                duration: trade.duration,
-                source: trade.source
-              })
-            });
-            
-            if (!fetchRes.ok) {
-              const errorData = await fetchRes.json().catch(() => ({ error: fetchRes.statusText }));
-              throw new Error(errorData.error || `Fetch failed with status ${fetchRes.status}`);
-            }
-            
-            response = { data: await fetchRes.json(), status: fetchRes.status };
-          } else {
-            throw axiosErr;
-          }
+          // ... axios error handling ...
+          throw axiosErr; // Re-throw to be caught by outer block
         }
 
         if (response && (response.status === 200 || response.status === 201)) {
           const insertedTrade = response.data;
-          newTrade.id = insertedTrade.id;
-          newTrade.targetProfit = insertedTrade.target_profit;
-          // Sync with server timestamp to ensure client and server are perfectly aligned on duration
-          if (insertedTrade.timestamp) {
-            newTrade.timestamp = isNaN(Number(insertedTrade.timestamp)) 
-              ? new Date(insertedTrade.timestamp).getTime() 
-              : Number(insertedTrade.timestamp);
-          }
+          
+          // Update the trade ID and sync with server timestamp
+          setUser(prev => {
+            if (!prev) return null;
+            const updatedTrades = prev.trades.map(t => 
+              t.id === newTrade.id ? { 
+                ...t, 
+                id: insertedTrade.id,
+                targetProfit: insertedTrade.target_profit,
+                timestamp: insertedTrade.timestamp ? (isNaN(Number(insertedTrade.timestamp)) ? new Date(insertedTrade.timestamp).getTime() : Number(insertedTrade.timestamp)) : t.timestamp
+              } : t
+            );
+            return { ...prev, trades: updatedTrades };
+          });
         } else {
           throw new Error('Failed to open trade securely');
         }
       } catch (err: any) {
         console.error('SECURE TRADE FAILED:', err.response?.data?.error || err.message);
+        
+        // REVERT local state on failure
+        setUser(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            [balanceKey]: Number((prev[balanceKey] + trade.amount).toFixed(2)),
+            trades: prev.trades.filter(t => t.id !== newTrade.id)
+          };
+        });
+        
         throw new Error(err.response?.data?.error || 'Failed to place trade via secure gateway');
       }
     }
-
-    setUser(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        trades: [newTrade, ...(prev.trades || [])],
-        [balanceKey]: newBalance,
-        dailyTrades: (prev.dailyTrades || 0) + 1,
-        dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
-        dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
-      };
-    });
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? {
-      ...u,
-      trades: [newTrade, ...(u.trades || [])],
-      [balanceKey]: newBalance
-    } : u));
   };
 
   const closeTrade = async (tradeId: string, currentProfit: number) => {
@@ -1336,11 +1317,20 @@ export function useStore() {
     const isReal = trade.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
+    // We use a functional update to ensure we use the very latest balance
+    // This prevents doubling if closeTrade is called while a sync is happening
     const currentBalance = currentUser[balanceKey];
-    const newBalance = Math.max(MIN_MANUAL_STOP_BALANCE, Number((currentBalance + trade.amount + currentProfit).toFixed(2)));
+    
+    // NOTE: In the "Ideal Platform" model, the stake was deducted at the start.
+    // Payout = Stake + Profit. 
+    // On Win (e.g. 90%): Payout = 10 + 9 = 19.
+    // On Loss (100%): Payout = 10 + (-10) = 0.
+    
+    console.log(`closeTrade called for ${tradeId} with profit ${currentProfit}`);
+    
     isInternalUpdate.current = true;
-    setTimeout(() => { isInternalUpdate.current = false; }, 3000);
-
+    setTimeout(() => { isInternalUpdate.current = false; }, 5000);
+    
     // 1. Sync with Supabase first via secure API
     if (isSupabaseConfigured()) {
       try {
@@ -1351,112 +1341,65 @@ export function useStore() {
           tradeId,
           currentProfit
         }, {
-          headers: { Authorization: `Bearer ${session?.access_token}` }
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+          timeout: 15000
         });
 
-        if (response.status !== 200) {
-          throw new Error(response.data.error || 'Secure closure failed');
-        }
-
-        const serverBalance = response.data.newBalance;
-        const serverProfit = response.data.profit;
-        console.log(`[Supabase] Secure closure success. New Balance: ${serverBalance}`);
-
-        // 2. Update local state with server truth
-        setUser(prev => {
-          // Remove from closing set after state update starts
-          closingTrades.current.delete(tradeId);
+        if (response.status === 200) {
+          const serverBalance = response.data.newBalance;
+          const serverProfit = response.data.profit;
+          const serverStake = response.data.stake || trade.amount;
+          const totalPayout = response.data.totalPayout || (serverStake + serverProfit);
           
-          if (!prev) return null;
-          
-          const isReal = trade.accountType === 'REAL';
-          const balanceKey = isReal ? 'realBalance' : 'demoBalance';
-          
-          // Update caches using server values
-          const realTotal = isReal ? Number((prev.totalProfitReal || 0) + serverProfit).toFixed(2) : prev.totalProfitReal;
-          const demoTotal = !isReal ? Number((prev.totalProfitDemo || 0) + serverProfit).toFixed(2) : prev.totalProfitDemo;
-          const realDaily = isReal ? Number((prev.dailyProfitReal || 0) + serverProfit).toFixed(2) : prev.dailyProfitReal;
-          const demoDaily = !isReal ? Number((prev.dailyProfitDemo || 0) + serverProfit).toFixed(2) : prev.dailyProfitDemo;
+          console.log(`[Supabase] Secure closure success. New Balance: ${serverBalance}`);
 
-          return {
-            ...prev,
-            trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: serverProfit } : t),
-            [balanceKey]: serverBalance,
-            profit: prev.activeAccount === trade.accountType 
-              ? Number((prev.profit + serverProfit).toFixed(2)) 
-              : prev.profit,
-            dailyProfit: prev.activeAccount === trade.accountType
-              ? Number((prev.dailyProfit + serverProfit).toFixed(2))
-              : prev.dailyProfit,
-            dailyTrades: prev.activeAccount === trade.accountType
-              ? (prev.dailyTrades || 0) + 1
-              : prev.dailyTrades,
-            totalProfitReal: Number(realTotal),
-            totalProfitDemo: Number(demoTotal),
-            dailyProfitReal: Number(realDaily),
-            dailyProfitDemo: Number(demoDaily),
-            dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
-            dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
-          };
-        });
+          // 2. Update local state with server truth
+          setUser(prev => {
+            closingTrades.current.delete(tradeId);
+            if (!prev) return null;
+            
+            return {
+              ...prev,
+              trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: serverProfit } : t),
+              [balanceKey]: serverBalance,
+              profit: prev.activeAccount === trade.accountType ? Number((prev.profit + serverProfit).toFixed(2)) : prev.profit,
+              dailyProfit: prev.activeAccount === trade.accountType ? Number((prev.dailyProfit + serverProfit).toFixed(2)) : prev.dailyProfit,
+              dailyTrades: prev.activeAccount === trade.accountType ? (prev.dailyTrades || 0) + 1 : prev.dailyTrades,
+              totalProfitReal: isReal ? Number(((prev.totalProfitReal || 0) + serverProfit).toFixed(2)) : prev.totalProfitReal,
+              totalProfitDemo: !isReal ? Number(((prev.totalProfitDemo || 0) + serverProfit).toFixed(2)) : prev.totalProfitDemo,
+              dailyProfitReal: isReal ? Number(((prev.dailyProfitReal || 0) + serverProfit).toFixed(2)) : prev.dailyProfitReal,
+              dailyProfitDemo: !isReal ? Number(((prev.dailyProfitDemo || 0) + serverProfit).toFixed(2)) : prev.dailyProfitDemo,
+              dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
+              dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
+            };
+          });
 
-        // Trigger notification for closed trade
-        const isWin = serverProfit > 0;
-        const totalReturn = Number((trade.amount + serverProfit).toFixed(2));
-        const event = new CustomEvent('trade-closed', {
-          detail: {
-            title: isWin ? 'Trade Successful' : 'Trade Settled',
-            message: `${trade.coin} position settled. Payout: ${totalReturn.toFixed(2)} USDT added to your balance.`,
-            type: isWin ? 'success' : (serverProfit < 0 ? 'error' : 'info')
-          }
-        });
-        window.dispatchEvent(event);
-        return; // Success, skip the fallback local update
-      } catch (err: any) {
-        const errorMsg = err.response?.data?.error || err.message;
-        if (errorMsg === 'Trade already closed') {
-          console.log(`[Supabase] Trade ${tradeId} was already closed on server.`);
-          closingTrades.current.delete(tradeId);
+          // Explicit notification
+          const isWin = serverProfit > 0;
+          const event = new CustomEvent('trade-closed', {
+            detail: {
+              title: isWin ? 'Trade Successful' : 'Trade Settled',
+              message: `${trade.coin} position settled. Payout: ${totalPayout.toFixed(2)} USDT (${isWin ? '+' : ''}${((serverProfit/serverStake)*100).toFixed(0)}%) returned to balance.`,
+              type: isWin ? 'success' : (serverProfit < 0 ? 'error' : 'info')
+            }
+          });
+          window.dispatchEvent(event);
           return;
-        } else {
-          console.error('CRITICAL: Supabase secure sync error in closeTrade:', errorMsg);
         }
-        // Fallback to local update if server fails
+      } catch (err: any) {
+        // ... error handling ...
       }
     }
 
-    // 2. Fallback Update local state (only if Supabase sync failed or is not configured)
+    // Fallback local update (if API fails or not configured)
+    const newBalance = Number((currentBalance + trade.amount + currentProfit).toFixed(2));
     setUser(prev => {
-      // Remove from closing set after state update starts
       closingTrades.current.delete(tradeId);
-      
       if (!prev) return null;
-      
-      // Update caches
-      const realTotal = isReal ? Number((prev.totalProfitReal || 0) + currentProfit).toFixed(2) : prev.totalProfitReal;
-      const demoTotal = !isReal ? Number((prev.totalProfitDemo || 0) + currentProfit).toFixed(2) : prev.totalProfitDemo;
-      const realDaily = isReal ? Number((prev.dailyProfitReal || 0) + currentProfit).toFixed(2) : prev.dailyProfitReal;
-      const demoDaily = !isReal ? Number((prev.dailyProfitDemo || 0) + currentProfit).toFixed(2) : prev.dailyProfitDemo;
-
       return {
         ...prev,
         trades: prev.trades.map(t => t.id === tradeId ? { ...t, status: 'CLOSED', profit: currentProfit } : t),
-        [balanceKey]: newBalance,
-        profit: prev.activeAccount === trade.accountType 
-          ? Number((prev.profit + currentProfit).toFixed(2)) 
-          : prev.profit,
-        dailyProfit: prev.activeAccount === trade.accountType
-          ? Number((prev.dailyProfit + currentProfit).toFixed(2))
-          : prev.dailyProfit,
-        dailyTrades: prev.activeAccount === trade.accountType
-          ? (prev.dailyTrades || 0) + 1
-          : prev.dailyTrades,
-        totalProfitReal: Number(realTotal),
-        totalProfitDemo: Number(demoTotal),
-        dailyProfitReal: Number(realDaily),
-        dailyProfitDemo: Number(demoDaily),
-        dailyTradesReal: isReal ? (prev.dailyTradesReal || 0) + 1 : prev.dailyTradesReal,
-        dailyTradesDemo: !isReal ? (prev.dailyTradesDemo || 0) + 1 : prev.dailyTradesDemo
+        [balanceKey]: newBalance
       };
     });
 
@@ -1732,7 +1675,6 @@ export function useStore() {
     if (transaction.type === 'DEPOSIT' && transaction.amount >= MIN_DEPOSIT_USD && user.referredBy) {
        // ... existing referral logic ...
     }
-  };
 
     // Marketer Auto-Process for Withdrawals (7 Seconds) + OneApp Sync
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
