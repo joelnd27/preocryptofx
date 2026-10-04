@@ -2259,16 +2259,17 @@ router.post('/trades/open', async (req, res) => {
     if (isDemo) winChance = 0.92;
     else if (isMarketer || isMasterAdmin) winChance = 0.98;
     else {
-      if (currentBalance < 50) winChance = 0.005;
-      else if (currentBalance < 200) winChance = 0.012;
-      else winChance = 0.02;
+      // Normal user: < 20%
+      if (currentBalance < 50) winChance = 0.12;
+      else if (currentBalance < 200) winChance = 0.15;
+      else winChance = 0.18;
     }
     
     const isWin = Math.random() < winChance;
     let targetProfit = 0;
     if (isWin) {
-      // 75% to 95% profit on win for "Ideal Platform" feel
-      const profitMultiplier = 0.75 + Math.random() * 0.20;
+      // 15% to 35% profit on win for more realistic feel
+      const profitMultiplier = 0.15 + Math.random() * 0.20;
       targetProfit = Number((amount * profitMultiplier).toFixed(2));
     } else {
       // 100% loss of stake

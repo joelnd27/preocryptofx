@@ -417,30 +417,22 @@ export default function Trade() {
   const calculateLiveProfit = (trade: TradeType) => {
     if (!trade) return 0;
     
-    // For fixed-duration trades (Binary Options style), the profit is binary:
-    // Either you are in-the-money (full target profit) or out-of-the-money (loss).
-    // We show a slightly dynamic value based on price to keep it "live" but anchored to reality.
-    
-    const currentPrice = prices[trade.coin];
-    if (!currentPrice || !trade.price) return 0;
+    const startTime = typeof trade.timestamp === 'number' ? trade.timestamp : new Date(trade.timestamp).getTime();
+    const durationMs = (trade.duration || 1) * 1000;
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(1, elapsed / durationMs);
 
-    const isBuy = trade.type === 'BUY';
-    const isInTheMoney = isBuy ? (currentPrice >= trade.price) : (currentPrice <= trade.price);
-    
-    if (trade.targetProfit !== undefined) {
-      if (isInTheMoney) {
-        // We are winning. Show target profit clearly.
-        return Number(trade.targetProfit.toFixed(2));
-      } else {
-        // We are losing. Show current loss (stake).
-        return Number((-trade.amount).toFixed(2));
-      }
-    }
+    // Initial state: Start from a small negative "market fee/spread" feeling (-0.5% to -2%)
+    const startProfit = -Number((trade.amount * 0.015).toFixed(2));
+    const targetProfit = trade.targetProfit || 0;
 
-    // Fallback for non-target trades
-    const diff = isBuy ? (currentPrice - trade.price) : (trade.price - currentPrice);
-    const percentChange = diff / trade.price;
-    return Number((trade.amount * percentChange * 2.0).toFixed(2));
+    // Smooth interpolation using a non-linear ease for "natural" feeling
+    // Using a more aggressive ease-in to keep it small/negative for longer
+    const ease = progress * progress * progress; 
+    
+    const liveProfit = startProfit + (targetProfit - startProfit) * ease;
+    
+    return Number(liveProfit.toFixed(2));
   };
 
   const handleUseSignal = async () => {

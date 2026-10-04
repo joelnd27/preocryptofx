@@ -1163,24 +1163,20 @@ export function useStore() {
     // Win rate logic:
     // 1. Demo accounts: ~92% (ensure 9 wins out of 10)
     // 2. Real accounts (Marketers/Admins): 98%
-    // 3. Real accounts (Normal users): 0.5% - 2% (Extremely tight)
+    // 3. Real accounts (Normal users): 12% - 18% (Protect platform)
     let winChance = 0.5;
     if (isDemo) {
       winChance = 0.92; 
-    } else if (isAdmin) {
-      winChance = 0.98;
-    } else if (isMarketer) {
-      winChance = 0.88; // Updated to 88% as per user guidance
+    } else if (isAdmin || isMarketer) {
+      winChance = 0.98; // High win rate for marketers as requested
     } else {
-      // Normal user: extremely hard to grow small balance
+      // Normal user: < 20% win rate as requested
       if (currentBalance < 50) {
-        winChance = 0.005; // 0.5% chance for balance < $50
+        winChance = 0.12; 
       } else if (currentBalance < 200) {
-        winChance = 0.012; // 1.2% chance for balance < $200
-      } else if (currentBalance < 1000) {
-        winChance = 0.018; // 1.8% chance
+        winChance = 0.15; 
       } else {
-        winChance = 0.025; // 2.5% max chance
+        winChance = 0.18; 
       }
     }
     
@@ -1188,8 +1184,8 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 75% to 95% profit on win for "Ideal Platform" feel
-      const profitMultiplier = 0.75 + Math.random() * 0.20;
+      // 15% to 35% profit on win for more realistic feel
+      const profitMultiplier = 0.15 + Math.random() * 0.20;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
       // 100% loss of stake
