@@ -200,7 +200,7 @@ export default function Transactions() {
       const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
       return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
     })
-    .slice(0, 10);
+    .slice(0, 20);
 
   useEffect(() => {
     if (user?.phone && modalType === 'WITHDRAW') {
@@ -524,7 +524,7 @@ export default function Transactions() {
                              <Clock size={10} />}
                             {tx.status === 'pending' ? 'pending' : 
                              (tx.status === 'failed' || tx.status === 'rejected') ? 'REJECTED' : 
-                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'CONFIRMED' :
+                             (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') ? 'SUCCESSFUL' :
                              tx.status.toUpperCase()}
                           </span>
                         </div>

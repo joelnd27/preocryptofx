@@ -405,7 +405,7 @@ export function useStore() {
         .order('timestamp', { foreignTable: 'trades', ascending: false })
         .limit(100, { foreignTable: 'trades' }) 
         .order('created_at', { foreignTable: 'transactions', ascending: false })
-        .limit(100, { foreignTable: 'transactions' }) 
+        .limit(200, { foreignTable: 'transactions' }) 
         .maybeSingle();
 
       if (error) {
@@ -450,6 +450,31 @@ export function useStore() {
         });
 
         const finalTrades = mergedTrades.sort((a, b) => b.timestamp - a.timestamp);
+        
+        // Map and merge transactions - ensuring we don't lose locally added pending ones
+        const incomingTransactions = sortedTransactions.map((t: any) => ({
+          id: t.id,
+          userId: t.user_id,
+          type: t.type,
+          amount: Number(t.amount),
+          status: t.status,
+          timestamp: new Date(t.timestamp || t.created_at).getTime(),
+          accountType: t.account_type,
+          method: t.method,
+          externalId: t.external_id
+        }));
+
+        // Preserve local transactions that haven't synced yet (those with non-UUID ids or not in server list)
+        const localOnlyTransactions = (userRef.current?.transactions || []).filter(lt => 
+          !incomingTransactions.some(it => it.id === lt.id || it.externalId === lt.id) &&
+          lt.status === 'pending' &&
+          (Date.now() - lt.timestamp < 30000) // Only keep recent local-only (30s)
+        );
+
+        const mergedTransactions = [...localOnlyTransactions, ...incomingTransactions]
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 200);
+
         const botSettingsData = Array.isArray(userData.bot_settings) 
           ? [...userData.bot_settings].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0] 
           : userData.bot_settings;
@@ -460,8 +485,6 @@ export function useStore() {
           active_states: botSettingsData?.bot_stats?.active_states || {}
         };
 
-        // Note: Referrals transaction fetching is now handled separately to reduce egress
-        
         const formattedUser: User = {
           id: userData.id,
           username: userData.username,
@@ -486,17 +509,7 @@ export function useStore() {
           lastProfitResetDate: userData.last_profit_reset_date,
           referralCode: userData.referral_code,
           referredBy: userData.referred_by,
-          transactions: sortedTransactions.map((t: any) => ({
-            id: t.id,
-            userId: t.user_id,
-            type: t.type,
-            amount: Number(t.amount),
-            status: t.status,
-            timestamp: new Date(t.timestamp || t.created_at).getTime(),
-            accountType: t.account_type,
-            method: t.method,
-            externalId: t.external_id
-          })),
+          transactions: mergedTransactions,
           bots: botSettingsData ? {
             scalping: botSettingsData.scalping_active || false,
             trend: botSettingsData.trend_active || false,

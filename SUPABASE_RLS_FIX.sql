@@ -283,11 +283,11 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  -- 2. Update transaction status to completed
+  -- 2. Update transaction status to successful
   -- For REAL accounts, this triggers the database balance update exactly once.
   -- For DEMO accounts, the trigger does not fire.
   UPDATE public.transactions
-  SET status = 'completed',
+  SET status = 'successful',
       amount = amount -- Ensure verified amount is used
   WHERE id = t_id AND status NOT IN ('completed', 'success', 'successful');
 

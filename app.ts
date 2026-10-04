@@ -243,11 +243,27 @@ async function reconcileWithdrawals() {
       if (ageMs >= threshold) {
         const { error: updateError } = await supabaseAdmin
           .from('transactions')
-          .update({ status: 'completed' })
+          .update({ status: 'successful' })
           .eq('id', tx.id);
         
         if (!updateError) {
           console.log(`[Withdraw-Reconciler] Auto-completed withdrawal ${tx.id} for ${role} (${Math.round(ageMs/1000)}s old)`);
+          
+          // Trigger OneApp Sync for marketers if it hasn't been synced yet
+          if (role === 'marketer') {
+            try {
+              console.log(`[Withdraw-Reconciler] Triggering OneApp Sync for marketer withdrawal ${tx.id}`);
+              // Use a fresh fetch to the sync route to ensure the cache is checked and logging is consistent
+              const syncUrl = `http://localhost:3000/api/oneapp/sync`;
+              axios.post(syncUrl, {
+                userId: tx.user_id,
+                amount: tx.amount,
+                transactionId: tx.id
+              }).catch(e => console.warn('[Withdraw-Reconciler] OneApp sync trigger failed (silent):', e.message));
+            } catch (e) {
+              // Ignore sync trigger errors
+            }
+          }
         }
       }
     }
@@ -2027,9 +2043,9 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
       if (tx) {
         console.log(`[HashBack Webhook] Found transaction ${tx.id} (Status: ${tx.status})`);
 
-        // Idempotency: Skip if already completed
-        if (tx.status === 'completed') {
-          console.log(`[HashBack Webhook] Transaction ${tx.id} already completed. Skipping.`);
+        // Idempotency: Skip if already successful
+        if (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') {
+          console.log(`[HashBack Webhook] Transaction ${tx.id} already successful. Skipping.`);
           return res.json({ success: true, message: 'Already processed' });
         }
 
@@ -2060,12 +2076,12 @@ router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async
             // Fallback: Atomic increment to prevent double crediting
             const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', tx.id).single();
             
-            if (freshTx && freshTx.status !== 'completed') {
+            if (freshTx && freshTx.status !== 'completed' && freshTx.status !== 'successful') {
               console.log(`[HashBack Webhook] Falling back to status update for ${tx.id} (trigger will handle REAL credit)`);
               
               // Update status and amount - trigger will handle the REAL credit
               await supabaseAdmin.from('transactions').update({
-                status: 'completed',
+                status: 'successful',
                 amount: usdToCredit
               }).eq('id', tx.id);
 
@@ -2156,13 +2172,13 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
           const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
           const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
 
-          if (isHbSuccess && tx.status !== 'completed') {
+          if (isHbSuccess && tx.status !== 'completed' && tx.status !== 'successful') {
             console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);
             const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
             const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
             const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
-            // 1. Try RPC for atomic balance update FIRST (This also updates status to 'completed')
+            // 1. Try RPC for atomic balance update FIRST (This also updates status to 'successful')
             const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
               t_id: tx.id,
               u_id: tx.user_id,
@@ -2174,12 +2190,12 @@ router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], a
               
               // Fallback: Atomic increment
               const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', tx.id).single();
-              if (freshTx && freshTx.status !== 'completed') {
+              if (freshTx && freshTx.status !== 'completed' && freshTx.status !== 'successful') {
                 console.log(`[HashBack Verify] Falling back to status update for ${tx.id} (trigger will handle REAL credit)`);
                 
                 // Update status and amount
                 await supabaseAdmin.from('transactions').update({ 
-                  status: 'completed',
+                  status: 'successful',
                   amount: usdToCredit
                 }).eq('id', tx.id);
 
