@@ -381,10 +381,30 @@ async function reconcileManualTrades() {
 
     // 4. Execute user balance updates
     if (userUpdates.size > 0) {
-      const sortedUsers = Array.from(userUpdates.values()).sort((a, b) => (a.id > b.id ? 1 : -1));
-      for (let i = 0; i < sortedUsers.length; i += 20) {
-        const chunk = sortedUsers.slice(i, i + 20);
-        await supabaseAdmin.from('users').upsert(chunk);
+      console.log(`[Trade-Reconciler] Executing balance updates for ${userUpdates.size} users...`);
+      for (const [userId, updateData] of userUpdates.entries()) {
+        try {
+          const { error: userUpdateError } = await supabaseAdmin
+            .from('users')
+            .update({
+              real_balance: updateData.real_balance,
+              demo_balance: updateData.demo_balance,
+              total_profit_real: updateData.total_profit_real,
+              total_profit_demo: updateData.total_profit_demo,
+              daily_profit_real: updateData.daily_profit_real,
+              daily_profit_demo: updateData.daily_profit_demo,
+              daily_trades_real: updateData.daily_trades_real,
+              daily_trades_demo: updateData.daily_trades_demo,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (userUpdateError) {
+            console.error(`[Trade-Reconciler] Failed to update balance for user ${userId}:`, userUpdateError.message);
+          }
+        } catch (e: any) {
+          console.error(`[Trade-Reconciler] Exception updating user ${userId}:`, e.message);
+        }
       }
       console.log(`[Trade-Reconciler] Successfully auto-closed expired trades. Balances updated.`);
     }
