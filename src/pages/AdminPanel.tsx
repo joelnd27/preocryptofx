@@ -23,7 +23,7 @@ import { useStore } from '../context/StoreContext';
 import { formatCurrency, cn } from '../lib/utils';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'];
+const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
 type AdminTab = 'users' | 'deposits' | 'copy-traders';

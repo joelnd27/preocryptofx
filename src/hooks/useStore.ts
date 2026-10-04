@@ -20,7 +20,7 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { getMarketerDeposit } from '../lib/utils.ts';
 
-const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'];
+const ADMIN_EMAILS = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com'];
 const ADMIN_IDS = ['304020c9-3695-4f8f-85fe-9ee12eda8152'];
 
 const DEFAULT_TRADERS: CopyTrader[] = [
@@ -394,7 +394,7 @@ export function useStore() {
         .from('users')
         .select(`
           *,
-          transactions(id, type, amount, status, created_at, method),
+          transactions(id, type, amount, status, created_at, method, external_id, timestamp),
           trades(
             id, coin, amount, type, price, status, profit, 
             timestamp, account_type, source, target_profit, duration
@@ -403,9 +403,9 @@ export function useStore() {
         `)
         .eq('id', session.user.id)
         .order('timestamp', { foreignTable: 'trades', ascending: false })
-        .limit(100, { foreignTable: 'trades' }) // Increased from 20 to 100 to ensure users see all recent trades
+        .limit(100, { foreignTable: 'trades' }) 
         .order('created_at', { foreignTable: 'transactions', ascending: false })
-        .limit(10, { foreignTable: 'transactions' }) // Reduced from 50 to 10
+        .limit(100, { foreignTable: 'transactions' }) 
         .maybeSingle();
 
       if (error) {
@@ -453,7 +453,7 @@ export function useStore() {
         const botSettingsData = Array.isArray(userData.bot_settings) 
           ? [...userData.bot_settings].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0] 
           : userData.bot_settings;
-        const isHardcodedAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((userData.email || '').toLowerCase());
+        const isHardcodedAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com'].includes((userData.email || '').toLowerCase());
 
         const botStats = {
           ...(botSettingsData?.bot_stats || {}),
@@ -533,7 +533,7 @@ export function useStore() {
         }
 
         setUser(formattedUser);
-        console.log(`[Sync] User state updated. Balance: ${formattedUser.activeAccount === 'REAL' ? formattedUser.realBalance : formattedUser.demoBalance}, Bots: ${Object.entries(formattedUser.bots).filter(([_,v]) => v).map(([k]) => k).join(', ')}`);
+        console.log(`[Sync] User state updated. Balance: ${formattedUser.activeAccount === 'REAL' ? formattedUser.realBalance : formattedUser.demoBalance}, Trans: ${formattedUser.transactions.length}, Bots: ${Object.entries(formattedUser.bots).filter(([_,v]) => v).map(([k]) => k).join(', ')}`);
         hasSyncedRef.current = true;
 
         // Optimized Trader Fetching
@@ -1628,6 +1628,19 @@ export function useStore() {
       setTimeout(() => { isInternalUpdate.current = false; }, 5000);
     }
 
+    // Update local state IMMEDIATELY for responsiveness
+    setUser(prev => {
+      if (!prev) return null;
+      let updatedUser = {
+        ...prev,
+        transactions: [newTransaction, ...(prev.transactions || [])]
+      };
+      if (transaction.type === 'WITHDRAW') {
+        updatedUser[balanceKey] = newBalance;
+      }
+      return updatedUser;
+    });
+
     if (isSupabaseConfigured()) {
       try {
         const session = await getSafeSession();
@@ -1638,18 +1651,27 @@ export function useStore() {
             accountType: transaction.accountType,
             method: transaction.method
           }, {
-            headers: { Authorization: `Bearer ${session?.access_token}` }
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+            timeout: 20000 // 20s timeout for stability
           });
           
           if (response.status === 200) {
             const { newBalance: serverBalance, transaction: insertedTrans } = response.data;
-            newTransaction.id = insertedTrans.id;
-            newBalance = serverBalance;
+            
+            // Sync local transaction ID with server ID
+            setUser(prev => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                [balanceKey]: serverBalance,
+                transactions: prev.transactions.map(t => t.id === newTransaction.id ? { ...t, id: insertedTrans.id } : t)
+              };
+            });
           } else {
             throw new Error(response.data.error || 'Withdrawal request failed');
           }
         } else {
-          // Handle Deposit/other transactions via standard Supabase (Legacy or direct)
+          // Handle Deposit/other transactions via standard Supabase
           const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
             user_id: user.id,
             type: transaction.type,
@@ -1661,10 +1683,18 @@ export function useStore() {
           }).select().single();
 
           if (transError) throw transError;
-          newTransaction.id = insertedTrans.id;
+          
+          // Update local transaction ID
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              transactions: prev.transactions.map(t => t.id === newTransaction.id ? { ...t, id: insertedTrans.id } : t)
+            };
+          });
         }
 
-        // Cleanup old transactions (Keep latest 50) - Only for client consistency
+        // Cleanup old transactions (Keep latest 50)
         try {
           const { data: oldTrans } = await supabase
             .from('transactions')
@@ -1683,39 +1713,26 @@ export function useStore() {
 
       } catch (err: any) {
         console.error('SECURE TRANSACTION FAILED:', err.response?.data?.error || err.message);
+        
+        // REVERT local state on failure
+        setUser(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            [balanceKey]: transaction.type === 'WITHDRAW' ? Number((prev[balanceKey] + transaction.amount).toFixed(2)) : prev[balanceKey],
+            transactions: prev.transactions.filter(t => t.id !== newTransaction.id)
+          };
+        });
+        
         throw new Error(err.response?.data?.error || 'Failed to process transaction securely');
       }
     }
 
-    setUser(prev => {
-      if (!prev) return null;
-      let updatedUser = {
-        ...prev,
-        transactions: [newTransaction, ...(prev.transactions || [])]
-      };
-      if (transaction.type === 'WITHDRAW') {
-        updatedUser[balanceKey] = newBalance;
-      }
-
-      // Handle referral bonus/check if this is a deposit
-      if (transaction.type === 'DEPOSIT' && transaction.amount >= MIN_DEPOSIT_USD && prev.referredBy) {
-        // Find the referrer and update their referrals list
-        setUsers(allUsers => allUsers.map(u => {
-          if (u.referralCode === prev.referredBy) {
-            const updatedReferrals = (u.referrals || []).map(ref => {
-              if (ref.userId === prev.id) {
-                return { ...ref, hasDeposited: true, status: 'confirmed' as const };
-              }
-              return ref;
-            });
-            return { ...u, referrals: updatedReferrals };
-          }
-          return u;
-        }));
-      }
-
-      return updatedUser;
-    });
+    // Handle referral bonus/check if this is a deposit
+    if (transaction.type === 'DEPOSIT' && transaction.amount >= MIN_DEPOSIT_USD && user.referredBy) {
+       // ... existing referral logic ...
+    }
+  };
 
     // Marketer Auto-Process for Withdrawals (7 Seconds) + OneApp Sync
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {

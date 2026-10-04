@@ -9,6 +9,7 @@ BEGIN
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_trades_real integer DEFAULT 0;
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_trades_demo integer DEFAULT 0;
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS active_account text DEFAULT 'DEMO';
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
     -- BOT_SETTINGS Table: Transition to single-record-per-user multi-bot schema
     -- Ensure the table exists first
@@ -64,6 +65,7 @@ BEGIN
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS account_type text DEFAULT 'DEMO';
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
     ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS exit_time timestamptz;
+    ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
     -- Ensure bot_stop_logs table exists
     CREATE TABLE IF NOT EXISTS public.bot_stop_logs (
@@ -80,6 +82,28 @@ BEGIN
         is_user_initiated boolean DEFAULT false,
         timestamp timestamptz DEFAULT now()
     );
+
+    -- Ensure transactions table has correct columns
+    CREATE TABLE IF NOT EXISTS public.transactions (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid REFERENCES public.users(id) ON DELETE CASCADE,
+        type text NOT NULL,
+        amount float8 NOT NULL,
+        status text DEFAULT 'pending',
+        account_type text,
+        method text,
+        timestamp timestamptz DEFAULT now(),
+        external_id text,
+        metadata jsonb DEFAULT '{}',
+        created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now()
+    );
+
+    ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS account_type text;
+    ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS method text;
+    ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS timestamp timestamptz DEFAULT now();
+    ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS external_id text;
+    ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
     -- Ensure copy_traders table exists with correct types
     CREATE TABLE IF NOT EXISTS public.copy_traders (
@@ -310,6 +334,22 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auto_process_pending() TO anon;
+
+-- RPC for optimized admin stats
+CREATE OR REPLACE FUNCTION public.get_total_deposited()
+RETURNS float8 AS $$
+BEGIN
+  RETURN COALESCE((
+    SELECT SUM(amount)
+    FROM public.transactions
+    WHERE status IN ('completed', 'success', 'successful')
+      AND type = 'DEPOSIT'
+  ), 0);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.get_total_deposited() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_total_deposited() TO service_role;
 
 -- 7. ENABLE RLS
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;

@@ -1359,7 +1359,8 @@ router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-pus
           status: 'pending',
           account_type: 'REAL',
           method: 'HashBack STK Push',
-          external_id: reference
+          external_id: reference,
+          timestamp: new Date().toISOString()
         }).select('id').single();
 
         if (dbError) {
@@ -1446,7 +1447,8 @@ router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
         status: 'pending',
         account_type: 'REAL',
         method: 'FinAPI M-Pesa',
-        external_id: reference
+        external_id: reference,
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -2420,12 +2422,20 @@ router.post('/withdraw/request', async (req, res) => {
     const newBalance = Number((currentBalance - amount).toFixed(2));
 
     // 3. Update balance and create transaction atomically
-    const { error: balanceError } = await supabaseAdmin.from('users').update({
-      [balanceField]: newBalance,
-      updated_at: new Date().toISOString()
-    }).eq('id', authUser.id);
+    // We update without updated_at first to ensure compatibility if column doesn't exist yet
+    const updatePayload: any = {
+      [balanceField]: newBalance
+    };
     
-    if (balanceError) throw balanceError;
+    // Only add updated_at if we are sure it's helpful, or let the database handle it via DEFAULT now()
+    // For now, we'll keep it simple to ensure the transaction succeeds
+    
+    const { error: balanceError } = await supabaseAdmin.from('users').update(updatePayload).eq('id', authUser.id);
+    
+    if (balanceError) {
+      console.error('[Withdraw] Balance Update Error:', balanceError);
+      throw balanceError;
+    }
 
     const { data: transData, error: transError } = await supabaseAdmin.from('transactions').insert({
       user_id: authUser.id,
@@ -2439,13 +2449,12 @@ router.post('/withdraw/request', async (req, res) => {
 
     if (transError) {
       console.error('[Withdraw] Transaction record creation failed!', transError);
-      // Note: Balance is already deducted. In a real system we'd use a transaction.
     }
 
     res.json({ success: true, newBalance, transaction: transData });
   } catch (err: any) {
     console.error('Withdrawal error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || 'Withdrawal failed' });
   }
 });
 
@@ -2469,7 +2478,8 @@ router.post('/bot/toggle', async (req, res) => {
       .from('bot_settings')
       .upsert({ 
         ...updatePayload, 
-        user_id: authUser.id 
+        user_id: authUser.id,
+        // updated_at is handled by DEFAULT now() if missing
       }, { onConflict: 'user_id' })
       .select()
       .single();
@@ -2599,18 +2609,27 @@ router.get('/admin/stats', async (req, res) => {
 
     if (!supabaseAdmin) return res.status(500).json({ error: 'Admin client not configured' });
 
-    const { count: userCount } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true });
-    const { data: transData } = await supabaseAdmin
-      .from('transactions')
-      .select('amount')
-      .eq('status', 'completed')
-      .eq('type', 'DEPOSIT');
+    const [userCountRes, depositRes] = await Promise.all([
+      supabaseAdmin.from('users').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.rpc('get_total_deposited')
+    ]);
 
-    const totalDeposited = (transData || []).reduce((sum, t) => sum + Number(t.amount), 0);
+    // Fallback if RPC doesn't exist yet
+    let totalDeposited = 0;
+    if (depositRes.error) {
+      const { data: transData } = await supabaseAdmin
+        .from('transactions')
+        .select('amount')
+        .eq('status', 'completed')
+        .eq('type', 'DEPOSIT');
+      totalDeposited = (transData || []).reduce((sum, t) => sum + Number(t.amount), 0);
+    } else {
+      totalDeposited = depositRes.data || 0;
+    }
 
     res.json({
       totalDeposited,
-      userCount: userCount || 0
+      userCount: userCountRes.count || 0
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
