@@ -197,6 +197,63 @@ if (!supabaseAdmin) {
       console.error('[Trade-Reconciler] Loop Error:', err);
     }
   }, 3000);
+
+  // Initialize Withdrawal Reconciler (Runs every 10 seconds to handle auto-completion)
+  console.log('[Withdraw-Reconciler] Initializing withdrawal monitor...');
+  setInterval(async () => {
+    try {
+      await reconcileWithdrawals();
+    } catch (err) {
+      console.error('[Withdraw-Reconciler] Loop Error:', err);
+    }
+  }, 10000);
+}
+
+// WITHDRAWAL RECONCILER LOGIC
+async function reconcileWithdrawals() {
+  if (!supabaseAdmin) return;
+
+  try {
+    const { data: pendingWithdrawals, error: fetchError } = await supabaseAdmin
+      .from('transactions')
+      .select('id, user_id, amount, status, created_at, type')
+      .eq('status', 'pending')
+      .eq('type', 'WITHDRAW');
+
+    if (fetchError || !pendingWithdrawals || pendingWithdrawals.length === 0) return;
+
+    // Get user roles
+    const userIds = [...new Set(pendingWithdrawals.map(t => t.user_id))];
+    const { data: usersData } = await supabaseAdmin
+      .from('users')
+      .select('id, role')
+      .in('id', userIds);
+
+    const userRoles = new Map(usersData?.map(u => [u.id, u.role]) || []);
+    const now = Date.now();
+
+    for (const tx of pendingWithdrawals) {
+      const role = userRoles.get(tx.user_id) || 'user';
+      const createdAt = new Date(tx.created_at).getTime();
+      const ageMs = now - createdAt;
+
+      // Threshold: Marketers 5s, Normal users 5 minutes
+      const threshold = role === 'marketer' ? 5000 : 300000;
+
+      if (ageMs >= threshold) {
+        const { error: updateError } = await supabaseAdmin
+          .from('transactions')
+          .update({ status: 'completed' })
+          .eq('id', tx.id);
+        
+        if (!updateError) {
+          console.log(`[Withdraw-Reconciler] Auto-completed withdrawal ${tx.id} for ${role} (${Math.round(ageMs/1000)}s old)`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Withdraw-Reconciler] Exception:', err.message);
+  }
 }
 
 // TRADE RECONCILER LOGIC
@@ -225,6 +282,16 @@ async function reconcileManualTrades() {
 
     const now = Date.now();
     const expiredTrades = openTrades.filter(trade => {
+      const user = usersMap.get(trade.user_id);
+      const isReal = trade.account_type === 'REAL';
+      const balance = user ? (isReal ? Number(user.real_balance) : Number(user.demo_balance)) : 0;
+      
+      const MIN_MANUAL_BALANCE = 3;
+      if (balance < MIN_MANUAL_BALANCE) {
+        console.log(`[Trade-Reconciler] Force closing trade ${trade.id} for user ${user?.email || trade.user_id}: Balance below $${MIN_MANUAL_BALANCE}`);
+        return true; // Expire immediately if balance is too low
+      }
+
       const startTime = isNaN(Number(trade.timestamp)) 
         ? new Date(trade.timestamp).getTime() 
         : Number(trade.timestamp);
@@ -719,6 +786,13 @@ console.log('[App] Environment Check:', {
             const sessionStartProfit = Number(sessionStartProfits[botId]);
             const sessionProfit = Number((currentDailyProfit - sessionStartProfit).toFixed(2));
             const targetProfitAmount = (botStake * botTargetPercentage) / 100;
+
+            const MIN_BOT_BALANCE = 10;
+            if (currentBalance < MIN_BOT_BALANCE) {
+              console.log(`[Bot-Sim] User ${user.email} bot ${botId} stopped: Balance below $${MIN_BOT_BALANCE} threshold`);
+              usersToStop.push({ userId: user.id, botId, type: botToSimulate.type, reason: 'MIN_BALANCE_THRESHOLD', sessionProfit, goal: targetProfitAmount, balance: currentBalance, stake: botStake });
+              continue;
+            }
 
             if (botTargetPercentage > 0 && botStake >= 10 && sessionProfit >= targetProfitAmount) {
               console.log(`[Bot-Sim] User ${user.email} bot ${botId} stopped: Goal reached (${sessionProfit} >= ${targetProfitAmount})`);
@@ -2177,7 +2251,7 @@ router.post('/trades/open', async (req, res) => {
     // 2. Calculate target profit server-side to prevent "forced win" hacks
     const isDemo = accountType === 'DEMO';
     const isMarketer = userData.role === 'marketer';
-    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com'].includes((authUser.email || '').toLowerCase());
+    const isMasterAdmin = ['wren20688@gmail.com', 'josphatndungu1022@gmail.com', 'josphatndungu122@gmail.com'].includes((authUser.email || '').toLowerCase());
     
     let winChance = 0.5;
     if (isDemo) winChance = 0.92;
