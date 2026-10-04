@@ -422,15 +422,34 @@ export default function Trade() {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(1, elapsed / durationMs);
 
-    // Initial state: Start from a small negative "market fee/spread" feeling (-0.5% to -2%)
-    const startProfit = -Number((trade.amount * 0.015).toFixed(2));
     const targetProfit = trade.targetProfit || 0;
+    const stake = trade.amount;
 
-    // Smooth interpolation using a non-linear ease for "natural" feeling
-    // Using a more aggressive ease-in to keep it small/negative for longer
-    const ease = progress * progress * progress; 
+    if (progress >= 1) return targetProfit;
+
+    // Use a deterministic seed based on the trade ID to keep fluctuations consistent for a specific trade
+    const seed = trade.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     
-    const liveProfit = startProfit + (targetProfit - startProfit) * ease;
+    // Base trend (smooth transition)
+    // We use a non-linear trend to make it feel more "market-like"
+    const baseTrend = targetProfit * Math.pow(progress, 1.2);
+
+    // Fluctuations: 
+    // We add "noise" that decreases as we approach 100% progress
+    const fluctuationScale = stake * 0.25; // Significant noise scale (25% of stake)
+    
+    // Use multiple sine waves with different frequencies to simulate market noise
+    const wave1 = Math.sin(progress * 12 + seed);
+    const wave2 = Math.cos(progress * 30 + seed * 1.3);
+    const wave3 = Math.sin(progress * 60 + seed * 1.7);
+    
+    // Combine waves and scale by (1 - progress) so it converges to 0 noise at the end
+    const noise = (wave1 * 0.5 + wave2 * 0.3 + wave3 * 0.2) * fluctuationScale * (1 - progress);
+    
+    // Add an initial "spread" offset that fades out
+    const initialSpread = -stake * 0.02 * (1 - progress); 
+
+    const liveProfit = baseTrend + noise + initialSpread;
     
     return Number(liveProfit.toFixed(2));
   };

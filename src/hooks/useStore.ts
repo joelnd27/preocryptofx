@@ -1184,12 +1184,13 @@ export function useStore() {
     
     let targetProfit = 0;
     if (isWin) {
-      // 15% to 35% profit on win for more realistic feel
+      // 15% to 35% profit on win as requested
       const profitMultiplier = 0.15 + Math.random() * 0.20;
       targetProfit = Number((trade.amount * profitMultiplier).toFixed(2));
     } else {
-      // 100% loss of stake
-      targetProfit = Number((-trade.amount).toFixed(2));
+      // Maximum loss of -75% of stake as requested (Range: -45% to -75%)
+      const lossMultiplier = 0.45 + Math.random() * 0.30;
+      targetProfit = Number((-trade.amount * lossMultiplier).toFixed(2));
     }
 
     const newTrade: Trade = {
@@ -1594,12 +1595,12 @@ export function useStore() {
             timeout: 20000 // 20s timeout for stability
           });
           
-          if (response.status === 200) {
+          if (response.status === 200 && response.data.success) {
             const { newBalance: serverBalance, transaction: insertedTrans } = response.data;
             
             // Sync local transaction ID with server ID
             setUser(prev => {
-              if (!prev) return null;
+              if (!prev || !insertedTrans) return prev;
               return {
                 ...prev,
                 [balanceKey]: serverBalance,
@@ -1672,12 +1673,11 @@ export function useStore() {
        // ... existing referral logic ...
     }
 
-    // Marketer Auto-Process for Withdrawals (7 Seconds) + OneApp Sync
+    // Trigger OneApp Sync via backend for marketers (Backend handles the actual sync)
     if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
       const txId = newTransaction.id;
-      console.log(`[Withdrawal] Marketer detected. Auto-completing transaction ${txId} and syncing to OneApp.`);
+      console.log(`[Withdrawal] Marketer detected. Triggering OneApp Sync for ${txId}.`);
       
-      // Trigger OneApp Sync via backend (backend handles the 2-minute delay)
       fetch('/api/oneapp/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1689,24 +1689,6 @@ export function useStore() {
           transactionId: txId
         })
       }).catch(err => console.error('[OneApp Sync] Failed to trigger:', err));
-      
-      setTimeout(async () => {
-        if (isSupabaseConfigured() && txId) {
-          await supabase.from('transactions')
-            .update({ status: 'completed' })
-            .eq('id', txId);
-        }
-
-        setUser(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            transactions: prev.transactions.map(t => 
-              t.id === txId ? { ...t, status: 'completed' } : t
-            )
-          };
-        });
-      }, 7000);
     }
   };
 
@@ -2629,6 +2611,9 @@ export function useStore() {
             }
           }, 500);
         }
+        
+        // Refresh data to show the pending transaction in the history immediately
+        await refreshData();
         
         return reference;
       }

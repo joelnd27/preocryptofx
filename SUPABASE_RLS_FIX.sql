@@ -306,6 +306,86 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- 6.5 PROCESS WITHDRAWAL RPC (Atomic)
+CREATE OR REPLACE FUNCTION public.process_withdrawal(
+  u_id UUID,
+  u_amount NUMERIC,
+  u_account_type TEXT,
+  u_method TEXT,
+  u_timestamp TIMESTAMPTZ DEFAULT now()
+)
+RETURNS JSONB AS $$
+DECLARE
+  current_bal NUMERIC;
+  new_bal NUMERIC;
+  balance_col TEXT;
+  tx_id UUID;
+  user_v_status TEXT;
+BEGIN
+  -- 1. Identify balance column
+  IF u_account_type = 'REAL' THEN
+    balance_col := 'real_balance';
+  ELSE
+    balance_col := 'demo_balance';
+  END IF;
+
+  -- 2. Fetch current balance and verification status
+  EXECUTE format('SELECT %I, verification_status FROM public.users WHERE id = $1', balance_col)
+  INTO current_bal, user_v_status
+  USING u_id;
+
+  IF current_bal IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not found');
+  END IF;
+
+  -- 3. Check verification limits
+  IF user_v_status != 'verified' AND u_amount > 500 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Unverified accounts have a withdrawal limit of $500.');
+  END IF;
+
+  -- 4. Check sufficient funds
+  IF current_bal < u_amount THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Insufficient balance');
+  END IF;
+
+  -- 5. Calculate new balance
+  new_bal := current_bal - u_amount;
+
+  -- 6. Update user balance
+  EXECUTE format('UPDATE public.users SET %I = $1, updated_at = now() WHERE id = $2', balance_col)
+  USING new_bal, u_id;
+
+  -- 7. Insert transaction record
+  INSERT INTO public.transactions (
+    user_id,
+    type,
+    amount,
+    status,
+    account_type,
+    method,
+    timestamp
+  ) VALUES (
+    u_id,
+    'WITHDRAW',
+    u_amount,
+    'pending',
+    u_account_type,
+    u_method,
+    u_timestamp
+  ) RETURNING id INTO tx_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'newBalance', new_bal,
+    'transactionId', tx_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.process_withdrawal(UUID, NUMERIC, TEXT, TEXT, TIMESTAMPTZ) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.process_withdrawal(UUID, NUMERIC, TEXT, TEXT, TIMESTAMPTZ) TO anon;
+GRANT EXECUTE ON FUNCTION public.process_withdrawal(UUID, NUMERIC, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
+
 -- Simple increment for manual or legacy calls
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id UUID, amount NUMERIC)
 RETURNS VOID AS $$

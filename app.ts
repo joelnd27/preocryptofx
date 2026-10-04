@@ -281,8 +281,16 @@ async function reconcileManualTrades() {
     if (!openTrades || openTrades.length === 0) return;
 
     const now = Date.now();
+    const tradeUserIds = [...new Set(openTrades.map(t => t.user_id))];
+    const { data: userDataForReconcile } = await supabaseAdmin
+      .from('users')
+      .select('id, email, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo')
+      .in('id', tradeUserIds);
+    
+    const usersLookup = new Map(userDataForReconcile?.map(u => [u.id, u]) || []);
+
     const expiredTrades = openTrades.filter(trade => {
-      const user = usersMap.get(trade.user_id);
+      const user = usersLookup.get(trade.user_id);
       const isReal = trade.account_type === 'REAL';
       const balance = user ? (isReal ? Number(user.real_balance) : Number(user.demo_balance)) : 0;
       
@@ -304,26 +312,13 @@ async function reconcileManualTrades() {
 
     console.log(`[Trade-Reconciler] ${expiredTrades.length} trades reached expiry.`);
 
-    // 2. Fetch users for the expired trades
-    const uniqueUserIds = [...new Set(expiredTrades.map(t => t.user_id))];
-    const { data: usersData, error: usersError } = await supabaseAdmin
-      .from('users')
-      .select('id, username, email, role, verification_status, active_account, real_balance, demo_balance, total_profit_real, total_profit_demo, daily_profit_real, daily_profit_demo, daily_trades_real, daily_trades_demo')
-      .in('id', uniqueUserIds);
-
-    if (usersError || !usersData) {
-      console.error('[Trade-Reconciler] Error fetching users for closure:', usersError?.message);
-      return;
-    }
-
-    const usersMap = new Map(usersData.map(u => [u.id, { ...u }]));
     const tradeUpdates: any[] = [];
     const userUpdates: Map<string, any> = new Map();
 
     // 3. Prepare updates
     for (const trade of expiredTrades) {
       try {
-        const user = usersMap.get(trade.user_id);
+        const user = usersLookup.get(trade.user_id);
         if (!user) continue;
 
         // Perform conditional update for each trade to ensure it's still open
@@ -2268,12 +2263,13 @@ router.post('/trades/open', async (req, res) => {
     const isWin = Math.random() < winChance;
     let targetProfit = 0;
     if (isWin) {
-      // 15% to 35% profit on win for more realistic feel
+      // 15% to 35% profit on win as requested
       const profitMultiplier = 0.15 + Math.random() * 0.20;
       targetProfit = Number((amount * profitMultiplier).toFixed(2));
     } else {
-      // 100% loss of stake
-      targetProfit = Number((-amount).toFixed(2));
+      // Maximum loss of -75% of stake as requested (Range: -45% to -75%)
+      const lossMultiplier = 0.45 + Math.random() * 0.30;
+      targetProfit = Number((-amount * lossMultiplier).toFixed(2));
     }
 
     // 3. Update balance and create trade atomically
@@ -2414,45 +2410,37 @@ router.post('/withdraw/request', async (req, res) => {
     }
 
     const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
-    const currentBalance = Number(userData[balanceField]);
+    
+    // 1. Use Atomic RPC to process withdrawal
+    const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('process_withdrawal', {
+      u_id: authUser.id,
+      u_amount: Number(amount),
+      u_account_type: accountType,
+      u_method: method,
+      u_timestamp: new Date().toISOString()
+    });
 
-    if (currentBalance < amount) {
-      return res.status(400).json({ error: 'Insufficient balance for withdrawal' });
+    if (rpcError) {
+      console.error('[Withdraw] RPC Execution Error:', rpcError);
+      return res.status(500).json({ error: rpcError.message || 'Withdrawal process failed' });
     }
 
-    const newBalance = Number((currentBalance - amount).toFixed(2));
-
-    // 3. Update balance and create transaction atomically
-    // We update without updated_at first to ensure compatibility if column doesn't exist yet
-    const updatePayload: any = {
-      [balanceField]: newBalance
-    };
-    
-    // Only add updated_at if we are sure it's helpful, or let the database handle it via DEFAULT now()
-    // For now, we'll keep it simple to ensure the transaction succeeds
-    
-    const { error: balanceError } = await supabaseAdmin.from('users').update(updatePayload).eq('id', authUser.id);
-    
-    if (balanceError) {
-      console.error('[Withdraw] Balance Update Error:', balanceError);
-      throw balanceError;
+    if (!rpcResult.success) {
+      return res.status(400).json({ error: rpcResult.error || 'Withdrawal failed' });
     }
 
-    const { data: transData, error: transError } = await supabaseAdmin.from('transactions').insert({
-      user_id: authUser.id,
-      type: 'WITHDRAW',
-      amount,
-      status: 'pending',
-      account_type: accountType,
-      method,
-      timestamp: new Date().toISOString()
-    }).select().single();
+    // 2. Fetch the newly created transaction record to return to frontend
+    const { data: transData } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .eq('id', rpcResult.transactionId)
+      .single();
 
-    if (transError) {
-      console.error('[Withdraw] Transaction record creation failed!', transError);
-    }
-
-    res.json({ success: true, newBalance, transaction: transData });
+    res.json({ 
+      success: true, 
+      newBalance: rpcResult.newBalance, 
+      transaction: transData 
+    });
   } catch (err: any) {
     console.error('Withdrawal error:', err);
     res.status(500).json({ error: err.message || 'Withdrawal failed' });
