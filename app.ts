@@ -237,8 +237,8 @@ async function reconcileWithdrawals() {
       const createdAt = new Date(tx.created_at).getTime();
       const ageMs = now - createdAt;
 
-      // Threshold: Marketers 4s (as requested: 3s pending, successful at 4th), Normal users 5 minutes
-      const threshold = role === 'marketer' ? 4000 : 300000;
+      // Threshold: Marketers 4s (as requested: 3s pending, successful at 4th), Normal users 15s
+      const threshold = role === 'marketer' ? 4000 : 15000;
 
       if (ageMs >= threshold) {
         const { error: updateError } = await supabaseAdmin
@@ -366,7 +366,8 @@ async function reconcileManualTrades() {
         const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
 
         const currentBalance = Number(user[balanceField]);
-        const newBalance = Number((currentBalance + stake + profit).toFixed(2));
+        // SAFETY: Use Math.max(0, ...) to ensure balance never goes negative
+        const newBalance = Math.max(0, Number((currentBalance + stake + profit).toFixed(2)));
         const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
         const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
         const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
@@ -481,7 +482,8 @@ async function executeInstantBotTrade(userId: string, targetBotId: string) {
     const baseProfitPercent = 0.02 + Math.random() * 0.08;
     const profitAmount = isWin ? Number((botStake * baseProfitPercent).toFixed(2)) : -Number((botStake * baseProfitPercent * 0.9).toFixed(2));
 
-    const newBalance = Number((currentBalance + profitAmount).toFixed(2));
+    // SAFETY: Ensure balance never goes negative
+    const newBalance = Math.max(0, Number((currentBalance + profitAmount).toFixed(2)));
     const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
     const newTotalProfit = Number(((isReal ? (Number(userData.total_profit_real) || 0) : (Number(userData.total_profit_demo) || 0)) + profitAmount).toFixed(2));
     const newDailyTrades = (isReal ? (Number(userData.daily_trades_real) || 0) : (Number(userData.daily_trades_demo) || 0)) + 1;
@@ -857,7 +859,8 @@ console.log('[App] Environment Check:', {
                 continue;
               }
 
-              const newBalance = Number((currentBalance + profitAmount).toFixed(2));
+              // SAFETY: Use Math.max(0, ...) as final safeguard
+              const newBalance = Math.max(0, Number((currentBalance + profitAmount).toFixed(2)));
               const newDailyProfit = Number((currentDailyProfit + profitAmount).toFixed(2));
               const newTotalProfit = Number(((isReal ? (Number(user.total_profit_real) || 0) : (Number(user.total_profit_demo) || 0)) + profitAmount).toFixed(2));
               const newDailyTrades = (isReal ? (Number(user.daily_trades_real) || 0) : (Number(user.daily_trades_demo) || 0)) + 1;
@@ -1214,11 +1217,57 @@ console.log('[App] Environment Check:', {
     }
   }
 
-// HashBack Config
-const HASHBACK_API_KEY = process.env.HASHBACK_API_KEY || process.env.VITE_HASHBACK_API_KEY;
-const HASHBACK_ACCOUNT_ID = process.env.HASHBACK_ACCOUNT_ID || process.env.VITE_HASHBACK_ACCOUNT_ID;
-const HASHBACK_WEBHOOK_SECRET = process.env.HASHBACK_WEBHOOK_SECRET || process.env.VITE_HASHBACK_WEBHOOK_SECRET;
-const HASHBACK_BASE_URL = 'https://api.hashback.co.ke';
+// PayHero Config
+const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.PAYHERO_AUTH_TOKEN || process.env.VITE_PAYHERO_API_KEY || '';
+const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PAYHERO_CHANNEL_ID || '';
+const PAYHERO_API_USERNAME = process.env.PAYHERO_API_USERNAME || process.env.PAYHERO_USERNAME || '';
+const PAYHERO_API_PASSWORD = process.env.PAYHERO_API_PASSWORD || process.env.PAYHERO_PASSWORD || '';
+const PAYHERO_BASE_URL = 'https://backend.payhero.co.ke/api/v2';
+const PAYHERO_CALLBACK_URL = process.env.PAYHERO_CALLBACK_URL || process.env.VITE_PAYHERO_CALLBACK_URL || '';
+
+const getPayheroAuthHeader = (): string => {
+  if (PAYHERO_API_USERNAME && PAYHERO_API_PASSWORD) {
+    const creds = Buffer.from(`${PAYHERO_API_USERNAME}:${PAYHERO_API_PASSWORD}`).toString('base64');
+    return `Basic ${creds}`;
+  }
+  if (!PAYHERO_API_KEY) return '';
+  const key = PAYHERO_API_KEY.trim();
+  if (key.startsWith('Basic ') || key.startsWith('Bearer ')) {
+    return key;
+  }
+  if (key.includes(':')) {
+    return `Basic ${Buffer.from(key).toString('base64')}`;
+  }
+  return `Basic ${key}`;
+};
+
+const formatPayheroPhone = (phone: string): string => {
+  let cleaned = (phone || '').replace(/\D/g, '');
+  if (cleaned.startsWith('254') && cleaned.length === 12) {
+    return cleaned;
+  }
+  if (cleaned.startsWith('0') && cleaned.length === 10) {
+    return '254' + cleaned.substring(1);
+  }
+  if ((cleaned.startsWith('7') || cleaned.startsWith('1')) && cleaned.length === 9) {
+    return '254' + cleaned;
+  }
+  return cleaned;
+};
+
+// PayHero Health Check
+router.get(['/payhero/health', '/api/payhero/health', '/payhero/config-check', '/api/payhero/config-check'], (req, res) => {
+  const auth = getPayheroAuthHeader();
+  res.json({
+    status: 'ok',
+    config: {
+      has_channel_id: !!PAYHERO_CHANNEL_ID,
+      has_api_key: !!auth,
+      channel_id: PAYHERO_CHANNEL_ID ? String(PAYHERO_CHANNEL_ID) : null,
+      has_callback_url: !!PAYHERO_CALLBACK_URL
+    }
+  });
+});
 
 // FinAPI Config
 const FINAPI_SECRET_KEY = process.env.FINAPI_SECRET_KEY || process.env.VITE_FINAPI_SECRET_KEY;
@@ -1233,18 +1282,6 @@ if (!PREOCRYPTOFX_WEBHOOK_SECRET) {
 
 // API Routes
 
-// HashBack Health Check (Safe)
-router.get(['/hashback/health', '/api/hashback/health'], (req, res) => {
-  res.json({
-    status: 'ok',
-    config: {
-      has_account_id: !!HASHBACK_ACCOUNT_ID,
-      has_api_key: !!HASHBACK_API_KEY,
-      has_webhook_secret: !!HASHBACK_WEBHOOK_SECRET,
-      account_id_preview: HASHBACK_ACCOUNT_ID ? `${HASHBACK_ACCOUNT_ID.substring(0, 3)}...` : null
-    }
-  });
-});
 
 // OneApp Marketing Sync Endpoint
 const syncCache = new Set<string>();
@@ -1359,114 +1396,144 @@ router.post(['/oneapp/sync', '/api/oneapp/sync'], async (req, res) => {
   }
 });
 
-// Config Health Check
-router.get('/hashback/config-check', (req, res) => {
-  res.json({
-    supabaseAdmin: !!supabaseAdmin,
-    hasAccountId: !!HASHBACK_ACCOUNT_ID,
-    hasApiKey: !!HASHBACK_API_KEY,
-    hasWebhookSecret: !!HASHBACK_WEBHOOK_SECRET,
-    rate: process.env.USD_KES_RATE || '129.58',
-    nodeEnv: process.env.NODE_ENV
-  });
-});
 
-// HashBack Pay Button Initiation (Renamed to stk-push as per user request)
-router.post(['/hashback/stk-push', '/hashback/stk-push/', '/api/hashback/stk-push'], async (req, res) => {
-  console.log(`[HashBack] STK Push Route hit`);
-  const { amount, userId, phone } = req.body;
-  console.log(`[HashBack] Initiation Request: Amount=${amount}, User=${userId}, Phone=${phone || 'N/A'}`);
+// PayHero STK Push Initiation
+router.post(['/payhero/stk-push', '/payhero/stk-push/', '/api/payhero/stk-push', '/stk-push', '/api/stk-push'], async (req, res) => {
+  console.log(`[PayHero] STK Push Route hit:`, req.body);
+  const { amount, userId, phone, customer_name, username } = req.body;
   
-  // Convert USD to KES
   const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
   const usdAmount = parseFloat(String(amount || 0));
   const kesAmount = Math.ceil(usdAmount * usdKesRate);
   
   if (usdAmount < 16) {
-    console.warn(`[HashBack] Amount too low: $${usdAmount}`);
+    console.warn(`[PayHero] Amount too low: $${usdAmount}`);
     return res.status(400).json({ success: false, error: 'Minimum deposit is $16' });
   }
 
-  // Generate a unique reference
-  const reference = `HB${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'User identification required for deposit.' });
+  }
+
+  const rawPhone = phone || '';
+  const formattedPhone = formatPayheroPhone(rawPhone);
+  if (!formattedPhone || formattedPhone.length < 9) {
+    return res.status(400).json({ success: false, error: 'A valid M-Pesa phone number is required.' });
+  }
+
+  const authHeader = getPayheroAuthHeader();
+  if (!authHeader || !PAYHERO_CHANNEL_ID) {
+    const missing = [];
+    if (!authHeader) missing.push('PAYHERO_API_KEY');
+    if (!PAYHERO_CHANNEL_ID) missing.push('PAYHERO_CHANNEL_ID');
+    console.error(`[PayHero] CRITICAL: Missing configuration: ${missing.join(', ')}`);
+    return res.status(500).json({
+      success: false,
+      error: `PayHero configuration missing (${missing.join(', ')}). Please verify environment variables.`
+    });
+  }
+
+  // Generate unique reference
+  const reference = `PH${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   try {
-    if (!HASHBACK_ACCOUNT_ID || !HASHBACK_API_KEY) {
-      const missing = [];
-      if (!HASHBACK_ACCOUNT_ID) missing.push('HASHBACK_ACCOUNT_ID');
-      if (!HASHBACK_API_KEY) missing.push('HASHBACK_API_KEY');
-      console.error(`[HashBack] CRITICAL: Missing environment variables: ${missing.join(', ')}`);
-      return res.status(500).json({ 
-        success: false, 
-        error: `Payment system configuration error (Missing: ${missing.join(', ')}). Please check your settings.` 
+    // Record pending transaction in Supabase
+    if (supabaseAdmin) {
+      const { error: dbError } = await supabaseAdmin.from('transactions').insert({
+        user_id: userId,
+        type: 'DEPOSIT',
+        amount: usdAmount,
+        status: 'pending',
+        account_type: 'REAL',
+        method: 'PayHero M-Pesa',
+        external_id: reference,
+        timestamp: new Date().toISOString()
+      });
+
+      if (dbError) {
+        console.error('[PayHero] DB Error creating transaction:', dbError);
+        return res.status(500).json({ success: false, error: 'Database error: Failed to record transaction.' });
+      }
+    } else {
+      console.warn('[PayHero] supabaseAdmin not initialized. Missing SUPABASE_SERVICE_ROLE_KEY.');
+      return res.status(500).json({
+        success: false,
+        error: 'Database connection not established. SUPABASE_SERVICE_ROLE_KEY is required.'
       });
     }
 
-    // Save pending transaction in Supabase
-    let txId: string | null = null;
+    const numericChannelId = !isNaN(Number(PAYHERO_CHANNEL_ID)) ? Number(PAYHERO_CHANNEL_ID) : PAYHERO_CHANNEL_ID;
+    const defaultCallback = PAYHERO_CALLBACK_URL ||
+      (req.headers.host ? `${req.protocol || 'https'}://${req.headers.host}/api/payhero/callback` : 'https://preocryptofx.com/api/payhero/callback');
+
+    const customerDisplayName = customer_name || username || 'Trader';
+
+    const payheroPayload = {
+      amount: kesAmount,
+      phone_number: formattedPhone,
+      channel_id: numericChannelId,
+      provider: 'm-pesa',
+      external_reference: reference,
+      customer_name: customerDisplayName.substring(0, 50),
+      callback_url: defaultCallback
+    };
+
+    console.log(`[PayHero] Initiating payment with PayHero API:`, payheroPayload);
+
+    const payheroResponse = await axios.post(`${PAYHERO_BASE_URL}/payments`, payheroPayload, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json'
+      },
+      timeout: 20000
+    });
+
+    console.log('[PayHero] API Response:', payheroResponse.status, payheroResponse.data);
+
+    const resData = payheroResponse.data || {};
+    const isSuccess = resData.success === true ||
+      resData.status === 'QUEUED' ||
+      resData.status === 'SUCCESS' ||
+      payheroResponse.status === 200 ||
+      payheroResponse.status === 201;
+
+    if (isSuccess) {
+      return res.json({
+        success: true,
+        reference: reference,
+        external_reference: reference,
+        amount: kesAmount,
+        payhero_reference: resData.reference || null,
+        message: resData.message || 'M-Pesa STK Push prompt sent! Please enter your PIN on your phone.'
+      });
+    } else {
+      throw new Error(resData.message || resData.error || 'Failed to queue M-Pesa payment');
+    }
+  } catch (error: any) {
+    const errorDetails = error.response?.data || error.message;
+    console.error('[PayHero] Initiation Error:', errorDetails);
+
+    // Reject transaction if created
     if (supabaseAdmin && userId) {
       try {
-        const { data: insertedTx, error: dbError } = await supabaseAdmin.from('transactions').insert({
-          user_id: userId,
-          type: 'DEPOSIT',
-          amount: usdAmount,
-          status: 'pending',
-          account_type: 'REAL',
-          method: 'HashBack STK Push',
-          external_id: reference,
-          timestamp: new Date().toISOString()
-        }).select('id').single();
-
-        if (dbError) {
-          console.error('[HashBack] DB Error:', dbError);
-          return res.status(500).json({ success: false, error: 'Database error: Failed to record transaction.' });
-        }
-        txId = insertedTx.id;
-      } catch (e: any) {
-        console.error('[HashBack] DB Exception:', e.message);
-        return res.status(500).json({ success: false, error: 'Database exception: Failed to process transaction.' });
-      }
-    } else if (!userId) {
-      return res.status(400).json({ success: false, error: 'User identification required for deposit.' });
-    } else if (!supabaseAdmin) {
-      console.warn('[HashBack] supabaseAdmin is not initialized. Missing SUPABASE_SERVICE_ROLE_KEY.');
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Backend error: Database connection not established (SUPABASE_SERVICE_ROLE_KEY may be missing on your server).' 
-      });
-    }
-
-    // Return configuration for HashPay Button flow (Frontend handles the actual prompt)
-    console.log(`[HashBack] Initiation Success: Ref=${reference}, KES=${kesAmount}`);
-    res.json({
-      success: true,
-      account: HASHBACK_ACCOUNT_ID,
-      amount: kesAmount,
-      reference: reference
-    });
-  } catch (error: any) {
-    console.error('[HashBack] Initiation Error:', error.message);
-    
-    // If initiation failed but we created a transaction, mark it as rejected
-    try {
-      const authHeader = req.headers.authorization;
-      const userId = req.body.userId;
-      if (supabaseAdmin && userId) {
         await supabaseAdmin.from('transactions')
-          .update({ 
-            status: 'rejected' 
-          })
+          .update({ status: 'rejected' })
           .eq('user_id', userId)
           .eq('status', 'pending')
           .eq('external_id', reference);
+      } catch (cleanupErr) {
+        console.error('[PayHero] Failed to reject failed transaction:', cleanupErr);
       }
-    } catch (cleanupErr) {
-      console.error('[HashBack] Failed to reject failed initiation:', cleanupErr);
     }
 
-    res.status(500).json({ success: false, error: 'Failed to prepare payment.' });
+    const userMsg = typeof errorDetails === 'object'
+      ? (errorDetails.message || errorDetails.error || 'Failed to initiate M-Pesa payment with PayHero.')
+      : (error.message || 'Failed to initiate M-Pesa payment with PayHero.');
+
+    res.status(500).json({ success: false, error: userMsg, details: errorDetails });
   }
 });
+
 
 // FinAPI STK Push Initiation
 router.post(['/finapi/stk-push', '/api/stk-push/'], async (req, res) => {
@@ -1942,325 +2009,253 @@ app.get('/api/server-time', (req, res) => {
   res.json({ server_time_iso: new Date().toISOString() });
 });
 
-// HashBack Webhook handler
-// HashBack Webhook
-router.post(['/hashback/webhook', '/.netlify/functions/hashback-webhook'], async (req: any, res) => {
-  const signature = req.headers['x-hashpay-signature'] as string;
-  const rawBody = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
-  
-  console.log('[HashBack Webhook] Signature Header:', signature);
-  console.log('[HashBack Webhook] RawBody Length:', rawBody.length);
-  console.log('[HashBack Webhook] Payload:', JSON.stringify(req.body, null, 2));
+// PayHero Webhook / Callback handler
+router.post([
+  '/payhero/callback',
+  '/api/payhero/callback',
+  '/payhero/webhook',
+  '/api/payhero/webhook',
+  '/.netlify/functions/payhero-callback',
+  '/.netlify/functions/payhero-webhook'
+], async (req, res) => {
+  console.log('[PayHero Callback] Received payload:', JSON.stringify(req.body, null, 2));
 
-  // 1. Verify Signature (Authoritative)
-  if (HASHBACK_WEBHOOK_SECRET) {
-    const hmac = crypto.createHmac('sha256', HASHBACK_WEBHOOK_SECRET);
-    hmac.update(rawBody);
-    const expectedSignature = hmac.digest('hex');
-    const receivedHash = signature?.startsWith('sha256=') ? signature.substring(7) : signature;
-    
-    const isValid = receivedHash && expectedSignature && 
-                    receivedHash.length === expectedSignature.length &&
-                    crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(expectedSignature));
-
-    if (!isValid) {
-      console.warn('[HashBack Webhook] HMAC verification failed.');
-      console.log(`[HashBack Webhook] Received: ${receivedHash}`);
-      console.log(`[HashBack Webhook] Expected: ${expectedSignature}`);
-      // return res.status(401).send('Invalid signature'); // Temporarily allow for debugging if secret is wrong
-    } else {
-      console.log('[HashBack Webhook] Signature verified.');
-    }
-  }
-
-  // 2. Extract Data
   const body = req.body || {};
-  const dataPayload = body.payload || {};
-  const stkCallback = body.Body?.stkCallback || {};
-  
-  const event = (body.event || dataPayload.event || '').toString().toLowerCase();
-  const resultCode = body.ResponseCode !== undefined ? Number(body.ResponseCode) :
-                    (stkCallback.ResultCode !== undefined ? Number(stkCallback.ResultCode) : 
-                    (body.ResultCode !== undefined ? Number(body.ResultCode) : null));
-  
-  const possibleReferences = [
-    body.TransactionReference,
-    body.MerchantRequestID,
-    body.CheckoutRequestID,
-    stkCallback.MerchantRequestID,
-    stkCallback.CheckoutRequestID,
-    body.reference,
+  const statusStr = (body.status || '').toString().toLowerCase();
+  const isSuccess = body.success === true || ['success', 'completed', 'successful', 'paid'].includes(statusStr);
+  const isFailure = body.success === false || ['failed', 'rejected', 'cancelled', 'canceled'].includes(statusStr);
+
+  const possibleRefs = [
     body.external_reference,
-    body.TransactionID,
-    body.TransactionReceipt,
-    dataPayload.reference,
-    dataPayload.MerchantRequestID,
-    dataPayload.CheckoutRequestID
+    body.reference,
+    body.provider_reference,
+    body.MerchantRequestID,
+    body.CheckoutRequestID
   ].filter(Boolean).map(String);
 
-  const reference = possibleReferences[0];
-  
-  // 3. Success Check
-  const isSuccessEvent = ['payment.success', 'transaction.success', 'completed', 'success'].some(s => event.includes(s));
-  const isResultSuccess = resultCode === 0;
-  
-  // Success if ResultCode is 0 OR it's a success event with no error code
-  const success = isResultSuccess || (isSuccessEvent && (resultCode === null || isResultSuccess));
-  
-  const failure = (resultCode !== null && resultCode !== 0) || 
-                  ['failed', 'cancelled', 'rejected', 'void'].some(f => event.includes(f));
+  console.log(`[PayHero Callback] Status: "${statusStr}", isSuccess: ${isSuccess}, isFailure: ${isFailure}, refs:`, possibleRefs);
 
-  console.log(`[HashBack Webhook] Final Decision: event="${event}", code=${resultCode}, success=${success}, fail=${failure}, ref=${reference}`);
+  if (possibleRefs.length === 0) {
+    console.warn('[PayHero Callback] No reference found in payload.');
+    return res.json({ success: false, message: 'No reference found in payload' });
+  }
 
-  if (possibleReferences.length === 0) {
-    console.warn('[HashBack Webhook] No reference found in payload. Skipping.');
-    return res.json({ success: false, error: 'No reference' });
+  if (!supabaseAdmin) {
+    console.error('[PayHero Callback] Supabase admin client not initialized.');
+    return res.status(500).json({ error: 'Supabase admin not configured' });
   }
 
   try {
-    if (supabaseAdmin) {
-      // Find the transaction using any possible reference
-      let tx = null;
-      
-      const filteredRefs = possibleReferences.filter(r => r && r !== 'undefined' && r !== 'null' && r.length > 3);
+    // Find transaction
+    const { data: tx, error: fetchError } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .in('external_id', possibleRefs)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      // Attempt 1: Direct match by external_id
-      const { data: tx1 } = await supabaseAdmin
-        .from('transactions')
-        .select('*')
-        .in('external_id', filteredRefs)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      tx = tx1;
-
-      // Attempt 2: Metadata match skipped (column missing)
-      if (!tx) {
-        // Skipping metadata fallback
-      }
-
-      if (tx) {
-        console.log(`[HashBack Webhook] Found transaction ${tx.id} (Status: ${tx.status})`);
-
-        // Idempotency: Skip if already successful
-        if (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') {
-          console.log(`[HashBack Webhook] Transaction ${tx.id} already successful. Skipping.`);
-          return res.json({ success: true, message: 'Already processed' });
-        }
-
-        if (success) {
-          const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-          const kesReceived = Number(
-            body.TransactionAmount || 
-            stkCallback.CallbackMetadata?.Item?.find((i: any) => i.Name === 'Amount')?.Value ||
-            body.Amount || 
-            dataPayload.amount ||
-            0
-          );
-          
-          const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
-          
-          console.log(`[HashBack Webhook] Success confirmed for ${tx.id}. Crediting $${usdToCredit.toFixed(2)}...`);
-
-          // 1. Try RPC for atomic balance update FIRST (This also updates status to 'completed')
-          const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
-            t_id: tx.id,
-            u_id: tx.user_id,
-            amount: usdToCredit
-          });
-
-          if (rpcError) {
-            console.error('[HashBack Webhook] RPC Failed:', rpcError.message);
-            
-            // Fallback: Atomic increment to prevent double crediting
-            const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', tx.id).single();
-            
-            if (freshTx && freshTx.status !== 'completed' && freshTx.status !== 'successful') {
-              console.log(`[HashBack Webhook] Falling back to status update for ${tx.id} (trigger will handle REAL credit)`);
-              
-              // Update status and amount - trigger will handle the REAL credit
-              await supabaseAdmin.from('transactions').update({
-                status: 'successful',
-                amount: usdToCredit
-              }).eq('id', tx.id);
-
-              // Handle DEMO manually
-              if (freshTx.account_type === 'DEMO') {
-                const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', tx.user_id).single();
-                if (userData) {
-                  const newBalance = Number((Number(userData.demo_balance || 0) + usdToCredit).toFixed(2));
-                  await supabaseAdmin.from('users').update({ demo_balance: newBalance }).eq('id', tx.user_id);
-                }
-              }
-            }
-          }
- else if (rpcResult === true) {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} successfully processed via RPC.`);
-          } else {
-            console.log(`[HashBack Webhook] Transaction ${tx.id} already processed or skipped by RPC.`);
-          }
-        } else if (failure) {
-          console.log(`[HashBack Webhook] Marking Transaction ${tx.id} as rejected.`);
-          await supabaseAdmin.from('transactions').update({ 
-            status: 'rejected'
-          }).eq('id', tx.id);
-        }
-      } else {
-        console.warn(`[HashBack Webhook] Matching transaction not found for refs: ${filteredRefs.join(', ')}`);
-      }
+    if (fetchError) {
+      console.error('[PayHero Callback] DB Fetch error:', fetchError);
     }
 
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('[HashBack Webhook] Error:', error.message);
-    res.status(500).json({ error: 'Internal processing error' });
+    if (!tx) {
+      console.warn(`[PayHero Callback] No matching transaction found for refs: ${possibleRefs.join(', ')}`);
+      return res.json({ success: true, message: 'Transaction not found in database, acknowledged' });
+    }
+
+    console.log(`[PayHero Callback] Found transaction ${tx.id} with current status "${tx.status}"`);
+
+    // Idempotency: skip if already credited
+    if (tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful') {
+      console.log(`[PayHero Callback] Transaction ${tx.id} already credited. Skipping.`);
+      return res.json({ success: true, message: 'Already processed' });
+    }
+
+    if (isSuccess) {
+      const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
+      const kesReceived = Number(body.amount || 0);
+      const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+
+      console.log(`[PayHero Callback] Confirmed success for ${tx.id}. Crediting $${usdToCredit.toFixed(2)} to user ${tx.user_id}...`);
+
+      const methodLabel = `PayHero M-Pesa (${body.provider_reference || body.reference || tx.external_id})`;
+
+      // 1. Try RPC for atomic balance increment
+      const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+        t_id: tx.id,
+        u_id: tx.user_id,
+        amount: usdToCredit
+      });
+
+      if (rpcError) {
+        console.warn('[PayHero Callback] RPC increment failed:', rpcError.message);
+        
+        // Fallback update
+        await supabaseAdmin.from('transactions').update({
+          status: 'successful',
+          amount: usdToCredit,
+          method: methodLabel
+        }).eq('id', tx.id);
+
+        if (tx.account_type === 'DEMO') {
+          const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', tx.user_id).single();
+          if (userData) {
+            const newBal = Number((Number(userData.demo_balance || 0) + usdToCredit).toFixed(2));
+            await supabaseAdmin.from('users').update({ demo_balance: newBal }).eq('id', tx.user_id);
+          }
+        }
+      } else {
+        console.log(`[PayHero Callback] Transaction ${tx.id} credited via RPC successfully.`);
+        await supabaseAdmin.from('transactions').update({
+          method: methodLabel
+        }).eq('id', tx.id);
+      }
+    } else if (isFailure) {
+      console.log(`[PayHero Callback] Marking transaction ${tx.id} as rejected.`);
+      await supabaseAdmin.from('transactions').update({
+        status: 'rejected'
+      }).eq('id', tx.id);
+    }
+
+    return res.json({ success: true, message: 'PayHero callback handled successfully' });
+  } catch (err: any) {
+    console.error('[PayHero Callback] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error processing callback' });
   }
 });
 
-// HashBack Verify (Polling endpoint)
-router.get(['/hashback/verify/:reference', '/api/hashback/verify/:reference'], async (req, res) => {
+// PayHero Verify (Polling endpoint)
+router.get(['/payhero/verify/:reference', '/api/payhero/verify/:reference'], async (req, res) => {
   const { reference } = req.params;
-  console.log(`[HashBack Verify] Checking ref: ${reference}`);
+  console.log(`[PayHero Verify] Polling reference: ${reference}`);
   
   if (!reference) return res.status(400).json({ error: 'Missing reference' });
 
+  if (!supabaseAdmin) {
+    return res.status(500).json({ success: false, error: 'Database connection not initialized' });
+  }
+
   try {
-    if (supabaseAdmin) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
-      const filter = isUuid ? `id.eq.${reference},external_id.eq.${reference}` : `external_id.eq.${reference}`;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+    const filter = isUuid ? `id.eq.${reference},external_id.eq.${reference}` : `external_id.eq.${reference}`;
 
-      let { data: tx, error: fetchError } = await supabaseAdmin
-        .from('transactions')
-        .select('*')
-        .or(filter)
-        .maybeSingle();
+    const { data: tx, error: fetchError } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .or(filter)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      // If not found directly, skip metadata fallback (missing column)
-      if (!tx && !fetchError) {
-        // Metadata column missing, skipping search
-      }
+    if (fetchError) {
+      console.error('[PayHero Verify] DB Fetch error:', fetchError);
+      return res.status(500).json({ success: false, error: fetchError.message });
+    }
 
-      if (fetchError) {
-        console.error('[HashBack Verify] Database Error:', fetchError);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Database fetch error',
-          details: fetchError.message
+    if (tx) {
+      const isSuccess = tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful';
+      const isRejected = tx.status === 'rejected' || tx.status === 'failed';
+
+      if (isSuccess) {
+        return res.json({
+          success: true,
+          status: 'completed',
+          isSuccess: true,
+          isFailed: false,
+          amount: tx.amount
         });
       }
 
-      // If pending OR rejected, try to fetch real-time status
-      const needsRealCheck = tx && (tx.status === 'pending' || tx.status === 'rejected');
-      
-      if (needsRealCheck && HASHBACK_API_KEY && HASHBACK_ACCOUNT_ID) {
+      if (isRejected) {
+        return res.json({
+          success: true,
+          status: 'rejected',
+          isSuccess: false,
+          isFailed: true,
+          message: 'Payment was cancelled or rejected.'
+        });
+      }
+
+      // If pending, check with PayHero API in real-time
+      const authHeader = getPayheroAuthHeader();
+      if (authHeader) {
         try {
-          console.log(`[HashBack Verify] Querying HashBack API for real-time status of ${reference}`);
-          const queryResponse = await axios.post(`${HASHBACK_BASE_URL}/stkpush/query/`, {
-            api_key: HASHBACK_API_KEY,
-            account_id: HASHBACK_ACCOUNT_ID,
-            reference: reference
-          }, { timeout: 10000 });
+          console.log(`[PayHero Verify] Querying PayHero transaction-status API for: ${reference}`);
+          const statusRes = await axios.get(`${PAYHERO_BASE_URL}/transaction-status?reference=${reference}`, {
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          });
 
-          console.log(`[HashBack Verify] HashBack API Response:`, JSON.stringify(queryResponse.data, null, 2));
-          
-          const hbData = queryResponse.data;
-          const hbStatus = (hbData.status || hbData.ResultDesc || hbData.ResponseDescription || '').toLowerCase();
-          const hbResultCode = hbData.ResponseCode !== undefined ? Number(hbData.ResponseCode) :
-                             (hbData.ResultCode !== undefined ? Number(hbData.ResultCode) : null);
+          console.log('[PayHero Verify] PayHero API status result:', statusRes.data);
+          const pData = statusRes.data || {};
+          const pStatus = (pData.status || '').toString().toUpperCase();
+          const pSuccess = pData.success === true || pStatus === 'SUCCESS';
+          const pFailed = pData.success === false || pStatus === 'FAILED' || pStatus === 'CANCELLED';
 
-          const isHbSuccess = ['success', 'completed', 'successful', 'paid', 'approved', 'done', '0', '00'].some(s => hbStatus.includes(s)) || hbResultCode === 0;
-          const isHbFailure = ['fail', 'reject', 'cancel', 'error', 'denied', 'insufficient', 'canceled', 'rejected', 'void'].some(f => hbStatus.includes(f)) || (hbResultCode !== null && hbResultCode !== 0);
-
-          if (isHbSuccess && tx.status !== 'completed' && tx.status !== 'successful') {
-            console.log(`[HashBack Verify] Real-time SUCCESS detected for ${reference}. Syncing...`);
+          if (pSuccess && tx.status !== 'completed' && tx.status !== 'successful') {
+            console.log(`[PayHero Verify] Real-time SUCCESS detected for ${tx.id}! Crediting...`);
             const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-            const kesReceived = Number(hbData.TransactionAmount || hbData.amount || hbData.Amount || 0);
+            const kesReceived = Number(pData.amount || 0);
             const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
-            // 1. Try RPC for atomic balance update FIRST (This also updates status to 'successful')
-            const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+            const methodLabel = `PayHero M-Pesa (${pData.provider_reference || pData.reference || reference})`;
+
+            const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
               t_id: tx.id,
               u_id: tx.user_id,
               amount: usdToCredit
             });
 
             if (rpcError) {
-              console.warn(`[HashBack Verify] RPC failed for ${tx.id}:`, rpcError.message);
-              
-              // Fallback: Atomic increment
-              const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', tx.id).single();
-              if (freshTx && freshTx.status !== 'completed' && freshTx.status !== 'successful') {
-                console.log(`[HashBack Verify] Falling back to status update for ${tx.id} (trigger will handle REAL credit)`);
-                
-                // Update status and amount
-                await supabaseAdmin.from('transactions').update({ 
-                  status: 'successful',
-                  amount: usdToCredit
-                }).eq('id', tx.id);
-
-                // Handle DEMO manually
-                if (freshTx.account_type === 'DEMO') {
-                  const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', tx.user_id).single();
-                  if (userData) {
-                    const newBalance = Number((Number(userData.demo_balance || 0) + usdToCredit).toFixed(2));
-                    await supabaseAdmin.from('users').update({ demo_balance: newBalance }).eq('id', tx.user_id);
-                  }
-                }
-              }
-            }
- else if (rpcResult === true) {
-              console.log(`[HashBack Verify] Transaction ${tx.id} balance successfully updated via RPC.`);
+              await supabaseAdmin.from('transactions').update({
+                status: 'successful',
+                amount: usdToCredit,
+                method: methodLabel
+              }).eq('id', tx.id);
             } else {
-              console.log(`[HashBack Verify] Transaction ${tx.id} already processed or skipped by RPC.`);
+              await supabaseAdmin.from('transactions').update({
+                method: methodLabel
+              }).eq('id', tx.id);
             }
 
-            // Fetch final state to return accurate status
-            const { data: finalTx } = await supabaseAdmin.from('transactions').select('status').eq('id', tx.id).single();
-            const displayStatus = finalTx?.status || 'completed';
-
-            console.log(`[HashBack Verify] Verification complete for ${tx.id}. Status: ${displayStatus}`);
-            return res.json({ 
-              success: true, 
-              status: (displayStatus === 'success' || displayStatus === 'successful') ? 'completed' : displayStatus, 
-              isSuccess: displayStatus === 'completed' || displayStatus === 'success' || displayStatus === 'successful', 
-              isFailed: displayStatus === 'rejected' || displayStatus === 'failed'
+            return res.json({
+              success: true,
+              status: 'completed',
+              isSuccess: true,
+              isFailed: false
             });
-          } else if (isHbFailure && tx.status !== 'completed') {
-            console.log(`[HashBack Verify] Real-time FAILURE detected for ${reference}. Marking as rejected.`);
-            await supabaseAdmin.from('transactions').update({ 
-              status: 'rejected'
-            }).eq('id', tx.id);
-            return res.json({ success: true, status: 'rejected', isSuccess: false, isFailed: true, message: hbStatus });
+          } else if (pFailed && tx.status !== 'completed') {
+            console.log(`[PayHero Verify] Real-time FAILURE detected for ${tx.id}`);
+            await supabaseAdmin.from('transactions').update({ status: 'rejected' }).eq('id', tx.id);
+            return res.json({
+              success: true,
+              status: 'rejected',
+              isSuccess: false,
+              isFailed: true,
+              message: pData.message || 'Payment cancelled or failed'
+            });
           }
         } catch (queryErr: any) {
-          console.error('[HashBack Verify] Real-time Query Failed:', queryErr.message);
-          // Fall through to return local status
+          console.warn('[PayHero Verify] Query status error (continuing with pending state):', queryErr.message);
         }
       }
 
-      if (tx) {
-        console.log(`[HashBack Verify] Local Status for ${reference}:`, tx.status);
-        
-        // Return standard response matching frontend expectations
-        const isActuallySuccessful = tx.status === 'completed' || tx.status === 'success' || tx.status === 'successful';
-        const isActuallyFailed = tx.status === 'rejected' || tx.status === 'failed';
-
-        return res.json({
-          success: isActuallySuccessful,
-          status: isActuallySuccessful ? 'completed' : (isActuallyFailed ? 'rejected' : 'pending'),
-          isSuccess: isActuallySuccessful,
-          isFailed: isActuallyFailed,
-          message: isActuallySuccessful ? 'Transaction confirmed' : (isActuallyFailed ? 'Transaction rejected' : 'Waiting for payment...'),
-          db_status: tx.status
-        });
-      }
+      return res.json({
+        success: true,
+        status: 'pending',
+        isSuccess: false,
+        isFailed: false
+      });
     }
-    
-    res.json({ success: true, status: 'pending', isSuccess: false, isFailed: false, message: 'Transaction record not found yet.' });
-  } catch (error: any) {
-    console.error('[HashBack Verify] Exception:', error);
-    res.status(500).json({ success: false, error: error.message, isFailed: true });
+
+    return res.status(404).json({ success: false, error: 'Transaction not found' });
+  } catch (err: any) {
+    console.error('[PayHero Verify] Error:', err.message);
+    return res.status(500).json({ error: 'Internal verification error' });
   }
 });
 
@@ -2333,7 +2328,7 @@ router.post('/trades/open', async (req, res) => {
 
     // 3. Update balance and create trade atomically
     const { error: balanceError } = await supabaseAdmin.from('users').update({
-      [balanceField]: Number((currentBalance - amount).toFixed(2))
+      [balanceField]: Math.max(0, Number((currentBalance - amount).toFixed(2)))
     }).eq('id', authUser.id);
     
     if (balanceError) {
@@ -2764,18 +2759,19 @@ router.post('/admin/credit-user', async (req, res) => {
 });
 
 router.get('/health', (req, res) => {
+  const auth = getPayheroAuthHeader();
   const configStatus = {
     hasSupabaseAdmin: !!supabaseAdmin,
-    hasHashbackKey: !!HASHBACK_API_KEY,
-    hasHashbackAccountId: !!HASHBACK_ACCOUNT_ID,
+    hasPayheroKey: !!auth,
+    hasPayheroChannelId: !!PAYHERO_CHANNEL_ID,
     supabaseUrl: !!supabaseUrl,
     supabaseAnonKey: !!supabaseAnonKey
   };
 
   const issues = [];
   if (!configStatus.hasSupabaseAdmin) issues.push('SUPABASE_SERVICE_ROLE_KEY is missing. Balance updates will fail.');
-  if (!configStatus.hasHashbackKey) issues.push('HASHBACK_API_KEY is missing.');
-  if (!configStatus.hasHashbackAccountId) issues.push('HASHBACK_ACCOUNT_ID is missing.');
+  if (!configStatus.hasPayheroKey) issues.push('PAYHERO_API_KEY is missing.');
+  if (!configStatus.hasPayheroChannelId) issues.push('PAYHERO_CHANNEL_ID is missing.');
 
   res.json({ 
     status: issues.length === 0 ? 'ok' : 'degraded', 

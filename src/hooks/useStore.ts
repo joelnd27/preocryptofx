@@ -2570,75 +2570,33 @@ export function useStore() {
     }
 
     try {
-      console.log('[Hashback] Initiating Payment...');
-      const response = await axios.post('/api/hashback/stk-push', {
+      console.log('[PayHero] Initiating M-Pesa STK Push...');
+      const response = await axios.post('/api/payhero/stk-push', {
         amount: amountUsd,
         userId: user.id,
-        phone: phone || user.phone
+        phone: phone || user.phone,
+        customer_name: user.name || user.email || 'Trader'
       });
 
-      console.log('[Hashback] Backend Response:', response.data);
+      console.log('[PayHero] Backend Response:', response.data);
 
       if (response.data.success) {
-        const { reference, account, amount: kesAmount } = response.data;
+        const reference = response.data.reference || response.data.external_reference;
         
-        // Use HashPay Button (Popup) if available
-        const openPopup = () => {
-          if (typeof window !== 'undefined' && (window as any).HashPay) {
-            console.log('[HashPay] Using HashPay Button popup');
-            const hp = (window as any).HashPay;
-            const handler = hp.setup({
-              account: account,
-              amount: kesAmount,
-              reference: reference,
-              onSuccess: (txn: any) => {
-                console.log('[HashPay] Success:', txn);
-                if (onSdkSuccess) onSdkSuccess(txn);
-              },
-              onCancel: () => {
-                console.log('[HashPay] Cancelled');
-                if (onSdkCancel) onSdkCancel('Payment cancelled');
-              },
-              onError: (err: any) => {
-                console.error('[HashPay] Error:', err);
-                const errMsg = typeof err === 'string' ? err : (err?.message || 'Payment error');
-                if (onSdkError) onSdkError(errMsg);
-              }
-            });
-            
-            if (handler && typeof handler.openIframe === 'function') {
-              handler.openIframe();
-              return true;
-            }
-          }
-          return false;
-        };
-
-        // Try immediately, then with a small delay if it fails (script might still be loading)
-        if (!openPopup()) {
-          console.warn('[HashPay] Library not ready, retrying in 500ms...');
-          setTimeout(() => {
-            if (!openPopup()) {
-              console.error('[HashPay] Library failed to load after retry.');
-              if (onSdkError) onSdkError('Payment library failed to load. Please refresh and try again.');
-            }
-          }, 500);
-        }
-        
-        // Refresh data to show the pending transaction in the history immediately
+        // Refresh data so the pending transaction appears in history immediately
         await refreshData();
         
         return reference;
       }
       
-      const errorMsg = response.data.message || response.data.error || 'Failed to initiate payment';
+      const errorMsg = response.data.message || response.data.error || 'Failed to initiate M-Pesa payment';
       throw new Error(errorMsg);
     } catch (error: any) {
       const errorData = error.response?.data;
       const serverError = typeof errorData === 'object' ? (errorData.message || errorData.error || errorData.details) : null;
-      const errorMsg = serverError || error.message || 'Failed to initiate payment';
+      const errorMsg = serverError || error.message || 'Failed to initiate M-Pesa payment';
       
-      console.error('Hashback Initiation Error Detail:', error.response?.status, errorData);
+      console.error('[PayHero] Initiation Error Detail:', error.response?.status, errorData);
       throw new Error(errorMsg);
     }
   };
@@ -2649,10 +2607,10 @@ export function useStore() {
 
   const checkPaymentStatus = async (transaction_id: string) => {
     try {
-      const response = await axios.get(`/api/hashback/verify/${transaction_id}`);
+      const response = await axios.get(`/api/payhero/verify/${transaction_id}`);
       return response.data;
     } catch (error: any) {
-      console.error('Error checking payment status:', error.message);
+      console.error('[PayHero] Error checking payment status:', error.message);
       return null;
     }
   };

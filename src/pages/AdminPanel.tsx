@@ -603,23 +603,23 @@ export default function AdminPanel() {
                         <div>
                           <p className={cn(
                             "font-bold text-sm",
-                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('hashback') || t.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
+                            t.type === 'DEPOSIT' || t.method?.toLowerCase().includes('payhero') || t.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
                           )}>
                             {t.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(t.amount)}
                           </p>
                           <div className="mt-1">
                             {(() => {
                               const method = t.method || 'Direct';
-                              if (method.toLowerCase().includes('hashback') || method.toLowerCase().includes('finapi')) {
-                              const isHashback = method.toLowerCase().includes('hashback');
-                              const label = isHashback ? 'HASHBACK' : 'FINAPI';
+                              const methodLower = method.toLowerCase();
+                              if (methodLower.includes('payhero') || methodLower.includes('finapi')) {
+                              const label = methodLower.includes('payhero') ? 'PAYHERO' : 'FINAPI';
                               const idMatch = method.match(/\(([^)]+)\)/);
                               const id = idMatch ? idMatch[1] : null;
                               
                               if (t.status === 'completed' || t.status === 'success' || t.status === 'successful') {
                                 return (
                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
-                                    {method.toLowerCase().includes('callback') || method.toLowerCase().includes('status') || method.toLowerCase().includes('webhook')
+                                    {methodLower.includes('callback') || methodLower.includes('status') || methodLower.includes('webhook')
                                       ? `${label} CALLBACK ${id ? `(${id})` : ''}`
                                       : `${label} ${id ? `(${id})` : ''}`}
                                   </p>

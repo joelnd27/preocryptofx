@@ -499,7 +499,7 @@ export default function Transactions() {
                         <div className="flex flex-col">
                           <span className={cn(
                             "text-[11px] font-bold font-mono",
-                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') || tx.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
+                            tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') || tx.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
                           )}>
                             {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                           </span>
@@ -564,7 +564,7 @@ export default function Transactions() {
                     <div className="text-right">
                       <p className={cn(
                         "text-[11px] font-bold font-mono",
-                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('hashback') || tx.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
+                        tx.type === 'DEPOSIT' || tx.method?.toLowerCase().includes('payhero') || tx.method?.toLowerCase().includes('finapi') ? "text-green-500" : "text-red-500"
                       )}>
                         {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </p>
@@ -1030,7 +1030,7 @@ export default function Transactions() {
                         ) : (
                           <div className="flex items-center justify-center gap-2">
                             {modalType === 'DEPOSIT' 
-                              ? (paymentMethod === 'MPESA' ? 'Pay with HashBack' : 'Deposit Now') 
+                              ? (paymentMethod === 'MPESA' ? 'Pay with M-Pesa' : 'Deposit Now') 
                               : 'Withdraw Now'} 
                             <ArrowRight size={16} />
                           </div>
