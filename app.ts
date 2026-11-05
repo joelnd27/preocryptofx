@@ -2804,6 +2804,7 @@ app.post('/', (req, res) => {
 
 app.use('/api', router);
 app.use('/.netlify/functions/api', router);
+app.use('/', router);
 
 // Global 404 Handler for undefined routes
 app.use((req, res) => {

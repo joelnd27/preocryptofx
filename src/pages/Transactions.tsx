@@ -203,18 +203,17 @@ export default function Transactions() {
     .slice(0, 20);
 
   useEffect(() => {
-    if (user?.phone && modalType === 'WITHDRAW') {
+    if (user?.phone) {
       setPhone(user.phone);
     }
-  }, [user?.phone, isModalOpen, modalType]);
+  }, [user?.phone, isModalOpen]);
 
   const isValidPhone = (p: string) => {
-    // If it looks like a Kenyan number, use strict validation
-    if (p.startsWith('+254')) {
-      return /^\+254[71]\d{8}$/.test(p);
-    }
-    // Otherwise, just ensure it starts with + and has at least 7 digits
-    return /^\+\d{7,15}$/.test(p);
+    const cleaned = (p || '').replace(/\D/g, '');
+    if (cleaned.length === 10 && (cleaned.startsWith('07') || cleaned.startsWith('01'))) return true;
+    if (cleaned.length === 12 && (cleaned.startsWith('2547') || cleaned.startsWith('2541'))) return true;
+    if (cleaned.length === 9 && (cleaned.startsWith('7') || cleaned.startsWith('1'))) return true;
+    return cleaned.length >= 9 && cleaned.length <= 15;
   };
 
   const maskPhone = (p: string) => {
@@ -258,6 +257,19 @@ export default function Transactions() {
           type: 'info'
         });
         return;
+      }
+
+      if (paymentMethod === 'MPESA') {
+        const cleaned = (phone || '').replace(/\D/g, '');
+        if (!cleaned || cleaned.length < 9) {
+          setAlertConfig({
+            isOpen: true,
+            title: 'M-Pesa Phone Number Required',
+            message: 'Please enter your M-Pesa phone number (e.g. 0712345678 or 254712345678) where the STK prompt will be sent.',
+            type: 'warning'
+          });
+          return;
+        }
       }
 
       setIsProcessing(true);
@@ -904,45 +916,43 @@ export default function Transactions() {
                         <>
                           <div className={cn(
                             "space-y-2", 
-                            (modalType === 'WITHDRAW' && (withdrawalMethod === 'BANK' || withdrawalMethod === 'CRYPTO')) ||
-                            (modalType === 'DEPOSIT' && paymentMethod === 'MPESA')
+                            (modalType === 'WITHDRAW' && (withdrawalMethod === 'BANK' || withdrawalMethod === 'CRYPTO'))
                               ? "hidden" 
                               : ""
                           )}>
-                            <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                              {modalType === 'DEPOSIT' ? 'M-Pesa Number (Optional)' : 'Registered Phone'}
+                            <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                              <span>{modalType === 'DEPOSIT' ? 'M-Pesa Phone Number' : 'Registered Phone'}</span>
+                              {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && (
+                                <span className="text-[9px] font-semibold text-blue-500 normal-case">STK prompt sent here</span>
+                              )}
                             </label>
                             <div className="relative">
-                              <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                              <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={15} />
                               <input
                                 type="tel"
-                                required={modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA'}
+                                required={modalType === 'DEPOSIT' && paymentMethod === 'MPESA' || (modalType === 'WITHDRAW' && withdrawalMethod === 'MPESA')}
                                 value={modalType === 'WITHDRAW' ? maskPhone(phone) : phone}
                                 onChange={(e) => {
                                   if (modalType === 'DEPOSIT') {
-                                    let val = e.target.value;
-                                    // Ensure it starts with +254
-                                    if (val && !val.startsWith('+')) {
-                                      val = '+' + val.replace(/\D/g, '');
-                                    } else if (val) {
-                                      val = '+' + val.substring(1).replace(/\D/g, '');
-                                    }
-                                    setPhone(val);
+                                    setPhone(e.target.value);
                                   }
                                 }}
                                 className={cn(
                                   "w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-4 text-sm font-bold focus:outline-none transition-colors text-slate-900 dark:text-white",
                                   modalType === 'WITHDRAW' ? "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70" : "focus:border-blue-500"
                                 )}
-                                placeholder="+CountryCodeXXXXXXXXX"
+                                placeholder={modalType === 'DEPOSIT' ? "e.g. 0712345678 or 254712345678" : "+CountryCodeXXXXXXXXX"}
                                 readOnly={modalType === 'WITHDRAW'}
                               />
                             </div>
-                            {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && phone.length > 4 && !isValidPhone(phone) && (
-                              <p className="text-[10px] text-red-500 font-bold mt-1 animate-pulse">
-                                {phone.startsWith('+254') 
-                                  ? 'Invalid Kenyan number. Format: +254 (7/1)XXXXXXXX'
-                                  : 'Invalid phone format. Please include country code (e.g. +44...)'}
+                            {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && (
+                              <p className="text-[9px] text-slate-500 dark:text-slate-400">
+                                Enter the Safaricom M-Pesa number to receive the payment prompt on your phone.
+                              </p>
+                            )}
+                            {modalType === 'DEPOSIT' && paymentMethod === 'MPESA' && phone.length > 3 && !isValidPhone(phone) && (
+                              <p className="text-[10px] text-amber-500 font-bold mt-1">
+                                Format: 07XXXXXXXX, 01XXXXXXXX, or 254XXXXXXXX
                               </p>
                             )}
                           </div>
