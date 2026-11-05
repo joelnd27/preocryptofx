@@ -2581,7 +2581,7 @@ export function useStore() {
       console.log('[PayHero] Backend Response:', response.data);
 
       if (response.data.success) {
-        const reference = response.data.reference || response.data.external_reference;
+        const reference = response.data.query_reference || response.data.payhero_reference || response.data.reference || response.data.external_reference;
         
         // Refresh data so the pending transaction appears in history immediately
         await refreshData();

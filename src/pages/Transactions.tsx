@@ -79,11 +79,15 @@ export default function Transactions() {
     }
   }, [location.state]);
 
-  // Automatically detect when a pending transaction is completed via real-time sync
+  // Automatically detect when a pending transaction is completed or rejected via real-time sync
   useEffect(() => {
     if ((paymentStatus === 'WAITING' || paymentStatus === 'VERIFYING') && user?.transactions && currentTxRef) {
-      // Find the specific transaction we are waiting for
-      const targetTx = user.transactions.find(t => t.externalId === currentTxRef || t.id === currentTxRef);
+      // Find the specific transaction we are waiting for by ID, externalId, or method match
+      const targetTx = user.transactions.find(t => 
+        t.externalId === currentTxRef || 
+        t.id === currentTxRef || 
+        (t.method && t.method.includes(currentTxRef))
+      );
         
       if (targetTx) {
         const isSuccess = targetTx.status === 'completed' || targetTx.status === 'success' || targetTx.status === 'successful';
@@ -93,21 +97,21 @@ export default function Transactions() {
           setPaymentStatus('SUCCESS');
           setCurrentTxRef(null);
         } else if (isFailed) {
-          setPaymentStatus('FAILED');
-          setErrorMessage('Transaction failed');
+          setPaymentStatus('CANCELLED');
+          setErrorMessage('Payment was cancelled or rejected.');
           setCurrentTxRef(null);
         }
       }
     }
   }, [user?.transactions, paymentStatus, currentTxRef]);
 
-  // Handle automatic status checks for verifying transactions
+  // Handle automatic status checks for verifying transactions (1s interval for immediate feedback)
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
     let isMounted = true;
 
     if (paymentStatus === 'VERIFYING' && currentTxRef) {
-      console.log(`[Transactions] Starting poll for ${currentTxRef}`);
+      console.log(`[Transactions] Starting instant poll for ${currentTxRef}`);
       
       const poll = async () => {
         try {
@@ -120,15 +124,18 @@ export default function Transactions() {
             const statusLower = (result.status || '').toLowerCase();
             const messageLower = (result.message || '').toLowerCase();
             
-            // Robust success check matching server
-            const isSuccess = ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || 
+            // Success check
+            const isSuccess = result.isSuccess === true || 
+                             ['success', 'completed', 'successful', 'paid', 'settled', 'done'].includes(statusLower) || 
                              result.ResultCode === 0 || result.result_code === 0;
 
-            const isFailed = result.isFailed || 
+            // Immediate Failure / Cancellation check
+            const isFailed = result.isFailed === true || 
                             ['failed', 'rejected', 'cancelled', 'canceled', 'error', 'void', 'denied', 'declined', 'expired', 'timeout'].includes(statusLower) ||
                             (statusLower && (statusLower.includes('fail') || statusLower.includes('cancel') || statusLower.includes('decline'))) ||
                             (result.ResultCode !== undefined && result.ResultCode !== 0) ||
                             messageLower.includes('cancelled') ||
+                            messageLower.includes('canceled') ||
                             messageLower.includes('failed') ||
                             messageLower.includes('rejected');
 
@@ -138,17 +145,13 @@ export default function Transactions() {
               setCurrentTxRef(null);
               refreshData();
             } else if (isFailed) {
-              console.log('[Transactions] Payment FAILURE detected via polling');
-              setPaymentStatus('FAILED');
+              console.log('[Transactions] Payment FAILURE/CANCELLATION detected via polling');
+              const isUserCancelled = messageLower.includes('cancel') || statusLower.includes('cancel');
+              setPaymentStatus(isUserCancelled ? 'CANCELLED' : 'FAILED');
               
-              // Only set error message if it's a real failure message
-              let displayMsg = result.message || result.error || 'Transaction failed';
-              if (displayMsg.toLowerCase().includes('status retrieved')) {
-                // If it just says status retrieved but we are here (isFailed is true), 
-                // it might be a false positive failure or a generic message.
-                // However, we should only be here if isFailed is true.
-                displayMsg = 'Transaction failed';
-              }
+              const displayMsg = isUserCancelled 
+                ? 'Payment was cancelled on your phone.'
+                : (result.message || result.error || 'Payment failed or was cancelled.');
               setErrorMessage(displayMsg);
               setCurrentTxRef(null);
               refreshData();
@@ -165,8 +168,8 @@ export default function Transactions() {
       // Poll immediately once
       poll();
       
-      // Then set interval
-      pollInterval = setInterval(poll, 2000); // 2s for more responsive updates
+      // Fast polling interval: 1000ms so status changes (success/cancel) appear immediately
+      pollInterval = setInterval(poll, 1000);
     }
 
     return () => {

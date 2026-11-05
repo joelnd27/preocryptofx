@@ -1498,12 +1498,27 @@ router.post(['/payhero/stk-push', '/payhero/stk-push/', '/api/payhero/stk-push',
       payheroResponse.status === 201;
 
     if (isSuccess) {
+      const payheroRef = resData.reference || resData.transaction_reference || resData.CheckoutRequestID || null;
+      
+      // Update transaction record in Supabase with PayHero reference for instant bidirectional lookup
+      if (payheroRef && supabaseAdmin) {
+        try {
+          await supabaseAdmin.from('transactions')
+            .update({ method: `PayHero M-Pesa (${payheroRef})` })
+            .eq('external_id', reference);
+          console.log(`[PayHero] Linked PayHero reference ${payheroRef} to internal reference ${reference}`);
+        } catch (linkErr: any) {
+          console.warn('[PayHero] Could not link PayHero reference:', linkErr.message);
+        }
+      }
+
       return res.json({
         success: true,
         reference: reference,
         external_reference: reference,
         amount: kesAmount,
-        payhero_reference: resData.reference || null,
+        payhero_reference: payheroRef,
+        query_reference: payheroRef || reference,
         message: resData.message || 'M-Pesa STK Push prompt sent! Please enter your PIN on your phone.'
       });
     } else {
@@ -2020,17 +2035,26 @@ router.post([
 ], async (req, res) => {
   console.log('[PayHero Callback] Received payload:', JSON.stringify(req.body, null, 2));
 
-  const body = req.body || {};
-  const statusStr = (body.status || '').toString().toLowerCase();
-  const isSuccess = body.success === true || ['success', 'completed', 'successful', 'paid'].includes(statusStr);
-  const isFailure = body.success === false || ['failed', 'rejected', 'cancelled', 'canceled'].includes(statusStr);
+  const payload = req.body?.response || req.body || {};
+  const statusStr = (payload.status || '').toString().toLowerCase();
+  const messageStr = (payload.message || payload.ResultDesc || '').toString().toLowerCase();
+
+  const isSuccess = payload.success === true || ['success', 'completed', 'successful', 'paid'].includes(statusStr);
+  const isFailure = payload.success === false ||
+    ['failed', 'rejected', 'cancelled', 'canceled'].includes(statusStr) ||
+    (payload.ResultCode !== undefined && payload.ResultCode !== 0) ||
+    messageStr.includes('cancelled') ||
+    messageStr.includes('canceled') ||
+    messageStr.includes('failed') ||
+    messageStr.includes('reject');
 
   const possibleRefs = [
-    body.external_reference,
-    body.reference,
-    body.provider_reference,
-    body.MerchantRequestID,
-    body.CheckoutRequestID
+    payload.external_reference,
+    payload.reference,
+    payload.transaction_reference,
+    payload.provider_reference,
+    payload.MerchantRequestID,
+    payload.CheckoutRequestID
   ].filter(Boolean).map(String);
 
   console.log(`[PayHero Callback] Status: "${statusStr}", isSuccess: ${isSuccess}, isFailure: ${isFailure}, refs:`, possibleRefs);
@@ -2046,8 +2070,8 @@ router.post([
   }
 
   try {
-    // Find transaction
-    const { data: tx, error: fetchError } = await supabaseAdmin
+    // Find transaction by external_id
+    let { data: tx, error: fetchError } = await supabaseAdmin
       .from('transactions')
       .select('*')
       .in('external_id', possibleRefs)
@@ -2056,7 +2080,24 @@ router.post([
       .maybeSingle();
 
     if (fetchError) {
-      console.error('[PayHero Callback] DB Fetch error:', fetchError);
+      console.error('[PayHero Callback] DB Fetch error by external_id:', fetchError);
+    }
+
+    // Fallback: search in method column
+    if (!tx) {
+      for (const ref of possibleRefs) {
+        const { data: methodTx } = await supabaseAdmin
+          .from('transactions')
+          .select('*')
+          .ilike('method', `%${ref}%`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (methodTx) {
+          tx = methodTx;
+          break;
+        }
+      }
     }
 
     if (!tx) {
@@ -2074,15 +2115,15 @@ router.post([
 
     if (isSuccess) {
       const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-      const kesReceived = Number(body.amount || 0);
+      const kesReceived = Number(payload.amount || 0);
       const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
 
       console.log(`[PayHero Callback] Confirmed success for ${tx.id}. Crediting $${usdToCredit.toFixed(2)} to user ${tx.user_id}...`);
 
-      const methodLabel = `PayHero M-Pesa (${body.provider_reference || body.reference || tx.external_id})`;
+      const methodLabel = `PayHero M-Pesa (${payload.provider_reference || payload.reference || payload.transaction_reference || tx.external_id})`;
 
       // 1. Try RPC for atomic balance increment
-      const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+      const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
         t_id: tx.id,
         u_id: tx.user_id,
         amount: usdToCredit
@@ -2112,7 +2153,7 @@ router.post([
         }).eq('id', tx.id);
       }
     } else if (isFailure) {
-      console.log(`[PayHero Callback] Marking transaction ${tx.id} as rejected.`);
+      console.log(`[PayHero Callback] Marking transaction ${tx.id} as rejected due to cancellation/failure.`);
       await supabaseAdmin.from('transactions').update({
         status: 'rejected'
       }).eq('id', tx.id);
@@ -2125,10 +2166,9 @@ router.post([
   }
 });
 
-// PayHero Verify (Polling endpoint)
+// PayHero Verify (Instant Polling endpoint)
 router.get(['/payhero/verify/:reference', '/api/payhero/verify/:reference'], async (req, res) => {
   const { reference } = req.params;
-  console.log(`[PayHero Verify] Polling reference: ${reference}`);
   
   if (!reference) return res.status(400).json({ error: 'Missing reference' });
 
@@ -2138,12 +2178,15 @@ router.get(['/payhero/verify/:reference', '/api/payhero/verify/:reference'], asy
 
   try {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
-    const filter = isUuid ? `id.eq.${reference},external_id.eq.${reference}` : `external_id.eq.${reference}`;
 
-    const { data: tx, error: fetchError } = await supabaseAdmin
-      .from('transactions')
-      .select('*')
-      .or(filter)
+    let query = supabaseAdmin.from('transactions').select('*');
+    if (isUuid) {
+      query = query.or(`id.eq.${reference},external_id.eq.${reference}`);
+    } else {
+      query = query.or(`external_id.eq.${reference},method.ilike.%${reference}%`);
+    }
+
+    const { data: tx, error: fetchError } = await query
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -2181,66 +2224,157 @@ router.get(['/payhero/verify/:reference', '/api/payhero/verify/:reference'], asy
       const authHeader = getPayheroAuthHeader();
       if (authHeader) {
         try {
-          console.log(`[PayHero Verify] Querying PayHero transaction-status API for: ${reference}`);
-          const statusRes = await axios.get(`${PAYHERO_BASE_URL}/transaction-status?reference=${reference}`, {
-            headers: {
-              'Authorization': authHeader,
-              'Content-Type': 'application/json'
-            },
-            timeout: 10000
-          });
+          // Extract PayHero internal reference if stored in method field, e.g. "PayHero M-Pesa (4d12-...)"
+          const methodMatch = (tx.method || '').match(/PayHero M-Pesa \(([^)]+)\)/);
+          const payheroRef = methodMatch ? methodMatch[1] : (!reference.startsWith('PH') ? reference : null);
 
-          console.log('[PayHero Verify] PayHero API status result:', statusRes.data);
-          const pData = statusRes.data || {};
-          const pStatus = (pData.status || '').toString().toUpperCase();
-          const pSuccess = pData.success === true || pStatus === 'SUCCESS';
-          const pFailed = pData.success === false || pStatus === 'FAILED' || pStatus === 'CANCELLED';
+          let statusRes = null;
 
-          if (pSuccess && tx.status !== 'completed' && tx.status !== 'successful') {
-            console.log(`[PayHero Verify] Real-time SUCCESS detected for ${tx.id}! Crediting...`);
-            const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
-            const kesReceived = Number(pData.amount || 0);
-            const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
-
-            const methodLabel = `PayHero M-Pesa (${pData.provider_reference || pData.reference || reference})`;
-
-            const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
-              t_id: tx.id,
-              u_id: tx.user_id,
-              amount: usdToCredit
-            });
-
-            if (rpcError) {
-              await supabaseAdmin.from('transactions').update({
-                status: 'successful',
-                amount: usdToCredit,
-                method: methodLabel
-              }).eq('id', tx.id);
-            } else {
-              await supabaseAdmin.from('transactions').update({
-                method: methodLabel
-              }).eq('id', tx.id);
+          // 1. Query transaction-status by PayHero reference
+          if (payheroRef) {
+            try {
+              statusRes = await axios.get(`${PAYHERO_BASE_URL}/transaction-status?reference=${encodeURIComponent(payheroRef)}`, {
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/json'
+                },
+                timeout: 5000
+              });
+            } catch (err: any) {
+              // 404 or transient error
             }
+          }
 
-            return res.json({
-              success: true,
-              status: 'completed',
-              isSuccess: true,
-              isFailed: false
+          // 2. Fallback query with reference param directly if different
+          if (!statusRes && reference && reference !== payheroRef) {
+            try {
+              statusRes = await axios.get(`${PAYHERO_BASE_URL}/transaction-status?reference=${encodeURIComponent(reference)}`, {
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/json'
+                },
+                timeout: 5000
+              });
+            } catch (err: any) {
+              // 404 expected if internal reference
+            }
+          }
+
+          if (statusRes && statusRes.data) {
+            const pData = statusRes.data || {};
+            const pStatus = (pData.status || '').toString().toUpperCase();
+            const pMsg = (pData.message || pData.ResultDesc || '').toString().toLowerCase();
+
+            const pSuccess = pData.success === true && (pStatus === 'SUCCESS' || pStatus === 'COMPLETED');
+            const pFailed = pData.success === false ||
+              pStatus === 'FAILED' ||
+              pStatus === 'CANCELLED' ||
+              pStatus === 'REJECTED' ||
+              (pData.ResultCode !== undefined && pData.ResultCode !== 0) ||
+              pMsg.includes('cancel') ||
+              pMsg.includes('failed') ||
+              pMsg.includes('reject');
+
+            if (pSuccess && tx.status !== 'completed' && tx.status !== 'successful') {
+              console.log(`[PayHero Verify] Real-time SUCCESS detected for ${tx.id}! Crediting...`);
+              const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
+              const kesReceived = Number(pData.amount || 0);
+              const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+
+              const methodLabel = `PayHero M-Pesa (${pData.provider_reference || pData.reference || reference})`;
+
+              const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+                t_id: tx.id,
+                u_id: tx.user_id,
+                amount: usdToCredit
+              });
+
+              if (rpcError) {
+                await supabaseAdmin.from('transactions').update({
+                  status: 'successful',
+                  amount: usdToCredit,
+                  method: methodLabel
+                }).eq('id', tx.id);
+              } else {
+                await supabaseAdmin.from('transactions').update({
+                  method: methodLabel
+                }).eq('id', tx.id);
+              }
+
+              return res.json({
+                success: true,
+                status: 'completed',
+                isSuccess: true,
+                isFailed: false,
+                amount: usdToCredit
+              });
+            } else if (pFailed && tx.status !== 'completed') {
+              console.log(`[PayHero Verify] Real-time FAILURE/CANCELLATION detected for ${tx.id}:`, pData.message || pStatus);
+              await supabaseAdmin.from('transactions').update({ status: 'rejected' }).eq('id', tx.id);
+              return res.json({
+                success: true,
+                status: 'rejected',
+                isSuccess: false,
+                isFailed: true,
+                message: pData.message || pData.ResultDesc || 'Payment was cancelled on your phone.'
+              });
+            }
+          }
+
+          // 3. Check account transactions list as fallback to catch completed M-Pesa payments
+          try {
+            const listRes = await axios.get(`${PAYHERO_BASE_URL}/transactions?per=10`, {
+              headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json'
+              },
+              timeout: 5000
             });
-          } else if (pFailed && tx.status !== 'completed') {
-            console.log(`[PayHero Verify] Real-time FAILURE detected for ${tx.id}`);
-            await supabaseAdmin.from('transactions').update({ status: 'rejected' }).eq('id', tx.id);
-            return res.json({
-              success: true,
-              status: 'rejected',
-              isSuccess: false,
-              isFailed: true,
-              message: pData.message || 'Payment cancelled or failed'
-            });
+
+            const transactionsList = listRes.data?.transactions || [];
+            const matchedTx = transactionsList.find((pt: any) =>
+              (pt.external_reference && (pt.external_reference === tx.external_id || pt.external_reference === reference)) ||
+              (payheroRef && pt.transaction_reference === payheroRef)
+            );
+
+            if (matchedTx && matchedTx.transaction_type === 'inbound_payment' && matchedTx.amount > 0) {
+              console.log(`[PayHero Verify] Found matching successful payment in PayHero list for tx ${tx.id}!`);
+              const usdKesRate = parseFloat(process.env.USD_KES_RATE || '129.58');
+              const kesReceived = Number(matchedTx.amount || 0);
+              const usdToCredit = kesReceived > 0 ? (kesReceived / usdKesRate) : Number(tx.amount);
+              const methodLabel = `PayHero M-Pesa (${matchedTx.provider_reference || matchedTx.transaction_reference || reference})`;
+
+              const { error: rpcError } = await supabaseAdmin.rpc('increment_balance_v2', {
+                t_id: tx.id,
+                u_id: tx.user_id,
+                amount: usdToCredit
+              });
+
+              if (rpcError) {
+                await supabaseAdmin.from('transactions').update({
+                  status: 'successful',
+                  amount: usdToCredit,
+                  method: methodLabel
+                }).eq('id', tx.id);
+              } else {
+                await supabaseAdmin.from('transactions').update({
+                  method: methodLabel
+                }).eq('id', tx.id);
+              }
+
+              return res.json({
+                success: true,
+                status: 'completed',
+                isSuccess: true,
+                isFailed: false,
+                amount: usdToCredit
+              });
+            }
+          } catch (listErr: any) {
+            // Ignore list fallback errors
           }
         } catch (queryErr: any) {
-          console.warn('[PayHero Verify] Query status error (continuing with pending state):', queryErr.message);
+          console.warn('[PayHero Verify] Query status error:', queryErr.message);
         }
       }
 
