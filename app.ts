@@ -1219,7 +1219,9 @@ console.log('[App] Environment Check:', {
 
 // PayHero Config
 const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.PAYHERO_AUTH_TOKEN || process.env.VITE_PAYHERO_API_KEY || '';
-const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PAYHERO_CHANNEL_ID || '';
+const rawChannelId = process.env.PAYHERO_CHANNEL_ID || process.env.VITE_PAYHERO_CHANNEL_ID || '';
+// Channel 10947 is inactive on PayHero. Channel 14539 is the active M-Pesa channel for this PayHero account.
+const PAYHERO_CHANNEL_ID = (!rawChannelId || rawChannelId === '10947') ? '14539' : rawChannelId;
 const PAYHERO_API_USERNAME = process.env.PAYHERO_API_USERNAME || process.env.PAYHERO_USERNAME || '';
 const PAYHERO_API_PASSWORD = process.env.PAYHERO_API_PASSWORD || process.env.PAYHERO_PASSWORD || '';
 const PAYHERO_BASE_URL = 'https://backend.payhero.co.ke/api/v2';
@@ -1462,13 +1464,13 @@ router.post(['/payhero/stk-push', '/payhero/stk-push/', '/api/payhero/stk-push',
       });
     }
 
-    const numericChannelId = !isNaN(Number(PAYHERO_CHANNEL_ID)) ? Number(PAYHERO_CHANNEL_ID) : PAYHERO_CHANNEL_ID;
+    let numericChannelId = !isNaN(Number(PAYHERO_CHANNEL_ID)) ? Number(PAYHERO_CHANNEL_ID) : PAYHERO_CHANNEL_ID;
     const defaultCallback = PAYHERO_CALLBACK_URL ||
       (req.headers.host ? `${req.protocol || 'https'}://${req.headers.host}/api/payhero/callback` : 'https://preocryptofx.com/api/payhero/callback');
 
     const customerDisplayName = customer_name || username || 'Trader';
 
-    const payheroPayload = {
+    let payheroPayload = {
       amount: kesAmount,
       phone_number: formattedPhone,
       channel_id: numericChannelId,
@@ -1480,13 +1482,32 @@ router.post(['/payhero/stk-push', '/payhero/stk-push/', '/api/payhero/stk-push',
 
     console.log(`[PayHero] Initiating payment with PayHero API:`, payheroPayload);
 
-    const payheroResponse = await axios.post(`${PAYHERO_BASE_URL}/payments`, payheroPayload, {
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json'
-      },
-      timeout: 20000
-    });
+    let payheroResponse;
+    try {
+      payheroResponse = await axios.post(`${PAYHERO_BASE_URL}/payments`, payheroPayload, {
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        timeout: 20000
+      });
+    } catch (primaryErr: any) {
+      console.warn('[PayHero] Initial channel failed:', primaryErr.response?.data || primaryErr.message);
+      // Fallback to verified active channel 14539 if primary channel returned 403 or error
+      if (numericChannelId !== 14539) {
+        console.log('[PayHero] Retrying STK push with active channel 14539...');
+        payheroPayload.channel_id = 14539;
+        payheroResponse = await axios.post(`${PAYHERO_BASE_URL}/payments`, payheroPayload, {
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json'
+          },
+          timeout: 20000
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
 
     console.log('[PayHero] API Response:', payheroResponse.status, payheroResponse.data);
 
