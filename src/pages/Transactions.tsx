@@ -362,11 +362,13 @@ export default function Transactions() {
           amount: val,
           status: 'pending',
           timestamp: Date.now(),
-          accountType: 'REAL',
+          accountType: user?.activeAccount || 'REAL',
           method: withdrawalMethod,
           bankName: withdrawalMethod === 'BANK' ? bankName : undefined,
           accountNumber: withdrawalMethod === 'BANK' ? accountNumber : phone
         });
+        
+        await refreshData();
         
         setAlertConfig({
           isOpen: true,
