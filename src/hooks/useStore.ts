@@ -389,12 +389,10 @@ export function useStore() {
       }
 
       // 2. Fetch User Profile - Optimized to limit egress
-      // We fetch fewer records by default and rely on Realtime for updates
       const { data: userData, error } = await supabase
         .from('users')
         .select(`
           *,
-          transactions(id, user_id, type, amount, status, created_at, method, external_id, timestamp, account_type),
           trades(
             id, coin, amount, type, price, status, profit, 
             timestamp, account_type, source, target_profit, duration
@@ -404,8 +402,6 @@ export function useStore() {
         .eq('id', session.user.id)
         .order('timestamp', { foreignTable: 'trades', ascending: false })
         .limit(100, { foreignTable: 'trades' }) 
-        .order('created_at', { foreignTable: 'transactions', ascending: false })
-        .limit(200, { foreignTable: 'transactions' }) 
         .maybeSingle();
 
       if (error) {
@@ -413,16 +409,26 @@ export function useStore() {
         return;
       }
 
+      // Fetch transactions in a separate query for robust reliability
+      const { data: transactionsData, error: txError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (txError) {
+        console.warn('[Sync] Transactions fetch warning:', txError.message);
+      }
+
       if (userData) {
         console.log('[Sync] User profile found, formatting...');
         
         // Calculate server time offset using the created_at of the fetch as a proxy if needed
-        // Or better, use the current ISO time from server if we can get it
-        // For now, we'll assume created_at is reasonably close to now
         const serverNow = new Date().getTime(); // This is still client time in browser
         
-        const sortedTransactions = (userData.transactions || [])
-          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        const sortedTransactions = (transactionsData || [])
+          .sort((a: any, b: any) => new Date(b.created_at || b.timestamp || 0).getTime() - new Date(a.created_at || a.timestamp || 0).getTime());
 
         const currentOpenTrades = (userRef.current?.trades || []).filter(t => t.status === 'OPEN');
         const incomingTrades = (userData.trades || []).map((t: any) => ({
@@ -455,13 +461,13 @@ export function useStore() {
         const incomingTransactions = sortedTransactions.map((t: any) => ({
           id: t.id,
           userId: t.user_id,
-          type: t.type,
+          type: (t.type || '').toUpperCase(),
           amount: Number(t.amount),
           status: t.status,
           timestamp: new Date(t.timestamp || t.created_at).getTime(),
-          accountType: t.account_type,
+          accountType: t.account_type || t.accountType,
           method: t.method,
-          externalId: t.external_id
+          externalId: t.external_id || t.externalId
         }));
 
         // Preserve local transactions that haven't synced yet (those with non-UUID ids or not in server list)
@@ -1559,40 +1565,12 @@ export function useStore() {
     const isReal = transaction.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: transaction.id || Math.random().toString(36).substr(2, 9),
-      status: 'pending',
-      timestamp: Date.now()
-    };
-
     // Withdrawal limits for unverified users
     if (transaction.type === 'WITHDRAW' && user.verificationStatus !== 'verified') {
       if (transaction.amount > 500) {
         throw new Error('Unverified accounts have a withdrawal limit of $500. Please verify your account to increase this limit.');
       }
     }
-
-    // Deduct balance immediately for withdrawals - Optimistic UI
-    let newBalance = user[balanceKey];
-    if (transaction.type === 'WITHDRAW') {
-      newBalance = Number((user[balanceKey] - transaction.amount).toFixed(2));
-      isInternalUpdate.current = true;
-      setTimeout(() => { isInternalUpdate.current = false; }, 5000);
-    }
-
-    // Update local state IMMEDIATELY for responsiveness
-    setUser(prev => {
-      if (!prev) return null;
-      let updatedUser = {
-        ...prev,
-        transactions: [newTransaction, ...(prev.transactions || [])]
-      };
-      if (transaction.type === 'WITHDRAW') {
-        updatedUser[balanceKey] = newBalance;
-      }
-      return updatedUser;
-    });
 
     if (isSupabaseConfigured()) {
       try {
@@ -1611,20 +1589,44 @@ export function useStore() {
           if (response.status === 200 && response.data.success) {
             const { newBalance: serverBalance, transaction: insertedTrans } = response.data;
             
-            // Sync local transaction ID with server ID
+            const mappedTx = insertedTrans ? {
+              id: insertedTrans.id,
+              userId: insertedTrans.user_id,
+              type: (insertedTrans.type || '').toUpperCase(),
+              amount: Number(insertedTrans.amount),
+              status: insertedTrans.status,
+              timestamp: new Date(insertedTrans.timestamp || insertedTrans.created_at).getTime(),
+              accountType: insertedTrans.account_type,
+              method: insertedTrans.method,
+              externalId: insertedTrans.external_id
+            } : {
+              ...transaction,
+              id: transaction.id || Math.random().toString(36).substr(2, 9),
+              status: 'pending',
+              timestamp: Date.now()
+            };
+
             setUser(prev => {
-              if (!prev || !insertedTrans) return prev;
+              if (!prev) return null;
               return {
                 ...prev,
                 [balanceKey]: serverBalance,
-                transactions: prev.transactions.map(t => t.id === newTransaction.id ? { ...t, id: insertedTrans.id } : t)
+                transactions: [mappedTx, ...(prev.transactions || [])]
               };
             });
+            return;
           } else {
             throw new Error(response.data.error || 'Withdrawal request failed');
           }
         } else {
           // Handle Deposit/other transactions via standard Supabase
+          const newTransaction: Transaction = {
+            ...transaction,
+            id: transaction.id || Math.random().toString(36).substr(2, 9),
+            status: 'pending',
+            timestamp: Date.now()
+          };
+
           const { data: insertedTrans, error: transError } = await supabase.from('transactions').insert({
             user_id: user.id,
             type: transaction.type,
@@ -1637,12 +1639,23 @@ export function useStore() {
 
           if (transError) throw transError;
           
-          // Update local transaction ID
+          const mappedTx = {
+            id: insertedTrans.id,
+            userId: insertedTrans.user_id,
+            type: (insertedTrans.type || '').toUpperCase(),
+            amount: Number(insertedTrans.amount),
+            status: insertedTrans.status,
+            timestamp: new Date(insertedTrans.timestamp || insertedTrans.created_at).getTime(),
+            accountType: insertedTrans.account_type,
+            method: insertedTrans.method,
+            externalId: insertedTrans.external_id
+          };
+
           setUser(prev => {
             if (!prev) return null;
             return {
               ...prev,
-              transactions: prev.transactions.map(t => t.id === newTransaction.id ? { ...t, id: insertedTrans.id } : t)
+              transactions: [mappedTx, ...(prev.transactions || [])]
             };
           });
         }
@@ -1666,44 +1679,36 @@ export function useStore() {
 
       } catch (err: any) {
         console.error('SECURE TRANSACTION FAILED:', err.response?.data?.error || err.message);
-        
-        // REVERT local state on failure
-        setUser(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            [balanceKey]: transaction.type === 'WITHDRAW' ? Number((prev[balanceKey] + transaction.amount).toFixed(2)) : prev[balanceKey],
-            transactions: prev.transactions.filter(t => t.id !== newTransaction.id)
-          };
-        });
-        
         throw new Error(err.response?.data?.error || 'Failed to process transaction securely');
       }
-    }
+    } else {
+      // Local mode fallback
+      const newTransaction: Transaction = {
+        ...transaction,
+        id: transaction.id || Math.random().toString(36).substr(2, 9),
+        status: 'pending',
+        timestamp: Date.now()
+      };
 
-    // Handle referral bonus/check if this is a deposit
-    if (transaction.type === 'DEPOSIT' && transaction.amount >= MIN_DEPOSIT_USD && user.referredBy) {
-       // ... existing referral logic ...
-    }
+      let newBalance = user[balanceKey];
+      if (transaction.type === 'WITHDRAW') {
+        newBalance = Number((user[balanceKey] - transaction.amount).toFixed(2));
+      }
 
-    // Trigger OneApp Sync via backend for marketers (Backend handles the actual sync)
-    if (user.role === 'marketer' && transaction.type === 'WITHDRAW') {
-      const txId = newTransaction.id;
-      console.log(`[Withdrawal] Marketer detected. Triggering OneApp Sync for ${txId}.`);
-      
-      fetch('/api/oneapp/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          amount: transaction.amount,
-          email: user.email,
-          phone: user.phone,
-          transactionId: txId
-        })
-      }).catch(err => console.error('[OneApp Sync] Failed to trigger:', err));
+      setUser(prev => {
+        if (!prev) return null;
+        let updatedUser = {
+          ...prev,
+          transactions: [newTransaction, ...(prev.transactions || [])]
+        };
+        if (transaction.type === 'WITHDRAW') {
+          updatedUser[balanceKey] = newBalance;
+        }
+        return updatedUser;
+      });
     }
   };
+
 
   const botSessionStartProfits = useRef<Record<string, number>>({});
 
