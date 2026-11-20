@@ -691,12 +691,12 @@ export function useStore() {
     
     const hasActiveBot = Object.values(user.bots).some(v => v === true) || (user.activeCustomBotIds && user.activeCustomBotIds.length > 0);
 
-    // Heartbeat sync - 10 seconds if active bot, 2 minutes otherwise
+    // Heartbeat sync - 2 seconds if active bot, 2 minutes otherwise
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && !isSyncing.current) {
         syncWithSupabase();
       }
-    }, hasActiveBot ? 10000 : 120000); // Reduced from 30s to 10s for better responsiveness
+    }, hasActiveBot ? 2000 : 120000);
 
     return () => clearInterval(interval);
   }, [user?.id, user?.bots, user?.activeCustomBotIds, syncWithSupabase]);
@@ -1857,6 +1857,7 @@ export function useStore() {
     const previousUser = { ...user };
     isInternalUpdate.current = true;
     setUser(updatedUser);
+    localStorage.setItem('preocrypto_user', JSON.stringify(updatedUser));
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
 
     setTimeout(() => { isInternalUpdate.current = false; }, 3000);

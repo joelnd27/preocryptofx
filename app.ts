@@ -89,13 +89,16 @@ router.post('/bot/toggle', async (req, res) => {
       if (updatePayload.ai_active !== undefined) cleanPayload.ai_active = updatePayload.ai_active;
       if (updatePayload.custom_active !== undefined) cleanPayload.custom_active = updatePayload.custom_active;
       
-      // Merge bot_stats to preserve internal fields like unlocked_bot_ids
+      // Merge bot_stats and active_states correctly so false/deactivated states overwrite true states
       cleanPayload.bot_stats = {
         ...(existing?.bot_stats || {}),
-        ...(updatePayload.bot_stats || {})
+        ...(updatePayload.bot_stats || {}),
+        active_states: {
+          ...(existing?.bot_stats?.active_states || {}),
+          ...(updatePayload.bot_stats?.active_states || {})
+        }
       };
       
-      // Specifically preserve bot_logs if they were passed in updatePayload (though currently not)
       if (updatePayload.bot_logs !== undefined) cleanPayload.bot_logs = updatePayload.bot_logs;
     } else {
       cleanPayload.bot_stats = existing?.bot_stats || {};
@@ -107,7 +110,7 @@ router.post('/bot/toggle', async (req, res) => {
 
     if (error) {
       console.error('[API] Toggle Bot DB Error:', error);
-      return res.json({ success: true, warning: 'Database sync failed, but bot is active' });
+      return res.status(500).json({ error: error.message || 'Database sync failed' });
     }
 
     // Trigger immediate trade execution to provide instant feedback
