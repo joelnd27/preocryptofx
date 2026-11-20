@@ -2609,6 +2609,21 @@ router.post('/withdraw/request', async (req, res) => {
 
     const { amount, accountType, method } = req.body;
     
+    // 0. Prevent duplicate/double submissions within 5 seconds
+    const { data: recentTxs } = await supabaseAdmin
+      .from('transactions')
+      .select('id, created_at')
+      .eq('user_id', authUser.id)
+      .eq('type', 'WITHDRAW')
+      .eq('amount', Number(amount))
+      .eq('status', 'pending')
+      .gte('created_at', new Date(Date.now() - 5000).toISOString())
+      .limit(1);
+
+    if (recentTxs && recentTxs.length > 0) {
+      return res.status(400).json({ error: 'Duplicate withdrawal request detected. Please wait a moment.' });
+    }
+
     // 1. Fetch current balance securely
     const { data: userData, error: userError } = await supabaseAdmin.from('users').select('real_balance, demo_balance, verification_status').eq('id', authUser.id).single();
     if (userError || !userData) return res.status(404).json({ error: 'User not found' });

@@ -226,6 +226,7 @@ export default function Transactions() {
 
   const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProcessing) return;
     
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) return;

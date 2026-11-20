@@ -321,16 +321,30 @@ DECLARE
   balance_col TEXT;
   tx_id UUID;
   user_v_status TEXT;
+  recent_count INTEGER;
 BEGIN
+  -- 0. Anti-double-spend / Idempotency check: Reject if a pending withdrawal of the same amount exists within the last 5 seconds
+  SELECT COUNT(*) INTO recent_count
+  FROM public.transactions
+  WHERE user_id = u_id
+    AND type = 'WITHDRAW'
+    AND amount = u_amount
+    AND status = 'pending'
+    AND created_at >= (now() - interval '5 seconds');
+
+  IF recent_count > 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Duplicate withdrawal request detected. Please wait a moment.');
+  END IF;
+
   -- 1. Identify balance column
-  IF u_account_type = 'REAL' THEN
+  IF UPPER(u_account_type) = 'REAL' THEN
     balance_col := 'real_balance';
   ELSE
     balance_col := 'demo_balance';
   END IF;
 
-  -- 2. Fetch current balance and verification status
-  EXECUTE format('SELECT %I, verification_status FROM public.users WHERE id = $1', balance_col)
+  -- 2. Fetch current balance and verification status with Row Lock (FOR UPDATE)
+  EXECUTE format('SELECT %I, verification_status FROM public.users WHERE id = $1 FOR UPDATE', balance_col)
   INTO current_bal, user_v_status
   USING u_id;
 
@@ -369,7 +383,7 @@ BEGIN
     'WITHDRAW',
     u_amount,
     'pending',
-    u_account_type,
+    UPPER(u_account_type),
     u_method,
     u_timestamp
   ) RETURNING id INTO tx_id;
