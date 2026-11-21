@@ -608,7 +608,7 @@ export function useStore() {
     }
   };
 
-  const fetchReferrals = async () => {
+  const fetchReferrals = useCallback(async () => {
     const currentUser = userRef.current;
     if (!currentUser || !currentUser.referralCode || !isSupabaseConfigured()) return;
 
@@ -641,7 +641,7 @@ export function useStore() {
     } catch (err) {
       console.error('[Referrals] Fetch error:', err);
     }
-  };
+  }, []);
 
 
   // 1. Global Initialization (Auth Listener & Heartbeat)
