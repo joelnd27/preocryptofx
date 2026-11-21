@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
 import { 
   Users, 
   UserCheck, 
@@ -78,14 +77,10 @@ export default function Referrals() {
         </p>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={cn(
-          "p-5 sm:p-7 rounded-[28px] border relative overflow-hidden shadow-sm",
-          isDarkMode ? "bg-slate-900/40 border-slate-800/80" : "bg-white border-slate-200"
-        )}
-      >
+      <div className={cn(
+        "p-5 sm:p-7 rounded-[28px] border relative overflow-hidden shadow-sm transition-all",
+        isDarkMode ? "bg-slate-900/40 border-slate-800/80" : "bg-white border-slate-200"
+      )}>
         <div className="absolute top-0 right-0 p-8 opacity-[0.03]">
           <LinkIcon size={140} />
         </div>
@@ -131,18 +126,15 @@ export default function Referrals() {
             </p>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-4 sm:gap-6">
-        {stats.map((stat, i) => (
-          <motion.div
+        {stats.map((stat) => (
+          <div
             key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
             className={cn(
-              "p-5 rounded-[28px] border flex flex-col gap-3",
+              "p-5 rounded-[28px] border flex flex-col gap-3 transition-all",
               isDarkMode ? "bg-slate-900/40 border-slate-800/80" : "bg-white border-slate-200 shadow-sm"
             )}
           >
@@ -165,20 +157,15 @@ export default function Referrals() {
                 )}>{stat.value}</p>
               </div>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
       {/* Referral History Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className={cn(
-          "rounded-[28px] border overflow-hidden shadow-sm",
-          isDarkMode ? "bg-slate-900/40 border-slate-800/80" : "bg-white border-slate-200"
-        )}
-      >
+      <div className={cn(
+        "rounded-[28px] border overflow-hidden shadow-sm transition-all",
+        isDarkMode ? "bg-slate-900/40 border-slate-800/80" : "bg-white border-slate-200"
+      )}>
         <div className="p-5 border-b border-inherit flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h2 className={cn(
             "text-base font-semibold",
@@ -301,7 +288,7 @@ export default function Referrals() {
             </tbody>
           </table>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

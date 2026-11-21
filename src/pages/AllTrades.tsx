@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
 import { 
   Search, 
   Filter, 
@@ -132,11 +131,8 @@ export default function AllTrades() {
               {filteredTrades.map((trade, i) => {
                 const assetName = trade.coin || trade.symbol || 'Unknown';
                 return (
-                <motion.tr 
+                <tr 
                   key={trade.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
                   className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
                 >
                   <td className="px-4 py-3">
@@ -202,7 +198,7 @@ export default function AllTrades() {
                       {trade.accountType}
                     </span>
                   </td>
-                </motion.tr>
+                </tr>
               );
             })}
               {filteredTrades.length === 0 && (

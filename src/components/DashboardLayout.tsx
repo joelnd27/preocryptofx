@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
   TrendingUp, 
@@ -103,25 +102,18 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </aside>
 
       {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
+      
         {isMobileMenuOpen && (
           <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={() => setIsMobileMenuOpen(false)}
               className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] lg:hidden"
             />
-            <motion.aside
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            <aside
               className="fixed inset-y-0 left-0 w-64 z-[210] flex flex-col lg:hidden shadow-2xl bg-card border-r border-border"
             >
               <div 
-                className="flex items-center justify-between px-6 border-b border-transparent shrink-0"
+                className="flex items-center justify-between px-6 border-b border-border shrink-0"
                 style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(4rem + env(safe-area-inset-top))' }}
               >
                 <div className="flex items-center gap-3">
@@ -166,10 +158,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </button>
                 ))}
               </div>
-            </motion.aside>
+            </aside>
           </>
         )}
-      </AnimatePresence>
+      
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative bg-background">

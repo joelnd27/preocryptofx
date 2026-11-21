@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
@@ -190,11 +189,8 @@ export default function Dashboard() {
       {/* Stats Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-4">
         {stats.map((stat, i) => (
-            <motion.div
+            <div
             key={i}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
             className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-2.5 sm:p-4 rounded-xl shadow-sm relative overflow-hidden group hover:border-primary/50 transition-colors"
           >
             <div className="relative z-10">
@@ -215,7 +211,7 @@ export default function Dashboard() {
               <p className="text-slate-500 dark:text-slate-300 text-[8px] sm:text-[9px] font-bold uppercase tracking-tight mb-0.5">{stat.label}</p>
               <h3 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white tabular-nums leading-tight">{stat.value}</h3>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
@@ -244,15 +240,14 @@ export default function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
-                    />
+                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px'  }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
               <div className="flex flex-wrap justify-center gap-2 mt-3">
                 {marketShareData.map((item, i) => (
                   <div key={i} className="flex items-center gap-1">
-                    <div className="w-1 h-1 rounded-full" style={{ backgroundColor: item.color }}></div>
+                    <div className="w-1 h-1 rounded-full" style={{ backgroundColor: item.color  }} />);
                     <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight">{item.name}</span>
                   </div>
                 ))}
@@ -271,8 +266,7 @@ export default function Dashboard() {
                     <YAxis hide />
                     <Tooltip 
                       cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
-                    />
+                      contentStyle={{ backgroundColor: '#161a1e', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px'  }} />
                     <Bar dataKey="volume" fill="var(--color-primary)" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -382,10 +376,8 @@ export default function Dashboard() {
             </div>
             <div className="space-y-2">
               {marketActivity.map((activity, i) => (
-                <motion.div
+                <div
                   key={i}
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
                   className="p-2 bg-slate-50 dark:bg-slate-800/30 rounded-lg border border-slate-100 dark:border-slate-800/50"
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -417,7 +409,7 @@ export default function Dashboard() {
                       {activity.status === 'WON' ? '+' : '-'}{(Math.random() * 50).toFixed(2)}
                     </span>
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
           </div>

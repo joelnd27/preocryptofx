@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
 import { 
   User, 
   Mail, 
@@ -313,14 +312,12 @@ export default function Profile() {
                 </div>
 
                 {isEditing && (
-                  <motion.button
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
+                  <button
                     type="submit"
                     className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
                   >
                     Save Changes
-                  </motion.button>
+                  </button>
                 )}
               </form>
             </div>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   Bot, 
   Zap, 
@@ -894,7 +893,7 @@ export default function Bots() {
                   <div 
                     key={i} 
                     className="flex-1 bg-blue-500/20 rounded-t-[1px]"
-                    style={{ height: `${20 + Math.random() * 80}%` }}
+                    style={{ height: `${20 + Math.random() * 80}%` }} 
                   />
                 ))}
               </div>
@@ -932,7 +931,7 @@ export default function Bots() {
           </div>
           
           <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar pr-1 max-h-[400px] lg:max-h-[600px]">
-            <AnimatePresence initial={false}>
+            
               {logs.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center p-8 opacity-40">
                   <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
@@ -949,10 +948,8 @@ export default function Bots() {
                     : '';
                   
                   return (
-                    <motion.div
+                    <div
                       key={logKey}
-                      initial={{ opacity: 0, scale: 0.95, x: -10 }}
-                      animate={{ opacity: 1, scale: 1, x: 0 }}
                       className={cn(
                         "p-3 rounded-xl border font-mono leading-relaxed transition-all shadow-sm",
                         logMessage.includes("+") 
@@ -971,31 +968,25 @@ export default function Bots() {
                           <span className="opacity-50">{logTimestamp}</span>{logMessage}
                         </p>
                       </div>
-                    </motion.div>
+                    </div>
                   );
                 })
               )}
-            </AnimatePresence>
+            
           </div>
         </div>
       </div>
     </div>
 
       {/* Create Bot Modal */}
-      <AnimatePresence>
+      
         {isCreateModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={() => setIsCreateModalOpen(false)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            <div
               className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
             >
               <div className="p-8">
@@ -1123,26 +1114,20 @@ export default function Bots() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      
 
       {/* Import Bot Modal */}
-      <AnimatePresence>
+      
         {isImportModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={() => setIsImportModalOpen(false)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            <div
               className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
             >
               <div className="p-8">
@@ -1226,25 +1211,19 @@ export default function Bots() {
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      
       {/* Alert Modal */}
-      <AnimatePresence>
+      
         {isPasswordModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={handleClosePasswordModal}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            <div
               className="relative w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
             >
               <div className="p-8 text-center">
@@ -1295,10 +1274,10 @@ export default function Bots() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      
 
       <AlertModal
         isOpen={alertConfig.isOpen}
@@ -1308,20 +1287,14 @@ export default function Bots() {
         type={alertConfig.type}
       />
       {/* Bot History Modal */}
-      <AnimatePresence>
+      
         {isHistoryModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={() => setIsHistoryModalOpen(false)}
               className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            <div
               className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-[24px] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[80vh]"
             >
               {/* Header - Fixed at top */}
@@ -1419,10 +1392,10 @@ export default function Bots() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      
     </div>
   );
 }

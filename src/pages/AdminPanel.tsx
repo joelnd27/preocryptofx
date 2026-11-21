@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
   TrendingUp,
@@ -248,9 +247,7 @@ export default function AdminPanel() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div
           className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm"
         >
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-4">
@@ -258,12 +255,9 @@ export default function AdminPanel() {
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Users</p>
           <h3 className="text-xl font-bold text-slate-900 dark:text-white">{stats.userCount}</h3>
-        </motion.div>
+        </div>
 
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+        <div
           className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm"
         >
           <div className="w-10 h-10 rounded-xl bg-green-500/10 text-green-500 flex items-center justify-center mb-4">
@@ -271,12 +265,9 @@ export default function AdminPanel() {
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Money In (Completed)</p>
           <h3 className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(stats.totalDeposited)}</h3>
-        </motion.div>
+        </div>
 
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+        <div
           className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm"
         >
           <div className="w-10 h-10 rounded-xl bg-yellow-500/10 text-yellow-500 flex items-center justify-center mb-4">
@@ -286,14 +277,11 @@ export default function AdminPanel() {
           <h3 className="text-xl font-bold text-slate-900 dark:text-white">
             {formatCurrency(transactions.filter(t => t.status === 'pending' && t.type === 'DEPOSIT').reduce((sum, t) => sum + Number(t.amount), 0))}
           </h3>
-        </motion.div>
+        </div>
       </div>
 
       {/* Global Bot Settings */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
+      <div
         className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm"
       >
         <div className="flex items-center justify-between mb-6">
@@ -355,7 +343,7 @@ export default function AdminPanel() {
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Content Area */}
       <div className="bg-white dark:bg-[#161a1e] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
@@ -397,13 +385,10 @@ export default function AdminPanel() {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <AnimatePresence mode="wait">
+          
             {activeTab === 'users' ? (
-              <motion.table 
+              <table 
                 key="users-table"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
                 className="w-full text-left border-collapse"
               >
                 <thead>
@@ -558,13 +543,10 @@ export default function AdminPanel() {
                     </tr>
                   )}
                 </tbody>
-              </motion.table>
+              </table>
             ) : activeTab === 'deposits' ? (
-              <motion.table 
+              <table 
                 key="trans-table"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
                 className="w-full text-left border-collapse"
               >
                 <thead>
@@ -690,13 +672,10 @@ export default function AdminPanel() {
                     </tr>
                   ))}
                 </tbody>
-              </motion.table>
+              </table>
             ) : (
-              <motion.table 
+              <table 
                 key="copy-traders-table"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
                 className="w-full text-left border-collapse"
               >
                 <thead>
@@ -804,9 +783,9 @@ export default function AdminPanel() {
                     </tr>
                   ))}
                 </tbody>
-              </motion.table>
+              </table>
             )}
-          </AnimatePresence>
+          
         </div>
       </div>
     </div>

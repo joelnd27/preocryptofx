@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
 import { 
   HelpCircle, 
   MessageSquare, 
@@ -110,13 +109,11 @@ export default function Help() {
                   {openFaq === i ? <ChevronUp size={20} className="text-blue-600 dark:text-blue-400" /> : <ChevronDown size={20} className="text-slate-400 dark:text-slate-500" />}
                 </button>
                 {openFaq === i && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
+                  <div}}
                     className="px-6 pb-6 text-slate-600 dark:text-slate-300 text-sm leading-relaxed"
                   >
                     {faq.a}
-                  </motion.div>
+                  </div>
                 )}
               </div>
             ))}

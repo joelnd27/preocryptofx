@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { motion } from 'motion/react';
 
 interface SimulatedChartProps {
   data: any[];
@@ -28,10 +27,10 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
     
     const minPrice = Math.min(...lows);
     const maxPrice = Math.max(...highs);
-    const range = maxPrice - minPrice;
+    const range = maxPrice - minPrice || 1;
     
     const scaleY = (price: number) => padding + (1 - (price - minPrice) / range) * (chartHeight - 2 * padding);
-    const scaleX = (index: number) => padding + (index / (data.length - 1)) * (width - 2 * padding);
+    const scaleX = (index: number) => padding + (index / (data.length - 1 || 1)) * (width - 2 * padding);
 
     const pts = data.map((d, i) => ({
       x: scaleX(i),
@@ -43,7 +42,6 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
       isUp: d.close >= d.open
     }));
 
-    // Calculate MA 10
     const maPts = [];
     if (indicators?.ma) {
       for (let i = 9; i < data.length; i++) {
@@ -53,7 +51,6 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
       }
     }
 
-    // Calculate EMA 20
     const emaPts = [];
     if (indicators?.ema) {
       let ema = data[0].close;
@@ -66,7 +63,6 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
       }
     }
 
-    // Calculate RSI 14
     const rsiPts = [];
     if (indicators?.rsi && data.length > 14) {
       let gains = [];
@@ -88,7 +84,6 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
         const rsiY = height - padding - (rsi / 100) * (rsiHeight - 10);
         rsiPts.push({ x: scaleX(i), y: rsiY });
         
-        // Smoothed moving average
         avgGain = (avgGain * 13 + gains[i-1]) / 14;
         avgLoss = (avgLoss * 13 + losses[i-1]) / 14;
       }
@@ -109,7 +104,6 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
   return (
     <div className="w-full h-full relative bg-slate-50 dark:bg-slate-950 rounded-xl overflow-hidden">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
-        {/* Grid Lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
           <line
             key={i}
@@ -123,7 +117,6 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
           />
         ))}
 
-        {/* Price Axis Labels */}
         {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
           <text
             key={i}
@@ -137,51 +130,42 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
           </text>
         ))}
 
-        {/* Chart Content */}
         {type === 'AREA' && (
-          <motion.path
-            animate={{ d: areaPath }}
+          <path
+            d={areaPath}
             fill="url(#areaGradient)"
             stroke="none"
-            transition={{ duration: 0.2, ease: "linear" }}
           />
         )}
 
         {(type === 'LINE' || type === 'AREA') && (
-          <motion.path
-            animate={{ d: linePath }}
+          <path
+            d={linePath}
             fill="none"
             stroke="#3b82f6"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            transition={{ duration: 0.2, ease: "linear" }}
           />
         )}
 
-        {/* Indicators */}
         {indicators?.ma && maPath && (
-          <motion.path
+          <path
             d={maPath}
-            animate={{ d: maPath }}
             fill="none"
             stroke="#eab308"
             strokeWidth="2"
-            transition={{ duration: 0.2, ease: "linear" }}
           />
         )}
         {indicators?.ema && emaPath && (
-          <motion.path
+          <path
             d={emaPath}
-            animate={{ d: emaPath }}
             fill="none"
             stroke="#a855f7"
             strokeWidth="2"
-            transition={{ duration: 0.2, ease: "linear" }}
           />
         )}
 
-        {/* RSI Sub-chart */}
         {indicators?.rsi && rsiPath && (
           <g>
             <line
@@ -195,52 +179,37 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
             />
             <text x={padding - 30} y={height - padding - rsiHeight + 10} fill="#64748b" fontSize="8">70</text>
             <text x={padding - 30} y={height - padding - 10} fill="#64748b" fontSize="8">30</text>
-            <motion.path
+            <path
               d={rsiPath}
-              animate={{ d: rsiPath }}
               fill="none"
               stroke="#f97316"
               strokeWidth="2"
-              transition={{ duration: 0.2, ease: "linear" }}
             />
           </g>
         )}
 
         {(type === 'CANDLE' || type === 'HOLLOW') && points.map((p, i) => {
-          const isLast = i === points.length - 1;
           return (
-            <motion.g 
-              key={data[i].timeValue}
-              initial={false}
-              animate={{ x: 0 }}
-            >
-              {/* Wick */}
-              <motion.line
-                animate={{
-                  x1: p.x,
-                  y1: p.high,
-                  x2: p.x,
-                  y2: p.low,
-                  stroke: p.isUp ? '#22c55e' : '#ef4444'
-                }}
-                transition={isLast ? { duration: 0.2, ease: "linear" } : { duration: 0 }}
+            <g key={i}>
+              <line
+                x1={p.x}
+                y1={p.high}
+                x2={p.x}
+                y2={p.low}
+                stroke={p.isUp ? '#10b981' : '#ef4444'}
                 strokeWidth="1"
               />
-              {/* Body */}
-              <motion.rect
-                animate={{
-                  x: p.x - 3,
-                  y: Math.min(p.open, p.close),
-                  height: Math.max(1, Math.abs(p.open - p.close)),
-                  fill: type === 'HOLLOW' && p.isUp ? 'transparent' : (p.isUp ? '#22c55e' : '#ef4444'),
-                  stroke: p.isUp ? '#22c55e' : '#ef4444'
-                }}
-                transition={isLast ? { duration: 0.2, ease: "linear" } : { duration: 0 }}
+              <rect
+                x={p.x - 3}
+                y={Math.min(p.open, p.close)}
                 width="6"
+                height={Math.max(2, Math.abs(p.close - p.open))}
+                fill={p.isUp ? (type === 'HOLLOW' ? 'transparent' : '#10b981') : '#ef4444'}
+                stroke={p.isUp ? '#10b981' : '#ef4444'}
                 strokeWidth="1"
                 rx="1"
               />
-            </motion.g>
+            </g>
           );
         })}
 
@@ -252,17 +221,12 @@ export default function SimulatedChart({ data, type, isDarkMode, indicators }: S
         </defs>
       </svg>
 
-      {/* Current Price Indicator */}
-      <motion.div 
-        className="absolute right-0 flex items-center gap-2 pointer-events-none"
-        animate={{ top: points[points.length - 1].y - 10 }}
-        transition={{ duration: 0.2, ease: "linear" }}
-      >
+      <div className="absolute right-0 flex items-center gap-2 pointer-events-none">
         <div className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-l shadow-lg">
           ${data[data.length - 1].close.toLocaleString(undefined, { maximumFractionDigits: 2 })}
         </div>
         <div className="w-full border-t border-blue-600 border-dashed opacity-50"></div>
-      </motion.div>
+      </div>
     </div>
   );
 }

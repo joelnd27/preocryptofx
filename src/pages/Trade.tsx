@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
   ArrowRight, 
@@ -510,21 +509,14 @@ export default function Trade() {
       </div>
 
       {/* Mobile Asset Selector Modal */}
-      <AnimatePresence>
+      
         {isAssetSelectorOpen && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={() => setIsAssetSelectorOpen(false)}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] lg:hidden"
             />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            <div
               className="fixed inset-x-0 bottom-0 bg-white dark:bg-[#161a1e] rounded-t-[32px] z-[101] lg:hidden max-h-[80vh] flex flex-col overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -579,10 +571,10 @@ export default function Trade() {
                   </button>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </>
         )}
-      </AnimatePresence>
+      
 
       <div className="flex-1 flex flex-col gap-6 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
         {/* Main Chart Area */}
@@ -612,20 +604,14 @@ export default function Trade() {
                   <Layers size={14} />
                 </button>
 
-                <AnimatePresence>
+                
                   {showIndicatorMenu && (
                     <>
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
+                      <div
                         onClick={() => setShowIndicatorMenu(false)}
                         className="fixed inset-0 z-[60]"
                       />
-                      <motion.div
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      <div
                         className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-56 bg-white dark:bg-[#1c2229] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[61] overflow-hidden"
                       >
                         <div className="p-2 space-y-1">
@@ -658,10 +644,10 @@ export default function Trade() {
                             </button>
                           ))}
                         </div>
-                      </motion.div>
+                      </div>
                     </>
                   )}
-                </AnimatePresence>
+                
               </div>
 
               <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
@@ -854,13 +840,10 @@ export default function Trade() {
                 return (
                   <div key={trade.id} className="relative p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden group">
                     {/* Progress Bar Background */}
-                    <div className="absolute bottom-0 left-0 h-1 bg-primary/20 w-full" />
-                    <motion.div 
-                      className="absolute bottom-0 left-0 h-1 bg-primary" 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${progress}%` }}
-                      transition={{ ease: "linear" }}
-                    />
+                     <div 
+                       className="absolute bottom-0 left-0 h-1 bg-primary"
+                       style={{ width: `${progress}%` }}
+                     />
 
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">

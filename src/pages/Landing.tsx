@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   TrendingUp, 
   Shield, 
@@ -105,12 +104,9 @@ export default function Landing() {
         </div>
 
         {/* Mobile Menu Overlay */}
-        <AnimatePresence>
+        
           {isMobileMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+            <div
               className="md:hidden border-b overflow-hidden shadow-xl bg-card border-border"
             >
               <div className="px-4 py-6 space-y-4">
@@ -121,9 +117,9 @@ export default function Landing() {
                   <Link to="/register" className="w-full py-3 text-center rounded-xl bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20">Get Started</Link>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        
       </nav>
     </div>
 
@@ -141,10 +137,7 @@ export default function Landing() {
         </div>
 
         <div className="max-w-7xl mx-auto text-center relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
+          <div
           >
             <span className={cn(
               "px-3 py-1 sm:px-4 sm:py-2 rounded-full text-[9px] sm:text-[10px] font-bold border mb-6 inline-block uppercase tracking-widest",
@@ -169,13 +162,10 @@ export default function Landing() {
                 Start Trading Now <ArrowRight className="group-hover:translate-x-1 transition-transform" size={20} />
               </Link>
             </div>
-          </motion.div>
+          </div>
 
           {/* Animated Dashboard Preview */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
+          <div
             className="mt-16 sm:mt-20 relative px-2 sm:px-4"
           >
             <div className={cn(
@@ -195,10 +185,8 @@ export default function Landing() {
                   {/* Simulated Chart */}
                   <div className="absolute inset-0 flex items-end justify-between px-2 sm:px-4 pb-4 gap-0.5 sm:gap-1">
                     {[...Array(15)].map((_, i) => (
-                      <motion.div
+                      <div
                         key={i}
-                        animate={{ height: [30, 80, 50, 100, 70][i % 5] + '%' }}
-                        transition={{ duration: 2.5, repeat: Infinity, repeatType: 'reverse', delay: i * 0.15 }}
                         className={cn(
                           "w-full rounded-t-sm",
                           isDarkMode ? "bg-blue-500/30" : "bg-blue-600/40"
@@ -245,7 +233,7 @@ export default function Landing() {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
@@ -297,9 +285,8 @@ export default function Landing() {
               { icon: Globe, title: "Global Access", desc: "Trade anytime, anywhere. Our platform is available 24/7 with zero downtime." },
               { icon: TrendingUp, title: "High Yields", desc: "Our bots are designed to find opportunities in both bull and bear markets." }
             ].map((feature, i) => (
-              <motion.div 
+              <div 
                 key={i}
-                whileHover={{ y: -5 }}
                 className={cn(
                   "p-6 sm:p-8 rounded-3xl border transition-all group backdrop-blur-sm",
                   isDarkMode 
@@ -315,7 +302,7 @@ export default function Landing() {
                   "text-xs sm:text-sm leading-relaxed",
                   isDarkMode ? "text-slate-400" : "text-slate-500"
                 )}>{feature.desc}</p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>
