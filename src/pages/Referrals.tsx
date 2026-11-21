@@ -254,17 +254,17 @@ export default function Referrals() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">
-                          {ref.username.charAt(0).toUpperCase()}
+                          {(ref.username || 'User').charAt(0).toUpperCase()}
                         </div>
                         <div className="flex flex-col min-w-0">
                           <span className={cn(
                             "text-sm font-semibold truncate",
                             isDarkMode ? "text-slate-200" : "text-slate-900"
-                          )}>{ref.username}</span>
+                          )}>{ref.username || 'User'}</span>
                           <span className={cn(
                             "text-[10px] truncate",
                             isDarkMode ? "text-slate-500" : "text-slate-400"
-                          )}>{ref.email}</span>
+                          )}>{ref.email || ''}</span>
                         </div>
                       </div>
                     </td>
@@ -273,7 +273,7 @@ export default function Referrals() {
                         "text-xs",
                         isDarkMode ? "text-slate-500" : "text-slate-500"
                       )}>
-                        {new Date(ref.joinedAt).toLocaleDateString()}
+                        {ref.joinedAt ? new Date(ref.joinedAt).toLocaleDateString() : 'N/A'}
                       </span>
                     </td>
                     <td className="px-6 py-4">
