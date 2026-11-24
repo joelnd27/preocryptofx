@@ -102,6 +102,7 @@ export function useStore() {
   const userRef = useRef<User | null>(user);
   const isInternalUpdate = useRef(false);
   const closingTrades = useRef<Set<string>>(new Set());
+  const withdrawalInFlight = useRef(false);
   const serverTimeOffset = useRef<number>(0);
   const serverTimeSynced = useRef<boolean>(false);
   const lastTradersFetch = useRef<number>(0);
@@ -309,7 +310,11 @@ export function useStore() {
         
         setTimeout(async () => {
           if (isSupabaseConfigured()) {
-            await supabase.from('transactions').update({ status: 'completed' }).eq('id', tx.id);
+            await supabase
+              .from('transactions')
+              .update({ status: 'completed' })
+              .eq('id', tx.id)
+              .eq('status', 'pending');
           }
           setUser(prev => {
             if (!prev) return null;
@@ -498,8 +503,8 @@ export function useStore() {
           phone: userData.phone,
           avatar: userData.avatar,
           role: isHardcodedAdmin ? 'admin' : userData.role,
-          demoBalance: Number(userData.demo_balance || 0),
-          realBalance: Number(userData.real_balance || 0),
+          demoBalance: Math.max(0, Number(userData.demo_balance || 0)),
+          realBalance: Math.max(0, Number(userData.real_balance || 0)),
           activeAccount: userData.active_account || 'DEMO',
           verificationStatus: userData.verification_status || 'not_verified',
           verificationSubmittedAt: userData.verification_submitted_at ? Number(userData.verification_submitted_at) : undefined,
@@ -610,29 +615,46 @@ export function useStore() {
 
   const fetchReferrals = useCallback(async () => {
     const currentUser = userRef.current;
-    if (!currentUser || !currentUser.referralCode || !isSupabaseConfigured()) return;
+    if (!currentUser || !isSupabaseConfigured()) return;
 
     try {
-      console.log('[Referrals] Fetching detailed referral data...');
+      const session = await getSafeSession();
+      if (session?.access_token) {
+        const res = await axios.get('/api/user/referrals', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          timeout: 10000
+        });
+        if (Array.isArray(res.data)) {
+          setUser(prev => prev ? { ...prev, referrals: res.data } : null);
+          return;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[Referrals] API fetch failed, falling back to Supabase query:', apiErr);
+    }
+
+    if (!currentUser.referralCode) return;
+
+    try {
       const { data: refData } = await supabase
         .from('users')
         .select('id, username, email, created_at, transactions(type, status, amount)')
         .or(`referred_by.eq.${currentUser.referralCode},referred_by.eq.${currentUser.id},referred_by.eq.${currentUser.email}`);
       
-      if (refData) {
+      if (Array.isArray(refData)) {
         const fetchedReferrals = refData.map((r: any) => {
-          const userTransactions = r.transactions || [];
+          const userTransactions = Array.isArray(r.transactions) ? r.transactions : [];
           const successfulDeposits = userTransactions.filter((t: any) => 
-            t.type === 'DEPOSIT' && ['completed', 'success', 'successful'].includes(t.status?.toLowerCase())
+            (t.type || '').toUpperCase() === 'DEPOSIT' && ['completed', 'success', 'successful'].includes(t.status?.toLowerCase())
           );
           return {
             userId: r.id,
             username: r.username,
             email: r.email,
             joinedAt: new Date(r.created_at).getTime(),
-            status: successfulDeposits.length > 0 ? 'confirmed' : 'pending',
+            status: (successfulDeposits.length > 0 ? 'confirmed' : 'pending') as 'confirmed' | 'pending',
             hasDeposited: successfulDeposits.length > 0,
-            totalDeposited: successfulDeposits.reduce((sum: number, t: any) => sum + Number(t.amount), 0)
+            totalDeposited: successfulDeposits.reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0)
           };
         });
 
@@ -641,7 +663,7 @@ export function useStore() {
     } catch (err) {
       console.error('[Referrals] Fetch error:', err);
     }
-  }, []);
+  }, [getSafeSession]);
 
 
   // 1. Global Initialization (Auth Listener & Heartbeat)
@@ -1408,7 +1430,7 @@ export function useStore() {
     }
 
     // Fallback local update (if API fails or not configured)
-    const newBalance = Number((currentBalance + trade.amount + currentProfit).toFixed(2));
+    const newBalance = Math.max(0, Number((currentBalance + trade.amount + currentProfit).toFixed(2)));
     setUser(prev => {
       closingTrades.current.delete(tradeId);
       if (!prev) return null;
@@ -1565,9 +1587,20 @@ export function useStore() {
     const isReal = transaction.accountType === 'REAL';
     const balanceKey = isReal ? 'realBalance' : 'demoBalance';
     
-    // Withdrawal limits for unverified users
-    if (transaction.type === 'WITHDRAW' && user.verificationStatus !== 'verified') {
-      if (transaction.amount > 500) {
+    if (transaction.type === 'WITHDRAW') {
+      if (withdrawalInFlight.current) {
+        throw new Error('A withdrawal request is already in progress. Please wait.');
+      }
+      if (!isReal) {
+        throw new Error('Withdrawals are only available for REAL accounts.');
+      }
+      if (!Number.isFinite(transaction.amount) || transaction.amount <= 0) {
+        throw new Error('Invalid withdrawal amount.');
+      }
+      if ((user[balanceKey] || 0) < transaction.amount) {
+        throw new Error('Insufficient balance.');
+      }
+      if (user.verificationStatus !== 'verified' && transaction.amount > 500) {
         throw new Error('Unverified accounts have a withdrawal limit of $500. Please verify your account to increase this limit.');
       }
     }
@@ -1577,46 +1610,51 @@ export function useStore() {
         const session = await getSafeSession();
         
         if (transaction.type === 'WITHDRAW') {
-          const response = await axios.post('/api/withdraw/request', {
-            amount: transaction.amount,
-            accountType: transaction.accountType,
-            method: transaction.method
-          }, {
-            headers: { Authorization: `Bearer ${session?.access_token}` },
-            timeout: 20000 // 20s timeout for stability
-          });
-          
-          if (response.status === 200 && response.data.success) {
-            const { newBalance: serverBalance, transaction: insertedTrans } = response.data;
-            
-            const mappedTx = insertedTrans ? {
-              id: insertedTrans.id,
-              userId: insertedTrans.user_id,
-              type: (insertedTrans.type || '').toUpperCase(),
-              amount: Number(insertedTrans.amount),
-              status: insertedTrans.status,
-              timestamp: new Date(insertedTrans.timestamp || insertedTrans.created_at).getTime(),
-              accountType: insertedTrans.account_type,
-              method: insertedTrans.method,
-              externalId: insertedTrans.external_id
-            } : {
-              ...transaction,
-              id: transaction.id || Math.random().toString(36).substr(2, 9),
-              status: 'pending',
-              timestamp: Date.now()
-            };
-
-            setUser(prev => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                [balanceKey]: serverBalance,
-                transactions: [mappedTx, ...(prev.transactions || [])]
-              };
+          withdrawalInFlight.current = true;
+          try {
+            const response = await axios.post('/api/withdraw/request', {
+              amount: transaction.amount,
+              accountType: transaction.accountType,
+              method: transaction.method
+            }, {
+              headers: { Authorization: `Bearer ${session?.access_token}` },
+              timeout: 20000 // 20s timeout for stability
             });
-            return;
-          } else {
-            throw new Error(response.data.error || 'Withdrawal request failed');
+            
+            if (response.status === 200 && response.data.success) {
+              const { newBalance: serverBalance, transaction: insertedTrans } = response.data;
+              
+              const mappedTx = insertedTrans ? {
+                id: insertedTrans.id,
+                userId: insertedTrans.user_id,
+                type: (insertedTrans.type || '').toUpperCase(),
+                amount: Number(insertedTrans.amount),
+                status: insertedTrans.status,
+                timestamp: new Date(insertedTrans.timestamp || insertedTrans.created_at).getTime(),
+                accountType: insertedTrans.account_type,
+                method: insertedTrans.method,
+                externalId: insertedTrans.external_id
+              } : {
+                ...transaction,
+                id: transaction.id || Math.random().toString(36).substr(2, 9),
+                status: 'pending',
+                timestamp: Date.now()
+              };
+
+              setUser(prev => {
+                if (!prev) return null;
+                return {
+                  ...prev,
+                  [balanceKey]: Math.max(0, Number(serverBalance ?? 0)),
+                  transactions: [mappedTx, ...(prev.transactions || [])]
+                };
+              });
+              return;
+            } else {
+              throw new Error(response.data.error || 'Withdrawal request failed');
+            }
+          } finally {
+            withdrawalInFlight.current = false;
           }
         } else {
           // Handle Deposit/other transactions via standard Supabase
@@ -1692,7 +1730,10 @@ export function useStore() {
 
       let newBalance = user[balanceKey];
       if (transaction.type === 'WITHDRAW') {
-        newBalance = Number((user[balanceKey] - transaction.amount).toFixed(2));
+        if ((user[balanceKey] || 0) < transaction.amount) {
+          throw new Error('Insufficient balance');
+        }
+        newBalance = Math.max(0, Number((user[balanceKey] - transaction.amount).toFixed(2)));
       }
 
       setUser(prev => {
@@ -2435,6 +2476,7 @@ export function useStore() {
   };
 
   const updateUserBalance = async (userId: string, amount: number, type: 'REAL' | 'DEMO') => {
+    const safeAmount = Math.max(0, Number(amount) || 0);
     const field = type === 'REAL' ? 'real_balance' : 'demo_balance';
     const balanceKey = type === 'REAL' ? 'realBalance' : 'demoBalance';
 
@@ -2445,7 +2487,7 @@ export function useStore() {
         const session = await getSafeSession();
         const response = await axios.post('/api/admin/update-user', {
           userId,
-          updates: { [field]: amount }
+          updates: { [field]: safeAmount }
         }, {
           headers: { Authorization: `Bearer ${session?.access_token}` }
         });
@@ -2454,7 +2496,7 @@ export function useStore() {
       } catch (error: any) {
         console.error('Error updating balance via API:', error.response?.data?.error || error.message);
         // Fallback to direct update if API fails (might be missing service role key)
-        const { error: directError } = await supabase.from('users').update({ [field]: amount }).eq('id', userId);
+        const { error: directError } = await supabase.from('users').update({ [field]: safeAmount }).eq('id', userId);
         if (directError) {
           console.error('Direct update also failed:', directError);
           return false;
@@ -2466,13 +2508,13 @@ export function useStore() {
     // We update both snake_case and camelCase to be safe, as different parts of the app might use different formats
     setUsers(prev => prev.map(u => u.id === userId ? { 
       ...u, 
-      [field]: amount,
-      [balanceKey]: amount 
+      [field]: safeAmount,
+      [balanceKey]: safeAmount 
     } : u));
     
     // If updating the current logged-in user (the admin themselves)
     if (user?.id === userId) {
-      setUser(prev => prev ? { ...prev, [balanceKey]: amount } : null);
+      setUser(prev => prev ? { ...prev, [balanceKey]: safeAmount } : null);
     }
     
     return true;
@@ -2915,6 +2957,7 @@ export function useStore() {
     checkPaymentStatus,
     submitVerification,
     refreshData,
+    fetchReferrals,
     importBot,
     updateProfile,
     getAllUsers,

@@ -12,7 +12,6 @@ import {
   Camera
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
 import AlertModal from '../components/AlertModal';
 
 export default function Verification() {

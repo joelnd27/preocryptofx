@@ -21,10 +21,13 @@ export default function Referrals() {
   const { user, isDarkMode, fetchReferrals } = useStore();
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch detailed referrals on mount
   React.useEffect(() => {
-    fetchReferrals();
+    if (typeof fetchReferrals === 'function') {
+      fetchReferrals();
+    }
   }, [fetchReferrals]);
 
   // Generate real referral link
@@ -42,11 +45,15 @@ export default function Referrals() {
     }
   };
 
-  const referrals = user?.referrals || [];
+  const referrals = Array.isArray(user?.referrals) ? user.referrals : [];
   const totalReferred = referrals.length;
-  const depositedCount = referrals.filter(r => r.hasDeposited).length;
-  const totalDepositedAmount = referrals.reduce((sum, r) => sum + (r.totalDeposited || 0), 0);
-  const conversionRate = totalReferred > 0 ? Math.round((depositedCount / totalReferred) * 100) : 0;
+  const depositedCount = referrals.filter(r => r?.hasDeposited).length;
+  const totalDepositedAmount = referrals.reduce((sum, r) => sum + Number(r?.totalDeposited || 0), 0);
+  const filteredReferrals = referrals.filter(r => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (r?.username || '').toLowerCase().includes(q) || (r?.email || '').toLowerCase().includes(q);
+  });
 
   const stats = [
     { 
@@ -181,6 +188,8 @@ export default function Referrals() {
               <input 
                 type="text" 
                 placeholder="Search user..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className={cn(
                   "w-full pl-9 pr-4 py-2 rounded-xl text-xs border focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all",
                   isDarkMode ? "bg-slate-800/50 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
@@ -213,7 +222,7 @@ export default function Referrals() {
               </tr>
             </thead>
             <tbody className="divide-y divide-inherit">
-              {referrals.length === 0 ? (
+              {filteredReferrals.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -227,14 +236,14 @@ export default function Referrals() {
                         "text-xs font-medium",
                         isDarkMode ? "text-slate-600" : "text-slate-400"
                       )}>
-                        No referrals yet. Share your link to start earning!
+                        {searchQuery.trim() ? 'No referrals match your search.' : 'No referrals yet. Share your link to start earning!'}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                referrals.map((ref) => (
-                  <tr key={ref.userId} className={cn(
+                filteredReferrals.map((ref, idx) => (
+                  <tr key={ref.userId || idx} className={cn(
                     "transition-colors group",
                     isDarkMode ? "hover:bg-slate-800/20" : "hover:bg-slate-50"
                   )}>

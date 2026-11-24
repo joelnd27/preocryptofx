@@ -110,7 +110,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-charts': ['recharts', 'lightweight-charts'],
-          'vendor-utils': ['axios', 'motion', 'lucide-react', 'clsx', 'tailwind-merge'],
+          'vendor-utils': ['axios', 'lucide-react', 'clsx', 'tailwind-merge'],
         }
       }
     }

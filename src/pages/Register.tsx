@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff, Users } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { cn } from '../lib/utils';
@@ -97,11 +96,7 @@ export default function Register() {
         )}></div>
       </div>
 
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md relative z-10"
-      >
+      <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
           <Link to="/" className="inline-flex items-center gap-2 mb-6">
             <img src="/favicon.svg" alt="PreoCryptoFX Logo" className="w-10 h-10" />
@@ -297,14 +292,8 @@ export default function Register() {
               </div>
 
               {/* Password Strength Meter & Requirements */}
-              <AnimatePresence>
-                {showPasswordRequirements && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="space-y-3 pt-1 overflow-hidden"
-                  >
+              {showPasswordRequirements && (
+                <div className="space-y-3 pt-1 overflow-hidden">
                     <div className="flex gap-1 h-1.5">
                       {[1, 2, 3, 4].map((step) => {
                         const strength = 
@@ -333,9 +322,8 @@ export default function Register() {
                       <RequirementItem met={/[0-9]/.test(password)} text="1 Number" isDarkMode={isDarkMode} />
                       <RequirementItem met={/[^A-Za-z0-9]/.test(password)} text="1 Symbol" isDarkMode={isDarkMode} />
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                </div>
+              )}
             </div>
 
             <div className="flex items-start gap-3 px-1">
@@ -374,7 +362,7 @@ export default function Register() {
             </p>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

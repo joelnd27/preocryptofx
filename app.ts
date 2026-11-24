@@ -212,9 +212,14 @@ if (!supabaseAdmin) {
   }, 1000);
 }
 
+let isReconcilingWithdrawals = false;
+let isReconcilingTrades = false;
+const blockedTradesCooldown = new Map<string, number>();
+
 // WITHDRAWAL RECONCILER LOGIC
 async function reconcileWithdrawals() {
-  if (!supabaseAdmin) return;
+  if (!supabaseAdmin || isReconcilingWithdrawals) return;
+  isReconcilingWithdrawals = true;
 
   try {
     const { data: pendingWithdrawals, error: fetchError } = await supabaseAdmin
@@ -244,12 +249,14 @@ async function reconcileWithdrawals() {
       const threshold = role === 'marketer' ? 4000 : 15000;
 
       if (ageMs >= threshold) {
-        const { error: updateError } = await supabaseAdmin
+        const { data: updatedRows, error: updateError } = await supabaseAdmin
           .from('transactions')
           .update({ status: 'successful' })
-          .eq('id', tx.id);
+          .eq('id', tx.id)
+          .eq('status', 'pending')
+          .select('id');
         
-        if (!updateError) {
+        if (!updateError && updatedRows && updatedRows.length > 0) {
           console.log(`[Withdraw-Reconciler] Auto-completed withdrawal ${tx.id} for ${role} (${Math.round(ageMs/1000)}s old)`);
           
           // Trigger OneApp Sync for marketers if it hasn't been synced yet
@@ -272,12 +279,15 @@ async function reconcileWithdrawals() {
     }
   } catch (err: any) {
     console.error('[Withdraw-Reconciler] Exception:', err.message);
+  } finally {
+    isReconcilingWithdrawals = false;
   }
 }
 
 // TRADE RECONCILER LOGIC
 async function reconcileManualTrades() {
-  if (!supabaseAdmin) return;
+  if (!supabaseAdmin || isReconcilingTrades) return;
+  isReconcilingTrades = true;
 
   try {
     // 1. Fetch only essential columns for OPEN trades with a duration
@@ -309,9 +319,14 @@ async function reconcileManualTrades() {
     const usersLookup = new Map(userDataForReconcile?.map(u => [u.id, u]) || []);
 
     const expiredTrades = openTrades.filter(trade => {
+      const blockedUntil = blockedTradesCooldown.get(trade.id);
+      if (blockedUntil && now < blockedUntil) {
+        return false;
+      }
+
       const user = usersLookup.get(trade.user_id);
       const isReal = trade.account_type === 'REAL';
-      const balance = user ? (isReal ? Number(user.real_balance) : Number(user.demo_balance)) : 0;
+      const balance = user ? Math.max(0, (isReal ? Number(user.real_balance) : Number(user.demo_balance)) || 0) : 0;
       
       const MIN_MANUAL_BALANCE = 3;
       if (balance < MIN_MANUAL_BALANCE) {
@@ -322,8 +337,9 @@ async function reconcileManualTrades() {
       const startTime = isNaN(Number(trade.timestamp)) 
         ? new Date(trade.timestamp).getTime() 
         : Number(trade.timestamp);
+      if (!Number.isFinite(startTime)) return false;
       
-      const durationMs = (trade.duration || 0) * 1000;
+      const durationMs = (Number(trade.duration) || 0) * 1000;
       return now >= (startTime + durationMs);
     });
 
@@ -331,7 +347,6 @@ async function reconcileManualTrades() {
 
     console.log(`[Trade-Reconciler] ${expiredTrades.length} trades reached expiry.`);
 
-    const tradeUpdates: any[] = [];
     const userUpdates: Map<string, any> = new Map();
 
     // 3. Prepare updates
@@ -340,12 +355,14 @@ async function reconcileManualTrades() {
         const user = usersLookup.get(trade.user_id);
         if (!user) continue;
 
+        const profitValue = Number(trade.target_profit || 0);
+
         // Perform conditional update for each trade to ensure it's still open
-        const { data: updatedTrade, error: updateError } = await supabaseAdmin
+        let { data: updatedTrade, error: updateError } = await supabaseAdmin
           .from('trades')
           .update({
             status: 'CLOSED',
-            profit: Number(trade.target_profit || 0),
+            profit: profitValue,
             exit_price: trade.price,
             exit_time: new Date().toISOString()
           })
@@ -353,14 +370,49 @@ async function reconcileManualTrades() {
           .eq('status', 'OPEN')
           .select();
 
-        if (updateError || !updatedTrade || updatedTrade.length === 0) {
-          // Skip if already closed by user or error
-          console.log(`[Trade-Reconciler] Skipping trade ${trade.id}: Already closed or error.`);
+        // Fallback if optional exit_price / exit_time columns are missing in an unmigrated schema
+        if (
+          updateError &&
+          (updateError.code === '42703' ||
+            updateError.code === 'PGRST204' ||
+            updateError.message?.includes('exit_price') ||
+            updateError.message?.includes('exit_time') ||
+            updateError.message?.includes('column'))
+        ) {
+          const fallbackRes = await supabaseAdmin
+            .from('trades')
+            .update({
+              status: 'CLOSED',
+              profit: profitValue
+            })
+            .eq('id', trade.id)
+            .eq('status', 'OPEN')
+            .select();
+          updatedTrade = fallbackRes.data;
+          updateError = fallbackRes.error;
+        }
+
+        if (updateError) {
+          if (updateError.code === '23514') {
+            blockedTradesCooldown.set(trade.id, Date.now() + 5 * 60 * 1000);
+            console.warn(
+              `[Trade-Reconciler] Trade ${trade.id} blocked by database constraint (${updateError.message}). Pausing retries for 5m — please run the updated SUPABASE_RLS_FIX.sql to remove legacy triggers on public.trades.`
+            );
+          } else {
+            console.error(`[Trade-Reconciler] Failed closing trade ${trade.id}:`, updateError.code, updateError.message);
+          }
           continue;
         }
 
-        const profit = Number(trade.target_profit || 0);
-        const stake = Number(trade.amount);
+        if (!updatedTrade || updatedTrade.length === 0) {
+          // Trade was closed concurrently between select and update; safe no-op
+          continue;
+        }
+
+        blockedTradesCooldown.delete(trade.id);
+
+        const profit = Number(trade.target_profit) || 0;
+        const stake = Math.max(0, Number(trade.amount) || 0);
         const isReal = trade.account_type === 'REAL';
         
         const balanceField = isReal ? 'real_balance' : 'demo_balance';
@@ -368,11 +420,11 @@ async function reconcileManualTrades() {
         const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
         const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
 
-        const currentBalance = Number(user[balanceField]);
+        const currentBalance = Math.max(0, Number(user[balanceField]) || 0);
         // SAFETY: Use Math.max(0, ...) to ensure balance never goes negative
         const newBalance = Math.max(0, Number((currentBalance + stake + profit).toFixed(2)));
-        const newTotalProfit = Number((Number(user[totalProfitField] || 0) + profit).toFixed(2));
-        const newDailyProfit = Number((Number(user[dailyProfitField] || 0) + profit).toFixed(2));
+        const newTotalProfit = Number(((Number(user[totalProfitField]) || 0) + profit).toFixed(2));
+        const newDailyProfit = Number(((Number(user[dailyProfitField]) || 0) + profit).toFixed(2));
         const newDailyTrades = (Number(user[dailyTradesField]) || 0) + 1;
 
         // Update in-memory user for consecutive trades
@@ -383,8 +435,8 @@ async function reconcileManualTrades() {
 
         userUpdates.set(user.id, {
           id: user.id,
-          real_balance: user.real_balance,
-          demo_balance: user.demo_balance,
+          real_balance: Math.max(0, Number(user.real_balance) || 0),
+          demo_balance: Math.max(0, Number(user.demo_balance) || 0),
           total_profit_real: user.total_profit_real,
           total_profit_demo: user.total_profit_demo,
           daily_profit_real: user.daily_profit_real,
@@ -407,8 +459,8 @@ async function reconcileManualTrades() {
           const { error: userUpdateError } = await supabaseAdmin
             .from('users')
             .update({
-              real_balance: updateData.real_balance,
-              demo_balance: updateData.demo_balance,
+              real_balance: Math.max(0, Number(updateData.real_balance) || 0),
+              demo_balance: Math.max(0, Number(updateData.demo_balance) || 0),
               total_profit_real: updateData.total_profit_real,
               total_profit_demo: updateData.total_profit_demo,
               daily_profit_real: updateData.daily_profit_real,
@@ -431,6 +483,8 @@ async function reconcileManualTrades() {
 
   } catch (err: any) {
     console.error('[Trade-Reconciler] Exception:', err.message);
+  } finally {
+    isReconcilingTrades = false;
   }
 }
 
@@ -1792,24 +1846,19 @@ router.get(['/finapi/verify/:transaction_id', '/api/verify-payment/:transaction_
           if (rpcError) {
             console.warn(`[FinAPI Verify] RPC failed for ${tx.id}:`, rpcError.message);
             
-            // Fallback: Atomic balance update using simple RPC + manual status update
-            // We DO NOT do manual math (newBalance = current + amount) to avoid race conditions and double credits
-            const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', tx.id).single();
-            if (freshTx && freshTx.status !== 'completed') {
-              console.log(`[FinAPI Verify] Falling back to status update for ${tx.id} (trigger will handle REAL credit)`);
-              
-              await supabaseAdmin.from('transactions').update({ 
-                status: 'completed',
-                amount: usdToCredit
-              }).eq('id', tx.id);
+            const { data: updatedRows } = await supabaseAdmin
+              .from('transactions')
+              .update({ status: 'completed', amount: usdToCredit })
+              .eq('id', tx.id)
+              .not('status', 'in', '("completed","success","successful")')
+              .select('id, account_type');
 
-              // Handle DEMO manually
-              if (freshTx.account_type === 'DEMO') {
-                const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', tx.user_id).single();
-                if (userData) {
-                  const newBalance = Number((Number(userData.demo_balance || 0) + usdToCredit).toFixed(2));
-                  await supabaseAdmin.from('users').update({ demo_balance: newBalance }).eq('id', tx.user_id);
-                }
+            if (updatedRows && updatedRows.length > 0) {
+              const balField = updatedRows[0].account_type === 'DEMO' ? 'demo_balance' : 'real_balance';
+              const { data: userData } = await supabaseAdmin.from('users').select(balField).eq('id', tx.user_id).single();
+              if (userData) {
+                const newBalance = Math.max(0, Number((Number((userData as any)[balField] || 0) + usdToCredit).toFixed(2)));
+                await supabaseAdmin.from('users').update({ [balField]: newBalance }).eq('id', tx.user_id);
               }
             }
           }
@@ -1929,27 +1978,24 @@ router.post(['/finapi/webhook', '/api/finapi/webhook/'], async (req, res) => {
         if (rpcError) {
           console.error('[FinAPI Webhook] RPC Balance update failed, falling back to atomic update:', rpcError);
           
-          const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', tx.id).single();
-          if (freshTx && freshTx.status !== 'completed') {
-            console.log(`[FinAPI Webhook] Falling back to status update for ${tx.id} (trigger will handle REAL credit)`);
-            
-            await supabaseAdmin.from('transactions')
-              .update({ 
-                status: 'completed', 
-                amount: usdAmount,
-                method: `FinAPI Webhook fallback (${transaction_id || reference})` 
-              })
-              .eq('id', tx.id);
+          const { data: updatedRows } = await supabaseAdmin
+            .from('transactions')
+            .update({ 
+              status: 'completed', 
+              amount: usdAmount,
+              method: `FinAPI Webhook fallback (${transaction_id || reference})` 
+            })
+            .eq('id', tx.id)
+            .not('status', 'in', '("completed","success","successful")')
+            .select('id, account_type');
 
-            // Handle DEMO manually
-            if (freshTx.account_type === 'DEMO') {
-              const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', tx.user_id).single();
-              if (userData) {
-                const newBalance = Number((Number(userData.demo_balance || 0) + usdAmount).toFixed(2));
-                await supabaseAdmin.from('users').update({ demo_balance: newBalance }).eq('id', tx.user_id);
-              }
+          if (updatedRows && updatedRows.length > 0) {
+            const balField = updatedRows[0].account_type === 'DEMO' ? 'demo_balance' : 'real_balance';
+            const { data: userData } = await supabaseAdmin.from('users').select(balField).eq('id', tx.user_id).single();
+            if (userData) {
+              const newBalance = Math.max(0, Number((Number((userData as any)[balField] || 0) + usdAmount).toFixed(2)));
+              await supabaseAdmin.from('users').update({ [balField]: newBalance }).eq('id', tx.user_id);
             }
-              
             console.log(`[FinAPI Webhook] Fallback status update successful for user ${tx.user_id}`);
           }
         }
@@ -2021,16 +2067,16 @@ router.get('/user/referrals', async (req, res) => {
     // 3. Format and return
     const formatted = (referredUsers || []).map((ru: any) => {
       const deposits = (ru.transactions || [])
-        .filter((t: any) => t.type === 'DEPOSIT' && t.status === 'completed');
+        .filter((t: any) => (t.type || '').toUpperCase() === 'DEPOSIT' && ['completed', 'success', 'successful'].includes((t.status || '').toLowerCase()));
       
-      const totalDeposited = deposits.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+      const totalDeposited = deposits.reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
       
       return {
         userId: ru.id,
         username: ru.username || ru.email?.split('@')[0] || 'Unknown',
         email: ru.email,
         joinedAt: new Date(ru.created_at).getTime(),
-        status: deposits.length > 0 ? 'active' : 'pending',
+        status: deposits.length > 0 ? 'confirmed' : 'pending',
         hasDeposited: deposits.length > 0,
         totalDeposited: totalDeposited
       };
@@ -2156,18 +2202,23 @@ router.post([
       if (rpcError) {
         console.warn('[PayHero Callback] RPC increment failed:', rpcError.message);
         
-        // Fallback update
-        await supabaseAdmin.from('transactions').update({
-          status: 'successful',
-          amount: usdToCredit,
-          method: methodLabel
-        }).eq('id', tx.id);
+        const { data: updatedRows } = await supabaseAdmin
+          .from('transactions')
+          .update({
+            status: 'successful',
+            amount: usdToCredit,
+            method: methodLabel
+          })
+          .eq('id', tx.id)
+          .not('status', 'in', '("completed","success","successful")')
+          .select('id, account_type');
 
-        if (tx.account_type === 'DEMO') {
-          const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', tx.user_id).single();
+        if (updatedRows && updatedRows.length > 0) {
+          const balField = updatedRows[0].account_type === 'DEMO' ? 'demo_balance' : 'real_balance';
+          const { data: userData } = await supabaseAdmin.from('users').select(balField).eq('id', tx.user_id).single();
           if (userData) {
-            const newBal = Number((Number(userData.demo_balance || 0) + usdToCredit).toFixed(2));
-            await supabaseAdmin.from('users').update({ demo_balance: newBal }).eq('id', tx.user_id);
+            const newBal = Math.max(0, Number((Number((userData as any)[balField] || 0) + usdToCredit).toFixed(2)));
+            await supabaseAdmin.from('users').update({ [balField]: newBal }).eq('id', tx.user_id);
           }
         }
       } else {
@@ -2547,11 +2598,11 @@ router.post('/trades/close', async (req, res) => {
     const dailyProfitField = isReal ? 'daily_profit_real' : 'daily_profit_demo';
     const dailyTradesField = isReal ? 'daily_trades_real' : 'daily_trades_demo';
 
-    const profit = Number(currentProfit);
-    const stake = Number(trade.amount);
+    const profit = Number(currentProfit) || 0;
+    const stake = Math.max(0, Number(trade.amount) || 0);
     
     // 3. Perform atomic update with status check to prevent double crediting
-    const { data: updatedTrade, error: tradeUpdateError } = await supabaseAdmin
+    let { data: updatedTrade, error: tradeUpdateError } = await supabaseAdmin
       .from('trades')
       .update({
         status: 'CLOSED',
@@ -2563,16 +2614,43 @@ router.post('/trades/close', async (req, res) => {
       .eq('status', 'OPEN') // CRITICAL: Only update if still open
       .select();
 
-    if (tradeUpdateError) throw tradeUpdateError;
+    if (
+      tradeUpdateError &&
+      (tradeUpdateError.code === '42703' ||
+        tradeUpdateError.code === 'PGRST204' ||
+        tradeUpdateError.message?.includes('exit_price') ||
+        tradeUpdateError.message?.includes('exit_time') ||
+        tradeUpdateError.message?.includes('column'))
+    ) {
+      const fallbackRes = await supabaseAdmin
+        .from('trades')
+        .update({
+          status: 'CLOSED',
+          profit: profit
+        })
+        .eq('id', tradeId)
+        .eq('status', 'OPEN')
+        .select();
+      updatedTrade = fallbackRes.data;
+      tradeUpdateError = fallbackRes.error;
+    }
+
+    if (tradeUpdateError) {
+      if (tradeUpdateError.code === '23514') {
+        console.warn('[TradeClose] Blocked by legacy DB trigger constraint (23514). Run updated SUPABASE_RLS_FIX.sql.');
+        return res.status(409).json({ error: 'Database trigger conflict prevented closing this trade. Please apply the latest SQL cleanup script.' });
+      }
+      throw tradeUpdateError;
+    }
     
     // If no rows were updated, it means someone else already closed this trade
     if (!updatedTrade || updatedTrade.length === 0) {
       return res.status(400).json({ error: 'Trade already closed' });
     }
 
-    const newBalance = Number((Number(userData[balanceField]) + stake + profit).toFixed(2));
-    const newTotalProfit = Number((Number(userData[totalProfitField] || 0) + profit).toFixed(2));
-    const newDailyProfit = Number((Number(userData[dailyProfitField] || 0) + profit).toFixed(2));
+    const newBalance = Math.max(0, Number(((Number(userData[balanceField]) || 0) + stake + profit).toFixed(2)));
+    const newTotalProfit = Number(((Number(userData[totalProfitField]) || 0) + profit).toFixed(2));
+    const newDailyProfit = Number(((Number(userData[dailyProfitField]) || 0) + profit).toFixed(2));
     const newDailyTrades = (Number(userData[dailyTradesField]) || 0) + 1;
 
     const { error: userUpdateError } = await supabaseAdmin.from('users').update({
@@ -2601,16 +2679,42 @@ router.post('/trades/close', async (req, res) => {
   }
 });
 
+const withdrawalInFlight = new Set<string>();
+
 router.post('/withdraw/request', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
   if (!supabaseAdmin) return res.status(503).json({ error: 'System configuration error' });
 
+  let lockKey: string | null = null;
+
   try {
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !authUser) return res.status(401).json({ error: 'Unauthorized' });
 
+    lockKey = authUser.id;
+    if (withdrawalInFlight.has(lockKey)) {
+      return res.status(429).json({ error: 'A withdrawal request is already being processed. Please wait.' });
+    }
+    withdrawalInFlight.add(lockKey);
+
     const { amount, accountType, method } = req.body;
+    const numAmount = Number(Number(amount).toFixed(2));
+    const normalizedAccountType = String(accountType || 'REAL').toUpperCase();
+    const safeMethod = String(method || 'MPESA').trim().slice(0, 100);
+
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid withdrawal amount' });
+    }
+
+    if (normalizedAccountType !== 'REAL') {
+      return res.status(400).json({ error: 'Withdrawals are only available for REAL accounts.' });
+    }
+
+    const minWithdrawal = safeMethod.toUpperCase() === 'BANK' ? 34 : (safeMethod.toUpperCase() === 'CRYPTO' ? 54 : 30);
+    if (numAmount < minWithdrawal) {
+      return res.status(400).json({ error: `Minimum withdrawal for ${safeMethod} is $${minWithdrawal}.` });
+    }
     
     // 0. Prevent duplicate/double submissions within 5 seconds
     const { data: recentTxs } = await supabaseAdmin
@@ -2618,8 +2722,8 @@ router.post('/withdraw/request', async (req, res) => {
       .select('id, created_at')
       .eq('user_id', authUser.id)
       .eq('type', 'WITHDRAW')
-      .eq('amount', Number(amount))
-      .eq('status', 'pending')
+      .eq('amount', numAmount)
+      .in('status', ['pending', 'successful', 'completed'])
       .gte('created_at', new Date(Date.now() - 5000).toISOString())
       .limit(1);
 
@@ -2628,22 +2732,29 @@ router.post('/withdraw/request', async (req, res) => {
     }
 
     // 1. Fetch current balance securely
-    const { data: userData, error: userError } = await supabaseAdmin.from('users').select('real_balance, demo_balance, verification_status').eq('id', authUser.id).single();
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('real_balance, demo_balance, verification_status')
+      .eq('id', authUser.id)
+      .single();
     if (userError || !userData) return res.status(404).json({ error: 'User not found' });
 
-    // 2. Validate withdrawal
-    if (userData.verification_status !== 'verified' && amount > 500) {
+    const currentBalance = Number(userData.real_balance || 0);
+    if (!Number.isFinite(currentBalance) || currentBalance < numAmount || (currentBalance - numAmount) < 0) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+
+    // 2. Validate withdrawal limits
+    if (userData.verification_status !== 'verified' && numAmount > 500) {
       return res.status(400).json({ error: 'Unverified accounts have a withdrawal limit of $500.' });
     }
 
-    const balanceField = accountType === 'REAL' ? 'real_balance' : 'demo_balance';
-    
-    // 1. Use Atomic RPC to process withdrawal
+    // 3. Use Atomic RPC to process withdrawal
     const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('process_withdrawal', {
       u_id: authUser.id,
-      u_amount: Number(amount),
-      u_account_type: accountType,
-      u_method: method,
+      u_amount: numAmount,
+      u_account_type: normalizedAccountType,
+      u_method: safeMethod,
       u_timestamp: new Date().toISOString()
     });
 
@@ -2652,25 +2763,38 @@ router.post('/withdraw/request', async (req, res) => {
       return res.status(500).json({ error: rpcError.message || 'Withdrawal process failed' });
     }
 
-    if (!rpcResult.success) {
-      return res.status(400).json({ error: rpcResult.error || 'Withdrawal failed' });
+    if (!rpcResult || !rpcResult.success) {
+      return res.status(400).json({ error: rpcResult?.error || 'Withdrawal failed' });
     }
 
-    // 2. Fetch the newly created transaction record to return to frontend
-    const { data: transData } = await supabaseAdmin
-      .from('transactions')
-      .select('*')
-      .eq('id', rpcResult.transactionId)
-      .single();
+    // 4. Re-read authoritative user balance & created transaction record
+    const [{ data: transData }, { data: freshUser }] = await Promise.all([
+      supabaseAdmin
+        .from('transactions')
+        .select('*')
+        .eq('id', rpcResult.transactionId)
+        .single(),
+      supabaseAdmin
+        .from('users')
+        .select('real_balance')
+        .eq('id', authUser.id)
+        .single()
+    ]);
+
+    const authoritativeBalance = Math.max(0, Number(freshUser?.real_balance ?? rpcResult.newBalance ?? 0));
 
     res.json({ 
       success: true, 
-      newBalance: rpcResult.newBalance, 
+      newBalance: authoritativeBalance, 
       transaction: transData 
     });
   } catch (err: any) {
     console.error('Withdrawal error:', err);
     res.status(500).json({ error: err.message || 'Withdrawal failed' });
+  } finally {
+    if (lockKey) {
+      withdrawalInFlight.delete(lockKey);
+    }
   }
 });
 
@@ -2727,12 +2851,19 @@ router.post('/admin/update-user', async (req, res) => {
     }
 
     const { userId, updates } = req.body;
+    const sanitizedUpdates = { ...(updates || {}) };
+    if (sanitizedUpdates.real_balance !== undefined) {
+      sanitizedUpdates.real_balance = Math.max(0, Number(sanitizedUpdates.real_balance) || 0);
+    }
+    if (sanitizedUpdates.demo_balance !== undefined) {
+      sanitizedUpdates.demo_balance = Math.max(0, Number(sanitizedUpdates.demo_balance) || 0);
+    }
     
     if (!supabaseAdmin) {
       return res.status(500).json({ error: 'Admin client not configured.' });
     }
 
-    const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', userId).select().single();
+    const { data, error } = await supabaseAdmin.from('users').update(sanitizedUpdates).eq('id', userId).select().single();
     
     if (error) throw error;
     res.json(data);
@@ -2883,24 +3014,19 @@ router.post('/admin/credit-user', async (req, res) => {
 
       if (rpcError) {
         console.error('[Admin Credit] RPC failed:', rpcError);
-        // Handle manual credit (Admin)
-        const { data: freshTx } = await supabaseAdmin.from('transactions').select('status, account_type').eq('id', transactionId).single();
-        if (freshTx && freshTx.status !== 'completed') {
-          console.log(`[Admin Credit] Updating transaction ${transactionId} to completed...`);
-          
-          // Update status to 'completed' - if it's a REAL account, the trigger will handle the credit.
-          await supabaseAdmin.from('transactions')
-            .update({ status: 'completed', amount: Number(amount), method: 'Manual Credit (Admin)' })
-            .eq('id', transactionId);
+        const { data: updatedRows } = await supabaseAdmin
+          .from('transactions')
+          .update({ status: 'completed', amount: Number(amount), method: 'Manual Credit (Admin)' })
+          .eq('id', transactionId)
+          .not('status', 'in', '("completed","success","successful")')
+          .select('id, account_type');
 
-          // If it's a DEMO account, we must handle the balance manually since the trigger doesn't cover it.
-          if (freshTx.account_type === 'DEMO') {
-            console.log(`[Admin Credit] Manually crediting DEMO balance for ${userId}`);
-            const { data: userData } = await supabaseAdmin.from('users').select('demo_balance').eq('id', userId).single();
-            if (userData) {
-              const newBalance = Number((Number(userData.demo_balance || 0) + Number(amount)).toFixed(2));
-              await supabaseAdmin.from('users').update({ demo_balance: newBalance }).eq('id', userId);
-            }
+        if (updatedRows && updatedRows.length > 0) {
+          const balField = updatedRows[0].account_type === 'DEMO' ? 'demo_balance' : 'real_balance';
+          const { data: userData } = await supabaseAdmin.from('users').select(balField).eq('id', userId).single();
+          if (userData) {
+            const newBalance = Math.max(0, Number((Number((userData as any)[balField] || 0) + Number(amount)).toFixed(2)));
+            await supabaseAdmin.from('users').update({ [balField]: newBalance }).eq('id', userId);
           }
         }
       }

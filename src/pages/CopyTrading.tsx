@@ -368,11 +368,11 @@ export default function CopyTrading() {
       
         {isPasswordModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div}}}
+            <div
               onClick={() => setIsPasswordModalOpen(false)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <div}}}
+            <div
               className="relative w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden"
             >
               <div className="p-8">
@@ -426,11 +426,11 @@ export default function CopyTrading() {
       
         {isCreateModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div}}}
+            <div
               onClick={() => setIsCreateModalOpen(false)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <div}}}
+            <div
               className="relative w-full max-w-[480px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden max-h-[95vh] flex flex-col"
             >
               <div className="p-6 sm:p-7 overflow-y-auto custom-scrollbar">
@@ -559,11 +559,11 @@ export default function CopyTrading() {
       
         {isEditModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div}}}
+            <div
               onClick={() => setIsEditModalOpen(false)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <div}}}
+            <div
               className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
@@ -783,11 +783,11 @@ export default function CopyTrading() {
       
         {selectedTrader && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div}}}
+            <div
               onClick={() => setSelectedTrader(null)}
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
-            <div}}}
+            <div
               className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] shadow-2xl overflow-hidden max-h-[85vh] flex flex-col"
             >
               {/* Header */}

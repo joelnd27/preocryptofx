@@ -233,23 +233,50 @@ UPDATE public.copy_traders
 SET total_profit = 1000 + (random() * 4000)
 WHERE total_profit > 5500 OR total_profit < 100;
 
--- 5. CLEANUP OLD TRIGGERS (Prevent double crediting)
--- These are often the cause of double-crediting when combined with manual increments
-DROP TRIGGER IF EXISTS on_transaction_completed ON public.transactions;
-DROP TRIGGER IF EXISTS tr_on_transaction_completed ON public.transactions;
-DROP TRIGGER IF EXISTS handle_transaction_completion_trigger ON public.transactions;
-DROP TRIGGER IF EXISTS tr_transactions_status_completed ON public.transactions;
-DROP TRIGGER IF EXISTS transactions_update_balance ON public.transactions;
-DROP TRIGGER IF EXISTS update_balance_trigger ON public.transactions;
-DROP TRIGGER IF EXISTS credit_user_balance_trigger ON public.transactions;
-DROP TRIGGER IF EXISTS tr_update_balance ON public.transactions;
-DROP TRIGGER IF EXISTS on_complete_credit_balance ON public.transactions;
-DROP TRIGGER IF EXISTS transactions_completed_trigger ON public.transactions;
-DROP TRIGGER IF EXISTS update_real_balance_trigger ON public.transactions;
-DROP TRIGGER IF EXISTS trigger_on_transaction_completed ON public.transactions;
-DROP TRIGGER IF EXISTS transactions_balance_trigger ON public.transactions;
-DROP TRIGGER IF EXISTS update_user_balance_on_transaction ON public.transactions;
+-- 5. CLEANUP OLD TRIGGERS (Prevent double crediting, double withdrawal deductions, AND trade-close balance constraint crashes)
+-- Dynamically drop ALL non-internal triggers on public.transactions and public.trades so no hidden/legacy trigger
+-- can modify users.real_balance or users.demo_balance behind the scenes.
+DO $$
+DECLARE
+  trig RECORD;
+BEGIN
+  FOR trig IN
+    SELECT tgname
+    FROM pg_trigger
+    WHERE tgrelid = 'public.transactions'::regclass
+      AND NOT tgisinternal
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.transactions;', trig.tgname);
+  END LOOP;
+
+  FOR trig IN
+    SELECT tgname
+    FROM pg_trigger
+    WHERE tgrelid = 'public.trades'::regclass
+      AND NOT tgisinternal
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.trades;', trig.tgname);
+  END LOOP;
+END $$;
+
 DROP FUNCTION IF EXISTS public.handle_transaction_completion();
+DROP FUNCTION IF EXISTS public.handle_trade_completion();
+DROP FUNCTION IF EXISTS public.update_balance_on_trade();
+
+-- Clamp any existing negative balances to 0 and enforce DB-level non-negative constraints
+UPDATE public.users
+SET real_balance = GREATEST(0, COALESCE(real_balance, 0)),
+    demo_balance = GREATEST(0, COALESCE(demo_balance, 0))
+WHERE real_balance IS NULL
+   OR real_balance < 0
+   OR demo_balance IS NULL
+   OR demo_balance < 0;
+
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_real_balance_non_negative;
+ALTER TABLE public.users ADD CONSTRAINT users_real_balance_non_negative CHECK (real_balance >= 0);
+
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_demo_balance_non_negative;
+ALTER TABLE public.users ADD CONSTRAINT users_demo_balance_non_negative CHECK (demo_balance >= 0);
 
 -- Helper to list triggers for debugging
 CREATE OR REPLACE FUNCTION public.get_all_triggers()
@@ -260,45 +287,59 @@ BEGIN
   FROM pg_trigger t
   JOIN pg_class c ON t.tgrelid = c.oid
   JOIN pg_namespace n ON c.relnamespace = n.oid
-  WHERE n.nspname = 'public';
+  WHERE n.nspname = 'public'
+    AND NOT t.tgisinternal;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 6. RPC FUNCTIONS
 -- Transaction-aware balance increment to prevent double crediting
--- We use a single atomic operation to ensure idempotency
+-- Handles both REAL and DEMO balances atomically without relying on external triggers
 CREATE OR REPLACE FUNCTION public.increment_balance_v2(t_id UUID, u_id UUID, amount NUMERIC)
 RETURNS BOOLEAN AS $$
 DECLARE
-  already_completed BOOLEAN;
-  t_account_type TEXT;
+  t_row RECORD;
+  safe_amount NUMERIC;
 BEGIN
-  -- 1. Check if transaction is already completed (Strict idempotency)
-  SELECT (status = 'completed' OR status = 'success' OR status = 'successful'), account_type 
-  INTO already_completed, t_account_type
+  safe_amount := GREATEST(0, COALESCE(amount, 0));
+
+  -- 1. Lock the transaction row for strict idempotency
+  SELECT id, status, account_type
+  INTO t_row
   FROM public.transactions
-  WHERE id = t_id;
-
-  IF already_completed THEN
-    RETURN FALSE;
-  END IF;
-
-  -- 2. Update transaction status to successful
-  -- For REAL accounts, this triggers the database balance update exactly once.
-  -- For DEMO accounts, the trigger does not fire.
-  UPDATE public.transactions
-  SET status = 'successful',
-      amount = amount -- Ensure verified amount is used
-  WHERE id = t_id AND status NOT IN ('completed', 'success', 'successful');
+  WHERE id = t_id
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN FALSE;
   END IF;
 
-  -- 3. Handle DEMO balance manually (since the trigger only handles REAL)
-  IF t_account_type = 'DEMO' THEN
-    UPDATE public.users 
-    SET demo_balance = COALESCE(demo_balance, 0) + amount 
+  IF LOWER(COALESCE(t_row.status, '')) IN ('completed', 'success', 'successful') THEN
+    RETURN FALSE;
+  END IF;
+
+  -- 2. Mark transaction as successful atomically
+  UPDATE public.transactions
+  SET status = 'successful',
+      amount = safe_amount,
+      updated_at = now()
+  WHERE id = t_id
+    AND LOWER(COALESCE(status, '')) NOT IN ('completed', 'success', 'successful');
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  -- 3. Explicitly credit the target balance once (external triggers are dropped)
+  IF UPPER(COALESCE(t_row.account_type, 'REAL')) = 'DEMO' THEN
+    UPDATE public.users
+    SET demo_balance = GREATEST(0, ROUND((COALESCE(demo_balance, 0) + safe_amount)::numeric, 2)),
+        updated_at = now()
+    WHERE id = u_id;
+  ELSE
+    UPDATE public.users
+    SET real_balance = GREATEST(0, ROUND((COALESCE(real_balance, 0) + safe_amount)::numeric, 2)),
+        updated_at = now()
     WHERE id = u_id;
   END IF;
 
@@ -306,7 +347,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 6.5 PROCESS WITHDRAWAL RPC (Atomic)
+-- 6.5 PROCESS WITHDRAWAL RPC (Atomic & Protected Against Negative Balances)
 CREATE OR REPLACE FUNCTION public.process_withdrawal(
   u_id UUID,
   u_amount NUMERIC,
@@ -318,33 +359,41 @@ RETURNS JSONB AS $$
 DECLARE
   current_bal NUMERIC;
   new_bal NUMERIC;
+  safe_amount NUMERIC;
   balance_col TEXT;
   tx_id UUID;
   user_v_status TEXT;
   recent_count INTEGER;
 BEGIN
-  -- 0. Anti-double-spend / Idempotency check: Reject if a pending withdrawal of the same amount exists within the last 5 seconds
+  -- Validate withdrawal amount is strictly positive
+  IF u_amount IS NULL OR u_amount <= 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid withdrawal amount');
+  END IF;
+
+  safe_amount := ROUND(u_amount::numeric, 2);
+
+  -- 0. Anti-double-spend / Idempotency check: Reject if a withdrawal of the same amount exists within the last 5 seconds
   SELECT COUNT(*) INTO recent_count
   FROM public.transactions
   WHERE user_id = u_id
     AND type = 'WITHDRAW'
-    AND amount = u_amount
-    AND status = 'pending'
+    AND amount = safe_amount
+    AND status IN ('pending', 'successful', 'completed')
     AND created_at >= (now() - interval '5 seconds');
 
   IF recent_count > 0 THEN
     RETURN jsonb_build_object('success', false, 'error', 'Duplicate withdrawal request detected. Please wait a moment.');
   END IF;
 
-  -- 1. Identify balance column
-  IF UPPER(u_account_type) = 'REAL' THEN
+  -- 1. Identify balance column (only REAL accounts can withdraw)
+  IF UPPER(COALESCE(u_account_type, 'REAL')) = 'REAL' THEN
     balance_col := 'real_balance';
   ELSE
-    balance_col := 'demo_balance';
+    RETURN jsonb_build_object('success', false, 'error', 'Withdrawals are only available for REAL accounts.');
   END IF;
 
   -- 2. Fetch current balance and verification status with Row Lock (FOR UPDATE)
-  EXECUTE format('SELECT %I, verification_status FROM public.users WHERE id = $1 FOR UPDATE', balance_col)
+  EXECUTE format('SELECT COALESCE(%I, 0), verification_status FROM public.users WHERE id = $1 FOR UPDATE', balance_col)
   INTO current_bal, user_v_status
   USING u_id;
 
@@ -353,23 +402,31 @@ BEGIN
   END IF;
 
   -- 3. Check verification limits
-  IF user_v_status != 'verified' AND u_amount > 500 THEN
+  IF COALESCE(user_v_status, 'not_verified') != 'verified' AND safe_amount > 500 THEN
     RETURN jsonb_build_object('success', false, 'error', 'Unverified accounts have a withdrawal limit of $500.');
   END IF;
 
-  -- 4. Check sufficient funds
-  IF current_bal < u_amount THEN
+  -- 4. Strict sufficient funds check (never allow balance < 0)
+  IF current_bal < safe_amount OR (current_bal - safe_amount) < 0 THEN
     RETURN jsonb_build_object('success', false, 'error', 'Insufficient balance');
   END IF;
 
   -- 5. Calculate new balance
-  new_bal := current_bal - u_amount;
+  new_bal := ROUND((current_bal - safe_amount)::numeric, 2);
 
-  -- 6. Update user balance
-  EXECUTE format('UPDATE public.users SET %I = $1, updated_at = now() WHERE id = $2', balance_col)
-  USING new_bal, u_id;
+  IF new_bal < 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Insufficient balance');
+  END IF;
 
-  -- 7. Insert transaction record
+  -- 6. Update user balance atomically with non-negative guard
+  EXECUTE format('UPDATE public.users SET %I = $1, updated_at = now() WHERE id = $2 AND COALESCE(%I, 0) >= $3', balance_col, balance_col)
+  USING new_bal, u_id, safe_amount;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Insufficient balance');
+  END IF;
+
+  -- 7. Insert transaction record (no external trigger on transactions will deduct again)
   INSERT INTO public.transactions (
     user_id,
     type,
@@ -381,9 +438,9 @@ BEGIN
   ) VALUES (
     u_id,
     'WITHDRAW',
-    u_amount,
+    safe_amount,
     'pending',
-    UPPER(u_account_type),
+    'REAL',
     u_method,
     u_timestamp
   ) RETURNING id INTO tx_id;
@@ -400,12 +457,13 @@ GRANT EXECUTE ON FUNCTION public.process_withdrawal(UUID, NUMERIC, TEXT, TEXT, T
 GRANT EXECUTE ON FUNCTION public.process_withdrawal(UUID, NUMERIC, TEXT, TEXT, TIMESTAMPTZ) TO anon;
 GRANT EXECUTE ON FUNCTION public.process_withdrawal(UUID, NUMERIC, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
 
--- Simple increment for manual or legacy calls
+-- Simple increment for manual or legacy calls (protected against going negative)
 CREATE OR REPLACE FUNCTION public.increment_balance(user_id UUID, amount NUMERIC)
 RETURNS VOID AS $$
 BEGIN
   UPDATE public.users 
-  SET real_balance = COALESCE(real_balance, 0) + amount 
+  SET real_balance = GREATEST(0, ROUND((COALESCE(real_balance, 0) + COALESCE(amount, 0))::numeric, 2)),
+      updated_at = now()
   WHERE id = user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
